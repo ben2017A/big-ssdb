@@ -18,5 +18,6 @@
 		RequestVoteAck
 		AppendEntry
 			AddMember
+			HeartBeat
 			OtherCommand
 		AppendEntryAck

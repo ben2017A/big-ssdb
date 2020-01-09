@@ -41,17 +41,10 @@ func (node *Node)Tick(timeElapse int){
 		if node.HeartBeatTimeout <= 0 {
 			node.HeartBeatTimeout = HeartBeatTimeout
 
-			for _, m := range node.Members {
-				msg := new(Message)
-				msg.Cmd = "AppendEntry"
-				msg.Src = node.Id
-				msg.Dst = m.Id
-				msg.Idx = node.Index
-				msg.Term = node.Term;
-				msg.Data = "I am leader"
-
-				node.Transport.Send(msg)
-			}
+			msg := new(Message)
+			msg.Cmd = "AppendEntry"
+			msg.Data = "HeartBeat"
+			node.Broadcast(msg)
 		}
 	}
 	if node.Role != "leader" {
@@ -68,18 +61,21 @@ func (node *Node)Tick(timeElapse int){
 			node.VoteFor = node.Id
 			node.VotesReceived[node.Id] = ""
 
-			for _, m := range node.Members {
-				msg := new(Message)
-				msg.Cmd = "RequestVote"
-				msg.Src = node.Id
-				msg.Dst = m.Id
-				msg.Idx = node.Index
-				msg.Term = node.Term;
-				msg.Data = "please vote me"
-
-				node.Transport.Send(msg)
-			}
+			msg := new(Message)
+			msg.Cmd = "RequestVote"
+			msg.Data = "please vote me"
+			node.Broadcast(msg)
 		}
+	}
+}
+
+func (node *Node)Broadcast(msg *Message){
+	for _, m := range node.Members {
+		msg.Src = node.Id
+		msg.Dst = m.Id
+		msg.Idx = node.Index
+		msg.Term = node.Term;
+		node.Transport.Send(msg)
 	}
 }
 
