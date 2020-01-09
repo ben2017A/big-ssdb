@@ -10,6 +10,12 @@ const HeartBeatTimeout = (ElectionTimeout - 200)/2
 const RequestVoteTimeout = ElectionTimeout
 const ResendTimeout = 2000
 
+type LogEntry struct{
+	Term uint32
+	Index uint64
+	Data string
+}
+
 type Node struct{
 	Id string
 	Role string
@@ -23,10 +29,11 @@ type Node struct{
 	VoteFor string
 	VotesReceived map[string]string
 
-	ElectionTimeout int
-	HeartBeatTimeout int
+	electionTimeout int
+	heartBeatTimeout int
 
-	Replications map[uint64]*Replication
+	replications map[uint64]*Replication
+	entries map[uint64]*LogEntry
 
 	Transport Transport
 }
@@ -36,9 +43,10 @@ func NewNode() *Node{
 	node.Term = 0
 	node.Index = 0
 	node.Members = make(map[string]*Member)
-	node.Replications = make(map[uint64]*Replication)
+	node.replications = make(map[uint64]*Replication)
+	node.entries = make(map[uint64]*LogEntry)
 
-	node.ElectionTimeout = ElectionTimeout + rand.Intn(100)
+	node.electionTimeout = ElectionTimeout + rand.Intn(100)
 
 	return node
 }
@@ -62,24 +70,24 @@ func (node *Node)Tick(timeElapse int){
 		if len(node.VotesReceived) > (len(node.Members) + 1)/2 {
 			log.Println("convert to leader")
 			node.Role = "leader"
-			node.HeartBeatTimeout = 0
+			node.heartBeatTimeout = 0
 		}
 	}
 	if node.Role == "candidate" || node.Role == "follower" {
-		node.ElectionTimeout -= timeElapse
-		if node.ElectionTimeout <= 0 {
-			node.ElectionTimeout = RequestVoteTimeout + rand.Intn(ElectionTimeout/2)
+		node.electionTimeout -= timeElapse
+		if node.electionTimeout <= 0 {
+			node.electionTimeout = RequestVoteTimeout + rand.Intn(ElectionTimeout/2)
 			node.onElectionTimeout()
 		}
 	}
 	if node.Role == "leader" {
-		node.HeartBeatTimeout -= timeElapse
-		if node.HeartBeatTimeout <= 0 {
-			node.HeartBeatTimeout = HeartBeatTimeout
+		node.heartBeatTimeout -= timeElapse
+		if node.heartBeatTimeout <= 0 {
+			node.heartBeatTimeout = HeartBeatTimeout
 			node.onHeartBeatTimeout()
 		}
 
-		for _, rep := range node.Replications {
+		for _, rep := range node.replications {
 			rep.ResendTimeout -= timeElapse
 			if rep.ResendTimeout <= 0 {
 				rep.ResendTimeout = ResendTimeout
@@ -168,7 +176,7 @@ func (node *Node)handleRequestVote(msg *Message){
 	if node.VoteFor == "" && msg.Term == node.Term && msg.Idx >= node.Index {
 		log.Println("vote for", msg.Src)
 		node.VoteFor = msg.Src
-		node.ElectionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 		ack := new(Message)
 		ack.Cmd = "RequestVoteAck"
@@ -190,7 +198,35 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
-	node.ElectionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+
+	prevIndex := msg.Idx - 1
+	prevTerm := msg.Term - 1
+	if prevIndex > 0 && prevTerm > 0 {
+		prev := node.entries[prevIndex]
+		if prev == nil || prev.Term != prevTerm {
+			// send false Ack
+			return
+		}
+	}
+
+	if msg.Data == "HeartBeat" {
+		return
+	}
+
+	old := node.entries[msg.Idx]
+	if old != nil && old.Term != msg.Term {
+		// entry conflicts
+		delete(node.entries, old.Index)
+	}
+
+	entry := new(LogEntry)
+	entry.Index = msg.Idx
+	entry.Term = msg.Term
+	entry.Data = msg.Data
+	node.entries[entry.Index] = entry
+
+	// send true Ack
 }
 
 /* ############################################# */
@@ -204,7 +240,7 @@ func (node *Node)Write(data string){
 	rep.Index = node.Index
 	rep.Data = data
 	rep.ResendTimeout = ResendTimeout
-	node.Replications[rep.Index] = rep
+	node.replications[rep.Index] = rep
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
