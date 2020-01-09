@@ -29,13 +29,13 @@ func utoa(u uint64) string{
 }
 
 func EncodeMessage(msg *Message) []byte{
-	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Idx), utoa(uint64(msg.Term)), msg.Data, "\n"}
+	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Idx), utoa(uint64(msg.Term)), msg.Data}
 	return []byte(strings.Join(ps, " "))
 }
 
-func DecodeMessage(data []byte) *Message{
-	s := string(data)
-	s = strings.Trim(s, "\n")
+func DecodeMessage(buf []byte) *Message{
+	s := string(buf)
+	s = strings.Trim(s, "\r\n")
 	ps := strings.SplitN(s, " ", 6)
 	if len(ps) != 6 {
 		return nil

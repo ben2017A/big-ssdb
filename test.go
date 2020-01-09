@@ -5,13 +5,14 @@ import (
 	"raft"
 	"time"
 	"log"
-	"math/rand"
+	// "math/rand"
 	"os"
 	"strconv"
+	"strings"
 )
 
 
-const TimerInterval = 20
+const TimerInterval = 100
 
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
@@ -21,19 +22,19 @@ func main(){
 		port, _ = strconv.Atoi(os.Args[1])
 	}
 
-	log.Println("server started at", port)
+	log.Println("api server started at", port+100)
+	serv := raft.NewUdpTransport("127.0.0.1", port+100)
+	defer serv.Stop()
 
+	log.Println("raft server started at", port)
 	transport := raft.NewUdpTransport("127.0.0.1", port)
 	defer transport.Stop()
 
 	ticker := time.NewTicker(TimerInterval * time.Millisecond)
 	defer ticker.Stop()
 
-	node := new(raft.Node)
+	node := raft.NewNode()
 	node.Role = "follower"
-	node.Term = 0
-	node.Index = 0
-	node.Members = make(map[string]*raft.Member)
 
 	if port == 8001 {
 		node.Id = "n1"
@@ -44,9 +45,6 @@ func main(){
 		node.Members["n1"] = raft.NewMember("n1", "127.0.0.1:8001")
 		transport.Connect("n1", "127.0.0.1:8001")
 	}
-
-	node.VoteFor = ""
-	node.ElectionTimeout = raft.ElectionTimeout + rand.Intn(100)
 
 	node.Transport = transport
 
@@ -60,8 +58,20 @@ func main(){
 				log.Println("decode error:", buf)
 				continue
 			}
-			log.Printf("receive %s", string(msg.Encode()))
-			node.HandleMessage(msg)
+			log.Printf("receive (%s)\n", strings.Trim(string(msg.Encode()), "\r\n"))
+			node.HandleRaftMessage(msg)
+		case buf := <-serv.C:
+			s := string(buf)
+			s = strings.Trim(s, "\r\n")
+			ps := strings.Split(s, " ")
+			log.Println(ps)
+			if node.Role == "leader" {
+				node.Write("set k 1")
+			}
 		}
 	}
+}
+
+type UdpApi struct{
+
 }
