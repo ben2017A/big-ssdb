@@ -10,7 +10,7 @@ type Message struct{
 	Cmd string
 	Src string
 	Dst string
-	Idx uint64
+	Index uint64
 	Term uint32
 	Data string
 }
@@ -29,7 +29,7 @@ func utoa(u uint64) string{
 }
 
 func EncodeMessage(msg *Message) []byte{
-	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Idx), utoa(uint64(msg.Term)), msg.Data}
+	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Index), utoa(uint64(msg.Term)), msg.Data}
 	return []byte(strings.Join(ps, " "))
 }
 
@@ -44,7 +44,7 @@ func DecodeMessage(buf []byte) *Message{
 	msg.Cmd = ps[0]
 	msg.Src = ps[1]
 	msg.Dst = ps[2]
-	msg.Idx = atou(ps[3])
+	msg.Index = atou(ps[3])
 	msg.Term = uint32(atou(ps[4]))
 	msg.Data = ps[5]
 	return msg

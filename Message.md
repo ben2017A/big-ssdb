@@ -2,7 +2,7 @@
 		cmd
 		src
 		dst
-		idx
+		index
 		term
 		data
 

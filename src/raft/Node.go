@@ -20,14 +20,13 @@ type Node struct{
 	Id string
 	Role string
 
-	Term uint32
 	Index uint64
-	CommitIndex uint64
+	Term uint32
 
 	Members map[string]*Member
 
-	VoteFor string
-	VotesReceived map[string]string
+	voteFor string
+	votesReceived map[string]string
 
 	electionTimeout int
 	heartBeatTimeout int
@@ -55,8 +54,8 @@ func (node *Node)Broadcast(msg *Message){
 	for _, m := range node.Members {
 		msg.Src = node.Id
 		msg.Dst = m.Id
-		if msg.Idx == 0 {
-			msg.Idx = node.Index
+		if msg.Index == 0 {
+			msg.Index = node.Index
 		}
 		if msg.Term == 0 {
 			msg.Term = node.Term;
@@ -67,7 +66,7 @@ func (node *Node)Broadcast(msg *Message){
 
 func (node *Node)Tick(timeElapse int){
 	if node.Role == "candidate" {
-		if len(node.VotesReceived) > (len(node.Members) + 1)/2 {
+		if len(node.votesReceived) > (len(node.Members) + 1)/2 {
 			log.Println("convert to leader")
 			node.Role = "leader"
 			node.heartBeatTimeout = 0
@@ -102,10 +101,10 @@ func (node *Node)onElectionTimeout(){
 	node.Term += 1
 	log.Println("begin election for term", node.Term)
 
-	node.VotesReceived = make(map[string]string)
+	node.votesReceived = make(map[string]string)
 	// vote self
-	node.VoteFor = node.Id
-	node.VotesReceived[node.Id] = ""
+	node.voteFor = node.Id
+	node.votesReceived[node.Id] = ""
 
 	msg := new(Message)
 	msg.Cmd = "RequestVote"
@@ -120,7 +119,7 @@ func (node *Node)onReplicationResendTimeout(rep *Replication){
 			msg.Cmd = "AppendEntry"
 			msg.Src = node.Id
 			msg.Dst = m.Id
-			msg.Idx = rep.Index
+			msg.Index = rep.Index
 			msg.Term = rep.Term
 			msg.Data = rep.Data
 			log.Println("log retransmission")
@@ -148,7 +147,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 		if node.Role != "follower" {
 			log.Println("convert to follower from", node.Role)
 			node.Role = "follower"
-			node.VoteFor = ""
+			node.voteFor = ""
 		}
 	}
 
@@ -172,17 +171,17 @@ func (node *Node)HandleRaftMessage(msg *Message){
 }
 
 func (node *Node)handleRequestVote(msg *Message){
-	// node.VoteFor == msg.Src: retransimitted/duplicated RequestVote
-	if node.VoteFor == "" && msg.Term == node.Term && msg.Idx >= node.Index {
+	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
+	if node.voteFor == "" && msg.Term == node.Term && msg.Index >= node.Index {
 		log.Println("vote for", msg.Src)
-		node.VoteFor = msg.Src
+		node.voteFor = msg.Src
 		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 		ack := new(Message)
 		ack.Cmd = "RequestVoteAck"
 		ack.Src = node.Id
 		ack.Dst = msg.Src
-		ack.Idx = msg.Idx
+		ack.Index = msg.Index
 		ack.Term = msg.Term;
 		ack.Data = ""
 
@@ -191,16 +190,16 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	if msg.Idx == node.Index && msg.Term == node.Term {
+	if msg.Index == node.Index && msg.Term == node.Term {
 		log.Println("receive ack from", msg.Src)
-		node.VotesReceived[msg.Src] = ""
+		node.votesReceived[msg.Src] = ""
 	}
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
-	prevIndex := msg.Idx - 1
+	prevIndex := msg.Index - 1
 	prevTerm := msg.Term - 1
 	if prevIndex > 0 && prevTerm > 0 {
 		prev := node.entries[prevIndex]
@@ -214,14 +213,14 @@ func (node *Node)handleAppendEntry(msg *Message){
 		return
 	}
 
-	old := node.entries[msg.Idx]
+	old := node.entries[msg.Index]
 	if old != nil && old.Term != msg.Term {
 		// entry conflicts
 		delete(node.entries, old.Index)
 	}
 
 	entry := new(LogEntry)
-	entry.Index = msg.Idx
+	entry.Index = msg.Index
 	entry.Term = msg.Term
 	entry.Data = msg.Data
 	node.entries[entry.Index] = entry
