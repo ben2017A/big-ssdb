@@ -66,11 +66,16 @@ func (node *Node)Broadcast(msg *Message){
 
 func (node *Node)Tick(timeElapse int){
 	if node.Role == "candidate" {
-		if len(node.votesReceived) > (len(node.Members) + 1)/2 {
+		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
 			log.Println("convert to leader")
 			node.Role = "leader"
 			node.voteFor = ""
 			node.heartBeatTimeout = 0
+
+			for _, m := range node.Members {
+				m.NextIndex = node.Index + 1
+				m.MatchIndex = 0
+			}
 		}
 	}
 	if node.Role == "candidate" || node.Role == "follower" {
@@ -105,7 +110,6 @@ func (node *Node)onElectionTimeout(){
 	node.votesReceived = make(map[string]string)
 	// vote self
 	node.voteFor = node.Id
-	node.votesReceived[node.Id] = ""
 
 	msg := new(Message)
 	msg.Cmd = "RequestVote"
@@ -123,7 +127,7 @@ func (node *Node)onReplicationResendTimeout(rep *Replication){
 			msg.Index = rep.Index
 			msg.Term = rep.Term
 			msg.Data = rep.Data
-			log.Println("log retransmission")
+			log.Println("log retransmission", m.Id, rep.AckReceived)
 			node.Transport.Send(msg)
 		}
 	}
@@ -139,10 +143,6 @@ func (node *Node)onHeartBeatTimeout(){
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
-	if msg.Term < node.Term {
-		// TODO: tell sender to update term
-		return
-	}
 	if msg.Term > node.Term {
 		node.Term = msg.Term
 		if node.Role != "follower" {
@@ -154,6 +154,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 
 	if node.Role == "leader" {
 		if msg.Cmd == "AppendEntryAck" {
+			node.handleAppendEntryAck(msg)
 		}
 	}
 	if node.Role == "candidate" {
@@ -172,6 +173,11 @@ func (node *Node)HandleRaftMessage(msg *Message){
 }
 
 func (node *Node)handleRequestVote(msg *Message){
+	if msg.Term < node.Term {
+		// TODO: false Ack
+		return
+	}
+
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
 	if node.voteFor == "" && msg.Term == node.Term && msg.Index >= node.Index {
 		log.Println("vote for", msg.Src)
@@ -193,11 +199,16 @@ func (node *Node)handleRequestVote(msg *Message){
 func (node *Node)handleRequestVoteAck(msg *Message){
 	if msg.Index == node.Index && msg.Term == node.Term {
 		log.Println("receive ack from", msg.Src)
-		node.votesReceived[msg.Src] = ""
+		node.votesReceived[msg.Src] = "ok"
 	}
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
+	if msg.Term < node.Term {
+		// TODO: false Ack
+		return
+	}
+
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 	prevIndex := msg.Index - 1
@@ -206,18 +217,22 @@ func (node *Node)handleAppendEntry(msg *Message){
 		prev := node.entries[prevIndex]
 		if prev == nil || prev.Term != prevTerm {
 			// send false Ack
+			ack := new(Message)
+			ack.Cmd = "AppendEntryAck"
+			ack.Src = node.Id
+			ack.Dst = msg.Src
+			ack.Index = msg.Index
+			ack.Term = msg.Term;
+			ack.Data = "false"
+			node.Transport.Send(ack)
 			return
 		}
-	}
-
-	if msg.Data == "HeartBeat" {
-		return
 	}
 
 	old := node.entries[msg.Index]
 	if old != nil && old.Term != msg.Term {
 		// entry conflicts
-		delete(node.entries, old.Index)
+		delete(node.entries, msg.Index)
 	}
 
 	entry := new(LogEntry)
@@ -227,6 +242,30 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.entries[entry.Index] = entry
 
 	// send true Ack
+	ack := new(Message)
+	ack.Cmd = "AppendEntryAck"
+	ack.Src = node.Id
+	ack.Dst = msg.Src
+	ack.Index = msg.Index
+	ack.Term = msg.Term;
+	ack.Data = "true"
+	node.Transport.Send(ack)
+}
+
+func (node *Node)handleAppendEntryAck(msg *Message){
+	rep := node.replications[msg.Index]
+	if rep == nil {
+		return
+	}
+	if rep.Term != msg.Term {
+		return
+	}
+	rep.AckReceived[msg.Src] = "ok"
+
+	if len(rep.AckReceived) + 1 > (len(node.Members) + 1)/2 {
+		// 
+		log.Println("commit", rep.Index)
+	}
 }
 
 /* ############################################# */
@@ -235,15 +274,32 @@ func (node *Node)Write(data string){
 	node.Index += 1
 	log.Println("WAL.write", node.Index, node.Term, data)
 
-	rep := NewReplication()
-	rep.Term = node.Term
-	rep.Index = node.Index
-	rep.Data = data
-	rep.ResendTimeout = ResendTimeout
-	node.replications[rep.Index] = rep
+	entry := new(LogEntry)
+	entry.Index = node.Index
+	entry.Term = node.Term
+	entry.Data = data
 
-	msg := new(Message)
-	msg.Cmd = "AppendEntry"
-	msg.Data = data
-	node.Broadcast(msg)
+	node.entries[entry.Index] = entry
+	node.replicateEntries()
+}
+
+func (node *Node)replicateEntries(){
+	for _, m := range node.Members {
+		for{
+			entry := node.entries[m.NextIndex]
+			if entry == nil {
+				break;
+			}
+			m.NextIndex += 1
+
+			msg := new(Message)
+			msg.Cmd = "AppendEntry"
+			msg.Src = node.Id
+			msg.Dst = m.Id
+			msg.Index = entry.Index
+			msg.Term = entry.Term
+			msg.Data = entry.Data
+			node.Transport.Send(msg)
+		}
+	}
 }
