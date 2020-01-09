@@ -55,9 +55,10 @@ func main(){
 		case buf := <-transport.C:
 			msg := raft.DecodeMessage(buf);
 			if msg == nil {
+				log.Println("decode error:", buf)
 				continue
 			}
-			log.Printf("%#v\n", msg)
+			log.Printf("receive %s", string(msg.Encode()))
 			node.HandleMessage(msg)
 		}
 	}

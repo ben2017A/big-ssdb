@@ -35,7 +35,7 @@ func EncodeMessage(msg *Message) []byte{
 
 func DecodeMessage(data []byte) *Message{
 	s := string(data)
-	s = strings.Trim(s, " \t\n")
+	s = strings.Trim(s, "\n")
 	ps := strings.SplitN(s, " ", 6)
 	if len(ps) != 6 {
 		return nil

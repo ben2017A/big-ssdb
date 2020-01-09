@@ -31,8 +31,7 @@ func (tp *UdpTransport)start(){
 	go func(){
 		buf := make([]byte, 1024 * 64)
 		for{
-			n, raddr, _ := tp.conn.ReadFromUDP(buf)
-			fmt.Printf("%s < %s", raddr.String(), string(buf[:n]))
+			n, _, _ := tp.conn.ReadFromUDP(buf)
 			tp.C <- buf[:n]
 		}	
 	}()
