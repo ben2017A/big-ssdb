@@ -6,7 +6,7 @@ import (
 )
 
 const ElectionTimeout = 2 * 1000
-const RequestVoteTimeout = 500
+const RequestVoteTimeout = ElectionTimeout
 
 type Node struct{
 	Id string
@@ -21,6 +21,8 @@ type Node struct{
 	VoteFor string
 	VotesReceived map[string]string
 	ElectionTimeout int
+
+	Transport Transport
 }
 
 func (node *Node)Tick(timeElapse int){
@@ -46,7 +48,8 @@ func (node *Node)Tick(timeElapse int){
 				msg.Idx = node.Index
 				msg.Term = node.Term;
 				msg.Data = "please vote me"
-				log.Println("    send to", m.Addr, msg)
+
+				node.Transport.SendTo([]byte("abc\n"), msg.Dst)
 			}
 		}
 	}
