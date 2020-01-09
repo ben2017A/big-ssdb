@@ -6,30 +6,41 @@ import (
 	"time"
 	"log"
 	"math/rand"
+	"os"
+	"strconv"
 )
 
 
 const TimerInterval = 20
 
 func main(){
-	transport := raft.NewUdpTransport("127.0.0.1", 8001)
+	port := 8001
+	if len(os.Args) > 1 {
+		port, _ = strconv.Atoi(os.Args[1])
+	}
+
+	log.Println("server started at", port)
+
+	transport := raft.NewUdpTransport("127.0.0.1", port)
 	defer transport.Stop()
 
 	ticker := time.NewTicker(TimerInterval * time.Millisecond)
 	defer ticker.Stop()
 
 	node := new(raft.Node)
-	node.Id = "n1"
 	node.Role = "follower"
 	node.Term = 0
 	node.Index = 0
 	node.Members = make(map[string]*raft.Member)
 
-	{
+	if port == 8001 {
+		node.Id = "n1"
 		node.Members["n2"] = raft.NewMember("n2", "127.0.0.1:8002")
-		node.Members["n3"] = raft.NewMember("n3", "127.0.0.1:8003")
 		transport.Connect("n2", "127.0.0.1:8002")
-		transport.Connect("n3", "127.0.0.1:8003")
+	}else{
+		node.Id = "n2"
+		node.Members["n1"] = raft.NewMember("n1", "127.0.0.1:8001")
+		transport.Connect("n1", "127.0.0.1:8001")
 	}
 
 	node.VoteFor = ""

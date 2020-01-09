@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"strings"
 	"strconv"
 )
@@ -14,12 +15,25 @@ type Message struct{
 	Data string
 }
 
+func (m *Message)Encode() []byte{
+	return EncodeMessage(m)
+}
+
 func atou(s string) uint64{
 	n, _ := strconv.ParseUint(s, 10, 64)
 	return n
 }
 
-func DecodeMessage(data []byte) (*Message){
+func utoa(u uint64) string{
+	return fmt.Sprintf("%d", u)
+}
+
+func EncodeMessage(msg *Message) []byte{
+	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Idx), utoa(uint64(msg.Term)), msg.Data, "\n"}
+	return []byte(strings.Join(ps, " "))
+}
+
+func DecodeMessage(data []byte) *Message{
 	s := string(data)
 	s = strings.Trim(s, " \t\n")
 	ps := strings.SplitN(s, " ", 6)

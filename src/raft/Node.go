@@ -26,10 +26,16 @@ type Node struct{
 }
 
 func (node *Node)Tick(timeElapse int){
+	if node.Role == "candidate" {
+		if len(node.VotesReceived) > (len(node.Members) + 1)/2 {
+			log.Println("convert to leader")
+			node.Role = "leader"
+		}
+	}
 	if node.Role != "leader" {
 		node.ElectionTimeout -= timeElapse
 		if node.ElectionTimeout <= 0 {
-			node.ElectionTimeout = RequestVoteTimeout + rand.Intn(100)
+			node.ElectionTimeout = RequestVoteTimeout + rand.Intn(ElectionTimeout/2)
 
 			node.Role = "candidate"
 			node.Term += 1
@@ -49,7 +55,7 @@ func (node *Node)Tick(timeElapse int){
 				msg.Term = node.Term;
 				msg.Data = "please vote me"
 
-				node.Transport.SendTo([]byte("abc\n"), msg.Dst)
+				node.Transport.SendTo(msg.Encode(), msg.Dst)
 			}
 		}
 	}
@@ -77,10 +83,6 @@ func (node *Node)HandleMessage(msg *Message){
 		if msg.Cmd == "RequestVoteAck" {
 			if msg.Idx == node.Index && msg.Term == node.Term {
 				node.VotesReceived[msg.Src] = ""
-				if len(node.VotesReceived) > len(node.Members)/2 {
-					log.Printf("convert to leader")
-					node.Role = "leader"
-				}
 			}
 		}
 	}
@@ -88,12 +90,14 @@ func (node *Node)HandleMessage(msg *Message){
 		if msg.Cmd == "RequestVote" {
 			// node.VoteFor == msg.Src: retransimitted/duplicated RequestVote
 			if node.VoteFor == "" && msg.Term == node.Term && msg.Idx >= node.Index {
+				log.Println("vote for", msg.Src)
 				// send ack
 				node.VoteFor = msg.Src
+				node.ElectionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 			}
 		}
 		if msg.Cmd == "AppendEntry" {
-			node.ElectionTimeout = ElectionTimeout + rand.Intn(100)
+			node.ElectionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		}
 	}
 }
