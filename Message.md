@@ -13,7 +13,7 @@
 		ErrorAck(not used)
 			wrong srcId
 			wrong dstId
-		HeartBeat(leader -> follower, leaderCommitIndex)
+		UpdateTerm
 		RequestVote
 		RequestVoteAck
 		AppendEntry
