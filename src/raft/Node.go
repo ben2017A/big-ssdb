@@ -11,8 +11,8 @@ const RequestVoteTimeout = ElectionTimeout
 const ResendTimeout = 2000
 
 type LogEntry struct{
-	Term uint32
 	Index uint64
+	Term uint32
 	Data string
 }
 
@@ -69,6 +69,7 @@ func (node *Node)Tick(timeElapse int){
 		if len(node.votesReceived) > (len(node.Members) + 1)/2 {
 			log.Println("convert to leader")
 			node.Role = "leader"
+			node.voteFor = ""
 			node.heartBeatTimeout = 0
 		}
 	}

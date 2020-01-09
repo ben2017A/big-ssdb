@@ -1,8 +1,8 @@
 package raft
 
 type Replication struct{
-	Term uint32
 	Index uint64
+	Term uint32
 	Data string
 	AckReceived map[string]string
 	ResendTimeout int
