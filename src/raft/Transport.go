@@ -5,5 +5,5 @@ type Transport interface{
 	Connect(nodeId string, addr string)
 	Disconnect(nodeId string)
 
-	SendTo(buf []byte, nodeId string) int
+	Send(msg *Message) bool
 }

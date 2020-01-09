@@ -14,6 +14,8 @@ import (
 const TimerInterval = 20
 
 func main(){
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
 	port := 8001
 	if len(os.Args) > 1 {
 		port, _ = strconv.Atoi(os.Args[1])

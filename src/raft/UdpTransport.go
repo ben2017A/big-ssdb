@@ -50,15 +50,15 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 	delete(tp.dns, nodeId)
 }
 
-func (tp *UdpTransport)SendTo(buf []byte, nodeId string) int{
-	addr := tp.dns[nodeId]
+func (tp *UdpTransport)Send(msg *Message) bool{
+	addr := tp.dns[msg.Dst]
 	if addr == "" {
-		return -1
+		return false
 	}
 
-	log.Println("    send to", addr, strings.Trim(string(buf), " \t\n"))
-
+	buf := msg.Encode()
 	uaddr, _ := net.ResolveUDPAddr("udp", addr)
 	n, _ := tp.conn.WriteToUDP(buf, uaddr)
-	return n
+	log.Println("    send to", addr, strings.Trim(string(buf), "\n"))
+	return n > 0
 }

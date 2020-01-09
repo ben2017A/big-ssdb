@@ -5,7 +5,7 @@ import (
 	"math/rand"
 )
 
-const ElectionTimeout = 2 * 1000
+const ElectionTimeout = 5 * 1000
 const HeartBeatTimeout = (ElectionTimeout - 200)/3
 const RequestVoteTimeout = ElectionTimeout
 
@@ -50,7 +50,7 @@ func (node *Node)Tick(timeElapse int){
 				msg.Term = node.Term;
 				msg.Data = "I am leader"
 
-				node.Transport.SendTo(msg.Encode(), msg.Dst)
+				node.Transport.Send(msg)
 			}
 		}
 	}
@@ -77,7 +77,7 @@ func (node *Node)Tick(timeElapse int){
 				msg.Term = node.Term;
 				msg.Data = "please vote me"
 
-				node.Transport.SendTo(msg.Encode(), msg.Dst)
+				node.Transport.Send(msg)
 			}
 		}
 	}
@@ -125,7 +125,7 @@ func (node *Node)HandleMessage(msg *Message){
 				ack.Term = msg.Term;
 				ack.Data = ""
 
-				node.Transport.SendTo(ack.Encode(), ack.Dst)
+				node.Transport.Send(ack)
 			}
 		}
 		if msg.Cmd == "AppendEntry" {
