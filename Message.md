@@ -19,5 +19,6 @@
 		AppendEntry
 			Heartbeat
 			AddMember
+			DelMember
 			Entry
 		AppendEntryAck

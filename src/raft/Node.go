@@ -7,7 +7,7 @@ import (
 )
 
 const ElectionTimeout = 5 * 1000
-const HeartbeatTimeout   = 3 * 1000
+const HeartbeatTimeout   = 4 * 1000
 
 const RequestVoteTimeout = 1 * 1000
 const ReplicationTimeout = 1 * 1000
@@ -27,8 +27,8 @@ type Node struct{
 	requestVoteTimeout int
 
 	commitIndex uint64
-	lastEntry *Entry
-	entries map[uint64]*Entry
+	lastEntry *Entry // last entry in WALFile
+	entries map[uint64]*Entry // receive buffer
 
 	Transport Transport
 }
@@ -221,11 +221,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 	}
 
-	ae := DecodeAppendEntry(msg.Data)
+	entry := DecodeEntry(msg.Data)
 
-	if ae.Type == "Entry" {
-		entry := ae.Entry
-
+	if entry.Type == "Entry" {
 		old := node.entries[entry.Index]
 		if old != nil && old.Term != entry.Term {
 			log.Println("delete conflict entry")
@@ -239,6 +237,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			if next == nil {
 				break;
 			}
+			log.Println("WALFile.append", next.Encode())
 			node.lastEntry = next
 		}
 	
@@ -246,9 +245,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 
 	// update commitIndex
-	if node.commitIndex < ae.CommitIndex{
-		if ae.CommitIndex < node.lastEntry.Index {
-			node.commitIndex = ae.CommitIndex
+	if node.commitIndex < entry.CommitIndex{
+		if entry.CommitIndex <= node.lastEntry.Index {
+			node.commitIndex = entry.CommitIndex
 		}else{
 			node.commitIndex = node.lastEntry.Index
 		}
@@ -285,7 +284,13 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			return matchIndex[i] > matchIndex[j]
 		})
 		log.Println(matchIndex)
-		node.commitIndex = matchIndex[len(matchIndex)/2]
+		commitIndex := matchIndex[len(matchIndex)/2]
+
+		for idx := node.commitIndex + 1; idx <= commitIndex ; idx ++{
+			// commit idx
+			// entry := node.entries[idx]
+		}
+		node.commitIndex = commitIndex
 	}
 
 	node.replicateMember(m)
@@ -295,11 +300,13 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 func (node *Node)Write(data string){
 	entry := new(Entry)
+	entry.Type = "Entry"
+	entry.CommitIndex = node.commitIndex
 	entry.Index = node.lastEntry.Index + 1
 	entry.Term = node.Term
 	entry.Data = data
 
-	log.Println("WAL.write", entry.Index, entry.Term, entry.Data)
+	log.Println("WALFile.append", entry.Encode())
 	node.entries[entry.Index] = entry
 	node.lastEntry = entry
 
@@ -311,11 +318,10 @@ func (node *Node)Write(data string){
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
 
+	next := new(Entry)
+	next.Type = "Heartbeat"
+	next.CommitIndex = node.commitIndex
 	prev := node.entries[m.NextIndex - 1]
-
-	ae := new(AppendEntry)
-	ae.Type = "Heartbeat"
-	ae.CommitIndex = node.commitIndex
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -326,7 +332,7 @@ func (node *Node)heartbeatMember(m *Member){
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
-	msg.Data = ae.Encode()
+	msg.Data = next.Encode()
 	node.Transport.Send(msg)
 }
 
@@ -337,12 +343,8 @@ func (node *Node)replicateMember(m *Member){
 	if next == nil {
 		return;
 	}
+	next.CommitIndex = node.commitIndex
 	prev := node.entries[m.NextIndex - 1]
-
-	ae := new(AppendEntry)
-	ae.Type = "Entry"
-	ae.CommitIndex = node.commitIndex
-	ae.Entry = next
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -353,7 +355,7 @@ func (node *Node)replicateMember(m *Member){
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
-	msg.Data = ae.Encode()
+	msg.Data = next.Encode()
 	node.Transport.Send(msg)
 
 	m.HeartbeatTimeout = HeartbeatTimeout
