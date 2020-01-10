@@ -5,6 +5,7 @@ type Member struct{
 	Role string
 	Addr string
 
+	// sliding window
 	NextIndex uint64
 	MatchIndex uint64
 

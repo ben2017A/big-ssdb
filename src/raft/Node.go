@@ -2,6 +2,7 @@ package raft
 
 import (
 	"log"
+	"sort"
 	"math/rand"
 )
 
@@ -49,6 +50,11 @@ func (node *Node)becomeFollower(){
 	node.Role = "follower"
 	node.voteFor = ""
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+
+	for _, m := range node.Members {
+		// discover leader by receiving valid AppendEntry
+		m.Role = "follower"
+	}
 }
 
 func (node *Node)becomeCandidate(){
@@ -170,7 +176,7 @@ func (node *Node)handleRequestVote(msg *Message){
 			ack.Cmd = "RequestVoteAck"
 			ack.Src = node.Id
 			ack.Dst = msg.Src
-			ack.Term = msg.Term;
+			ack.Term = node.Term;
 			ack.PrevIndex = node.lastEntry.Index
 			ack.PrevTerm = node.lastEntry.Term
 			ack.Data = ""
@@ -186,69 +192,93 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	}
 }
 
+func (node *Node)sendAppendEntryAck(leaderId string, success bool){
+	ack := new(Message)
+	ack.Cmd = "AppendEntryAck"
+	ack.Src = node.Id
+	ack.Dst = leaderId
+	ack.Term = node.Term;
+	ack.PrevIndex = node.lastEntry.Index
+	ack.PrevTerm = node.lastEntry.Term
+	if success {
+		ack.Data = "true"
+	}else{
+		ack.Data = "false"
+	}
+	node.Transport.Send(ack)
+}
+
 func (node *Node)handleAppendEntry(msg *Message){
-	// if msg.Term < node.Term {
-	// 	// TODO: false Ack
-	// 	return
-	// }
-
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	node.Members[msg.Src].Role = "leader"
 
-	// prevIndex := msg.Index - 1
-	// prevTerm := msg.Term - 1
-	// if prevIndex > 0 && prevTerm > 0 {
-	// 	prev := node.entries[prevIndex]
-	// 	if prev == nil || prev.Term != prevTerm {
-	// 		// send false Ack
-	// 		ack := new(Message)
-	// 		ack.Cmd = "AppendEntryAck"
-	// 		ack.Src = node.Id
-	// 		ack.Dst = msg.Src
-	// 		ack.Index = msg.Index
-	// 		ack.Term = msg.Term;
-	// 		ack.Data = "false"
-	// 		node.Transport.Send(ack)
-	// 		return
-	// 	}
-	// }
+	if msg.PrevIndex > 0 && msg.PrevTerm > 0 {
+		prev := node.entries[msg.PrevIndex]
+		if prev == nil || prev.Term != msg.PrevTerm {
+			node.sendAppendEntryAck(msg.Src, false)
+			return
+		}
+	}
 
-	// old := node.entries[msg.Index]
-	// if old != nil && old.Term != msg.Term {
-	// 	// entry conflicts
-	// 	delete(node.entries, msg.Index)
-	// }
+	if msg.Data == "Keepalive" {
+		return
+	}
 
-	// entry := new(LogEntry)
-	// entry.Index = msg.Index
-	// entry.Term = msg.Term
-	// entry.Data = msg.Data
-	// node.entries[entry.Index] = entry
+	entry := DecodeEntry(msg.Data)
 
-	// // send true Ack
-	// ack := new(Message)
-	// ack.Cmd = "AppendEntryAck"
-	// ack.Src = node.Id
-	// ack.Dst = msg.Src
-	// ack.Index = msg.Index
-	// ack.Term = msg.Term;
-	// ack.Data = "true"
-	// node.Transport.Send(ack)
+	old := node.entries[entry.Index]
+	if old != nil && old.Term != entry.Term {
+		log.Println("delete conflict entry")
+		delete(node.entries, entry.Index)
+	}
+
+	if node.entries[entry.Index] == nil {
+		node.entries[entry.Index] = entry
+	}
+
+	for{
+		// increase lastLogIndex by 1, in case there are gaps between entries received
+		next := node.entries[node.lastEntry.Index + 1]
+		if next == nil {
+			break;
+		}
+		node.lastEntry = next
+	}
+
+	node.sendAppendEntryAck(msg.Src, true)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
-	// rep := node.replications[msg.Index]
-	// if rep == nil {
-	// 	return
-	// }
-	// if rep.Term != msg.Term {
-	// 	return
-	// }
-	// rep.AckReceived[msg.Src] = "ok"
+	m := node.Members[msg.Src]
 
-	// if len(rep.AckReceived) + 1 > (len(node.Members) + 1)/2 {
-	// 	// 
-	// 	log.Println("commit", rep.Index)
-	// }
+	if msg.Data == "false" {
+		m.NextIndex -= 1
+		if m.NextIndex < 1{
+			m.NextIndex = 1
+		}
+		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
+	}else{
+		if m.NextIndex <= msg.PrevIndex {
+			m.NextIndex = msg.PrevIndex + 1
+		}
+		if m.MatchIndex < msg.PrevIndex {
+			m.MatchIndex = msg.PrevIndex
+		}
+	
+		// commit log
+		// sort matchIndex[] in descend order, commitIndex = matchIndex[(n+1)/2]
+		matchIndex := make([]uint64, len(node.Members))
+		for _, m := range node.Members {
+			matchIndex = append(matchIndex, m.MatchIndex)
+		}
+		sort.Slice(matchIndex, func(i, j int) bool{
+			return matchIndex[i] > matchIndex[j]
+		})
+		log.Println(matchIndex)
+		// commitIndex := matchIndex[(len(matchIndex)+1)/2]
+	}
+
+	// node.replicateMember(m)
 }
 
 /* ############################################# */
@@ -268,26 +298,10 @@ func (node *Node)Write(data string){
 	}
 }
 
-func (node *Node)prevEntryForMember(m *Member) *Entry{
-	nextIndex := m.MatchIndex
-	if nextIndex == 0 {
-		nextIndex = m.NextIndex
-	}
-	return node.entries[nextIndex - 1]
-}
-
-func (node *Node)nextEntryForMember(m *Member) *Entry{
-	nextIndex := m.MatchIndex
-	if nextIndex == 0 {
-		nextIndex = m.NextIndex
-	}
-	return node.entries[nextIndex]
-}
-
 func (node *Node)keepaliveMember(m *Member){
 	m.KeepaliveTimeout = KeepaliveTimeout
 
-	prev := node.prevEntryForMember(m)
+	prev := node.entries[m.NextIndex - 1]
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -303,13 +317,14 @@ func (node *Node)keepaliveMember(m *Member){
 }
 
 func (node *Node)replicateMember(m *Member){
+	m.KeepaliveTimeout = KeepaliveTimeout
 	m.ReplicationTimeout = ReplicationTimeout
 
-	next := node.nextEntryForMember(m)
+	next := node.entries[m.NextIndex]
 	if next == nil {
 		return;
 	}
-	prev := node.prevEntryForMember(m)
+	prev := node.entries[m.NextIndex - 1]
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -322,8 +337,4 @@ func (node *Node)replicateMember(m *Member){
 	}
 	msg.Data = next.Encode()
 	node.Transport.Send(msg)
-
-	if m.NextIndex <= next.Index {
-		m.NextIndex = next.Index + 1
-	}
 }
