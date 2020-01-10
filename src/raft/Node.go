@@ -279,7 +279,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		// commitIndex := matchIndex[(len(matchIndex)+1)/2]
 	}
 
-	// node.replicateMember(m)
+	node.replicateMember(m)
 }
 
 /* ############################################# */

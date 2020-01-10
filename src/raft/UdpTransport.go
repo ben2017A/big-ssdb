@@ -34,8 +34,9 @@ func (tp *UdpTransport)start(){
 			n, _, _ := tp.conn.ReadFromUDP(buf)
 			data := make([]byte, n)
 			copy(data, buf[:n])
+			log.Printf("    receive < %s\n", strings.Trim(string(data), "\r\n"))
 			tp.C <- data
-		}	
+		}
 	}()
 }
 
@@ -61,6 +62,6 @@ func (tp *UdpTransport)Send(msg *Message) bool{
 	buf := []byte(msg.Encode())
 	uaddr, _ := net.ResolveUDPAddr("udp", addr)
 	n, _ := tp.conn.WriteToUDP(buf, uaddr)
-	log.Println("    send to", addr, strings.Trim(string(buf), "\r\n"))
+	log.Printf("    send > %s\n", strings.Trim(string(buf), "\r\n"))
 	return n > 0
 }

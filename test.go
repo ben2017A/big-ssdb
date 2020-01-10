@@ -60,7 +60,6 @@ func main(){
 				log.Println("decode error:", buf)
 				continue
 			}
-			log.Printf("receive (%s)\n", strings.Trim(string(msg.Encode()), "\r\n"))
 			node.HandleRaftMessage(msg)
 		case buf := <-serv.C:
 			s := string(buf)
