@@ -26,10 +26,7 @@ type Node struct{
 	electionTimeout int
 	requestVoteTimeout int
 
-	commitIndex uint64
-	lastEntry *Entry // last entry in WALFile
-	entries map[uint64]*Entry // receive buffer
-
+	store *Store
 	Transport Transport
 }
 
@@ -38,8 +35,7 @@ func NewNode() *Node{
 	node.Term = 0
 	node.Members = make(map[string]*Member)
 
-	node.lastEntry = new(Entry)
-	node.entries = make(map[uint64]*Entry)
+	node.store = NewStore()
 
 	node.electionTimeout = ElectionTimeout + rand.Intn(100)
 
@@ -103,8 +99,8 @@ func (node *Node)becomeCandidate(){
 		msg.Src = node.Id
 		msg.Dst = m.Id
 		msg.Term = node.Term;
-		msg.PrevIndex = node.lastEntry.Index
-		msg.PrevTerm = node.lastEntry.Term
+		msg.PrevIndex = node.store.LastIndex
+		msg.PrevTerm = node.store.LastTerm
 		msg.Data = "please vote me"
 		node.Transport.Send(msg)
 	}
@@ -119,7 +115,7 @@ func (node *Node)becomeLeader(){
 
 	for _, m := range node.Members {
 		m.Role = "follower"
-		m.NextIndex = node.lastEntry.Index + 1
+		m.NextIndex = node.store.LastIndex + 1
 		m.MatchIndex = 0
 		m.HeartbeatTimeout = 0
 		m.ReplicationTimeout = ReplicationTimeout
@@ -134,8 +130,8 @@ func (node *Node)heartbeatMember(m *Member){
 
 	next := new(Entry)
 	next.Type = "Heartbeat"
-	next.CommitIndex = node.commitIndex
-	prev := node.entries[m.NextIndex - 1]
+	next.CommitIndex = node.store.CommitIndex
+	prev := node.store.GetEntry(m.NextIndex - 1)
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -153,12 +149,12 @@ func (node *Node)heartbeatMember(m *Member){
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimeout = ReplicationTimeout
 
-	next := node.entries[m.NextIndex]
+	next := node.store.GetEntry(m.NextIndex)
 	if next == nil {
 		return;
 	}
-	next.CommitIndex = node.commitIndex
-	prev := node.entries[m.NextIndex - 1]
+	next.CommitIndex = node.store.CommitIndex
+	prev := node.store.GetEntry(m.NextIndex - 1)
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -214,7 +210,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 func (node *Node)handleRequestVote(msg *Message){
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
 	if node.voteFor == "" {
-		if msg.Term == node.Term && msg.PrevIndex >= node.lastEntry.Index {
+		if msg.Term == node.Term && msg.PrevIndex >= node.store.LastIndex {
 			log.Println("vote for", msg.Src)
 			node.voteFor = msg.Src
 			node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
@@ -224,8 +220,8 @@ func (node *Node)handleRequestVote(msg *Message){
 			ack.Src = node.Id
 			ack.Dst = msg.Src
 			ack.Term = node.Term;
-			ack.PrevIndex = node.lastEntry.Index
-			ack.PrevTerm = node.lastEntry.Term
+			ack.PrevIndex = node.store.LastIndex
+			ack.PrevTerm = node.store.LastTerm
 			ack.Data = ""
 			node.Transport.Send(ack)
 		}
@@ -233,7 +229,7 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	if msg.Term == node.Term && msg.PrevIndex <= node.lastEntry.Index {
+	if msg.Term == node.Term && msg.PrevIndex <= node.store.LastIndex {
 		log.Println("receive ack from", msg.Src)
 		node.votesReceived[msg.Src] = "ok"
 
@@ -250,8 +246,8 @@ func (node *Node)sendAppendEntryAck(leaderId string, success bool){
 	ack.Src = node.Id
 	ack.Dst = leaderId
 	ack.Term = node.Term;
-	ack.PrevIndex = node.lastEntry.Index
-	ack.PrevTerm = node.lastEntry.Term
+	ack.PrevIndex = node.store.LastIndex
+	ack.PrevTerm = node.store.LastTerm
 	if success {
 		ack.Data = "true"
 	}else{
@@ -265,7 +261,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.Members[msg.Src].Role = "leader"
 
 	if msg.PrevIndex > 0 && msg.PrevTerm > 0 {
-		prev := node.entries[msg.PrevIndex]
+		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil || prev.Term != msg.PrevTerm {
 			node.sendAppendEntryAck(msg.Src, false)
 			return
@@ -275,21 +271,18 @@ func (node *Node)handleAppendEntry(msg *Message){
 	entry := DecodeEntry(msg.Data)
 
 	if entry.Type == "Entry" {
-		old := node.entries[entry.Index]
+		old := node.store.GetEntry(entry.Index)
 		if old != nil && old.Term != entry.Term {
-			log.Println("delete conflict entry")
-			delete(node.entries, entry.Index)
+			log.Println("overwrite conflict entry")
 		}
-		node.entries[entry.Index] = entry
-	
-		node.flushEntryInRecvBuffer()
+		node.store.AppendEntry(*entry)
 		node.sendAppendEntryAck(msg.Src, true)	
 	}
 
 	// update commitIndex
-	if node.commitIndex < entry.CommitIndex{
-		commitIndex := MinU64(entry.CommitIndex, node.lastEntry.Index)
-		node.commitEntryToIndex(commitIndex)
+	if node.store.CommitIndex < entry.CommitIndex{
+		commitIndex := MinU64(entry.CommitIndex, node.store.LastIndex)
+		node.store.CommitEntry(commitIndex)
 	}
 }
 
@@ -306,7 +299,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	
 		// sort matchIndex[] in descend order
 		matchIndex := make([]uint64, len(node.Members) + 1)
-		matchIndex[0] = node.lastEntry.Index
+		matchIndex[0] = node.store.LastIndex
 		for _, m := range node.Members {
 			matchIndex = append(matchIndex, m.MatchIndex)
 		}
@@ -315,7 +308,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		})
 		log.Println(matchIndex)
 		commitIndex := matchIndex[len(matchIndex)/2]
-		node.commitEntryToIndex(commitIndex)
+		node.store.CommitEntry(commitIndex)
 	}
 
 	node.replicateMember(m)
@@ -323,42 +316,14 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 /* ############################################# */
 
-func (node *Node)flushEntryInRecvBuffer(){
-	for{
-		// increase lastLogIndex by 1, in case there are gaps between entries received
-		next := node.entries[node.lastEntry.Index + 1]
-		if next == nil {
-			break;
-		}
-		next.CommitIndex = node.commitIndex
-
-		// TODO:
-		log.Println("WALFile.append", next.Encode())
-		node.lastEntry = next
-	}
-}
-
-func (node *Node)commitEntryToIndex(commitIndex uint64){
-	for idx := node.commitIndex + 1; idx <= commitIndex ; idx ++{
-		// TODO: commit idx
-		// entry := node.entries[idx]
-		node.commitIndex = idx
-		log.Println("commit #", node.commitIndex)
-	}
-}
-
 func (node *Node)Write(data string){
 	entry := new(Entry)
 	entry.Type = "Entry"
-	entry.CommitIndex = node.commitIndex
-	entry.Index = node.lastEntry.Index + 1
+	entry.Index = node.store.LastIndex + 1
 	entry.Term = node.Term
 	entry.Data = data
-
-	node.entries[entry.Index] = entry
-	// TODO:
-	log.Println("WALFile.append", entry.Encode())
-	node.lastEntry = entry
+	
+	node.store.AppendEntry(*entry)
 
 	for _, m := range node.Members {
 		node.replicateMember(m)
