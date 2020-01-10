@@ -32,6 +32,7 @@ func (store *Store)AppendEntry(entry Entry){
 func (store *Store)CommitEntry(commitIndex uint64){
 	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
 		// TODO: commit idx
+		// for each entry, apply
 		log.Println("commit #", idx)
 		store.CommitIndex = idx
 	}
