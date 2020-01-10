@@ -256,6 +256,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		if m.NextIndex < 1{
 			m.NextIndex = 1
 		}
+		m.MatchIndex = 0
 		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 	}else{
 		if m.NextIndex <= msg.PrevIndex {
@@ -317,7 +318,6 @@ func (node *Node)keepaliveMember(m *Member){
 }
 
 func (node *Node)replicateMember(m *Member){
-	m.KeepaliveTimeout = KeepaliveTimeout
 	m.ReplicationTimeout = ReplicationTimeout
 
 	next := node.entries[m.NextIndex]
@@ -337,4 +337,6 @@ func (node *Node)replicateMember(m *Member){
 	}
 	msg.Data = next.Encode()
 	node.Transport.Send(msg)
+
+	m.KeepaliveTimeout = KeepaliveTimeout
 }

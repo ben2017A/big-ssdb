@@ -32,7 +32,9 @@ func (tp *UdpTransport)start(){
 		buf := make([]byte, 1024 * 64)
 		for{
 			n, _, _ := tp.conn.ReadFromUDP(buf)
-			tp.C <- buf[:n]
+			data := make([]byte, n)
+			copy(data, buf[:n])
+			tp.C <- data
 		}	
 	}()
 }

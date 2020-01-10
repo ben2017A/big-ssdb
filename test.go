@@ -1,7 +1,7 @@
 package main
 
 import (
-	// "fmt"
+	"fmt"
 	"raft"
 	"time"
 	"log"
@@ -48,6 +48,8 @@ func main(){
 
 	node.Transport = transport
 
+	seq := 1
+
 	for{
 		select{
 		case <-ticker.C:
@@ -66,7 +68,8 @@ func main(){
 			ps := strings.Split(s, " ")
 			log.Println(ps)
 			if node.Role == "leader" {
-				node.Write("set k 1")
+				node.Write(fmt.Sprintf("[%d]", seq))
+				seq ++
 			}
 		}
 	}
