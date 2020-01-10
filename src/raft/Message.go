@@ -1,9 +1,7 @@
 package raft
 
 import (
-	"fmt"
 	"strings"
-	"strconv"
 )
 
 type Message struct{
@@ -11,43 +9,24 @@ type Message struct{
 	Src string
 	Dst string
 	Term uint32
-	PrevLogIndex uint64
-	PrevLogTerm  uint32
+	PrevIndex uint64
+	PrevTerm  uint32
 	Data string
 }
 
-func (m *Message)Encode() []byte{
+func (m *Message)Encode() string{
 	return EncodeMessage(m)
 }
 
-func atou(s string) uint32{
-	n, _ := strconv.ParseUint(s, 10, 32)
-	return uint32(n)
+func EncodeMessage(msg *Message) string{
+	ps := []string{msg.Cmd, msg.Src, msg.Dst, Utoa(msg.Term),
+		Utoa64(msg.PrevIndex), Utoa(msg.PrevTerm), msg.Data}
+	return strings.Join(ps, " ")
 }
 
-func utoa(u uint32) string{
-	return fmt.Sprintf("%d", u)
-}
-
-func atou64(s string) uint64{
-	n, _ := strconv.ParseUint(s, 10, 64)
-	return n
-}
-
-func utoa64(u uint64) string{
-	return fmt.Sprintf("%d", u)
-}
-
-func EncodeMessage(msg *Message) []byte{
-	ps := []string{msg.Cmd, msg.Src, msg.Dst, utoa(msg.Term),
-		utoa64(msg.PrevLogIndex), utoa(msg.PrevLogTerm), msg.Data}
-	return []byte(strings.Join(ps, " "))
-}
-
-func DecodeMessage(buf []byte) *Message{
-	s := string(buf)
-	s = strings.Trim(s, "\r\n")
-	ps := strings.SplitN(s, " ", 7)
+func DecodeMessage(buf string) *Message{
+	buf = strings.Trim(buf, "\r\n")
+	ps := strings.SplitN(buf, " ", 7)
 	if len(ps) != 7 {
 		return nil
 	}
@@ -55,9 +34,9 @@ func DecodeMessage(buf []byte) *Message{
 	msg.Cmd = ps[0]
 	msg.Src = ps[1]
 	msg.Dst = ps[2]
-	msg.Term = atou(ps[3])
-	msg.PrevLogIndex = atou64(ps[4])
-	msg.PrevLogTerm = atou(ps[5])
+	msg.Term = Atou(ps[3])
+	msg.PrevIndex = Atou64(ps[4])
+	msg.PrevTerm = Atou(ps[5])
 	msg.Data = ps[6]
 	return msg
 }

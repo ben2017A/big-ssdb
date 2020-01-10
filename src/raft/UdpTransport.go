@@ -56,7 +56,7 @@ func (tp *UdpTransport)Send(msg *Message) bool{
 		return false
 	}
 
-	buf := msg.Encode()
+	buf := []byte(msg.Encode())
 	uaddr, _ := net.ResolveUDPAddr("udp", addr)
 	n, _ := tp.conn.WriteToUDP(buf, uaddr)
 	log.Println("    send to", addr, strings.Trim(string(buf), "\r\n"))

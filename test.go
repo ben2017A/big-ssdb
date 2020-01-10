@@ -53,7 +53,7 @@ func main(){
 		case <-ticker.C:
 			node.Tick(TimerInterval)
 		case buf := <-transport.C:
-			msg := raft.DecodeMessage(buf);
+			msg := raft.DecodeMessage(string(buf));
 			if msg == nil {
 				log.Println("decode error:", buf)
 				continue

@@ -7,6 +7,9 @@ type Member struct{
 
 	NextIndex uint64
 	MatchIndex uint64
+
+	KeepaliveTimeout int
+	ReplicationTimeout int
 }
 
 func NewMember(id, addr string) *Member{
