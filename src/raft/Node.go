@@ -54,10 +54,6 @@ func (node *Node)Tick(timeElapse int){
 			node.becomeFollower()
 			return
 		}
-		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
-			log.Println("Got majority votes")
-			node.becomeLeader()
-		}
 	}
 	if node.Role == "follower" {
 		node.electionTimeout -= timeElapse
@@ -83,7 +79,7 @@ func (node *Node)Tick(timeElapse int){
 }
 
 func (node *Node)becomeFollower(){
-	log.Println("convert", node.Role, " => follower")
+	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.voteFor = ""
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
@@ -95,7 +91,7 @@ func (node *Node)becomeFollower(){
 }
 
 func (node *Node)becomeCandidate(){
-	log.Println("convert", node.Role, " => candidate")
+	log.Println("convert", node.Role, "=> candidate")
 	node.Role = "candidate"
 	node.Term += 1
 	node.voteFor = node.Id
@@ -117,15 +113,17 @@ func (node *Node)becomeCandidate(){
 }
 
 func (node *Node)becomeLeader(){
-	log.Println("convert", node.Role, " => leader")
+	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
 	node.voteFor = ""
 
 	for _, m := range node.Members {
+		m.Role = "follower"
 		m.NextIndex = node.lastEntry.Index + 1
 		m.MatchIndex = 0
 		m.HeartbeatTimeout = 0
-		m.ReplicationTimeout = 0
+		m.ReplicationTimeout = ReplicationTimeout
+		node.heartbeatMember(m)
 	}
 }
 
@@ -238,6 +236,11 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	if msg.Term == node.Term && msg.PrevIndex <= node.lastEntry.Index {
 		log.Println("receive ack from", msg.Src)
 		node.votesReceived[msg.Src] = "ok"
+
+		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+			log.Println("Got majority votes")
+			node.becomeLeader()
+		}
 	}
 }
 
@@ -328,7 +331,7 @@ func (node *Node)flushEntryInRecvBuffer(){
 			break;
 		}
 		next.CommitIndex = node.commitIndex
-		
+
 		// TODO:
 		log.Println("WALFile.append", next.Encode())
 		node.lastEntry = next
@@ -352,9 +355,9 @@ func (node *Node)Write(data string){
 	entry.Term = node.Term
 	entry.Data = data
 
+	node.entries[entry.Index] = entry
 	// TODO:
 	log.Println("WALFile.append", entry.Encode())
-	node.entries[entry.Index] = entry
 	node.lastEntry = entry
 
 	for _, m := range node.Members {
