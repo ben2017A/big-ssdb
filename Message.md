@@ -16,6 +16,7 @@
 		UpdateTerm
 		RequestVote
 		RequestVoteAck
+		CommitEntry(leaderCommitLogIndex, leaderCommitLogTerm)
 		AppendEntry
 			AddMember
 			HeartBeat
