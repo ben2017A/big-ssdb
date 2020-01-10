@@ -9,7 +9,7 @@ type Member struct{
 	NextIndex uint64
 	MatchIndex uint64
 
-	KeepaliveTimeout int
+	HeartbeatTimeout int
 	ReplicationTimeout int
 }
 

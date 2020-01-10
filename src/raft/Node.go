@@ -7,7 +7,7 @@ import (
 )
 
 const ElectionTimeout = 5 * 1000
-const KeepaliveTimeout   = 3 * 1000
+const HeartbeatTimeout   = 3 * 1000
 
 const RequestVoteTimeout = 1 * 1000
 const ReplicationTimeout = 1 * 1000
@@ -26,6 +26,7 @@ type Node struct{
 	electionTimeout int
 	requestVoteTimeout int
 
+	commitIndex uint64
 	lastEntry *Entry
 	entries map[uint64]*Entry
 
@@ -87,7 +88,7 @@ func (node *Node)becomeLeader(){
 	for _, m := range node.Members {
 		m.NextIndex = node.lastEntry.Index + 1
 		m.MatchIndex = 0
-		m.KeepaliveTimeout = 0
+		m.HeartbeatTimeout = 0
 		m.ReplicationTimeout = 0
 	}
 }
@@ -119,10 +120,10 @@ func (node *Node)Tick(timeElapse int){
 				node.replicateMember(m)
 			}
 
-			m.KeepaliveTimeout -= timeElapse
-			if m.KeepaliveTimeout <= 0 {
-				log.Println("Keepalive timeout for node", m.Id)
-				node.keepaliveMember(m)
+			m.HeartbeatTimeout -= timeElapse
+			if m.HeartbeatTimeout <= 0 {
+				// log.Println("Heartbeat timeout for node", m.Id)
+				node.heartbeatMember(m)
 			}
 		}
 	}
@@ -220,32 +221,39 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 	}
 
-	if msg.Data == "Keepalive" {
-		return
-	}
+	ae := DecodeAppendEntry(msg.Data)
 
-	entry := DecodeEntry(msg.Data)
+	if ae.Type == "Entry" {
+		entry := ae.Entry
 
-	old := node.entries[entry.Index]
-	if old != nil && old.Term != entry.Term {
-		log.Println("delete conflict entry")
-		delete(node.entries, entry.Index)
-	}
-
-	if node.entries[entry.Index] == nil {
-		node.entries[entry.Index] = entry
-	}
-
-	for{
-		// increase lastLogIndex by 1, in case there are gaps between entries received
-		next := node.entries[node.lastEntry.Index + 1]
-		if next == nil {
-			break;
+		old := node.entries[entry.Index]
+		if old != nil && old.Term != entry.Term {
+			log.Println("delete conflict entry")
+			delete(node.entries, entry.Index)
 		}
-		node.lastEntry = next
+		node.entries[entry.Index] = entry
+	
+		for{
+			// increase lastLogIndex by 1, in case there are gaps between entries received
+			next := node.entries[node.lastEntry.Index + 1]
+			if next == nil {
+				break;
+			}
+			node.lastEntry = next
+		}
+	
+		node.sendAppendEntryAck(msg.Src, true)	
 	}
 
-	node.sendAppendEntryAck(msg.Src, true)
+	// update commitIndex
+	if node.commitIndex < ae.CommitIndex{
+		if ae.CommitIndex < node.lastEntry.Index {
+			node.commitIndex = ae.CommitIndex
+		}else{
+			node.commitIndex = node.lastEntry.Index
+		}
+		log.Println("update commitIndex to", node.commitIndex)
+	}
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -267,8 +275,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		}
 	
 		// commit log
-		// sort matchIndex[] in descend order, commitIndex = matchIndex[(n+1)/2]
-		matchIndex := make([]uint64, len(node.Members))
+		// sort matchIndex[] in descend order, commitIndex = matchIndex[n/2]
+		matchIndex := make([]uint64, len(node.Members) + 1)
+		matchIndex[0] = node.lastEntry.Index
 		for _, m := range node.Members {
 			matchIndex = append(matchIndex, m.MatchIndex)
 		}
@@ -276,7 +285,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			return matchIndex[i] > matchIndex[j]
 		})
 		log.Println(matchIndex)
-		// commitIndex := matchIndex[(len(matchIndex)+1)/2]
+		node.commitIndex = matchIndex[len(matchIndex)/2]
 	}
 
 	node.replicateMember(m)
@@ -299,10 +308,14 @@ func (node *Node)Write(data string){
 	}
 }
 
-func (node *Node)keepaliveMember(m *Member){
-	m.KeepaliveTimeout = KeepaliveTimeout
+func (node *Node)heartbeatMember(m *Member){
+	m.HeartbeatTimeout = HeartbeatTimeout
 
 	prev := node.entries[m.NextIndex - 1]
+
+	ae := new(AppendEntry)
+	ae.Type = "Heartbeat"
+	ae.CommitIndex = node.commitIndex
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
@@ -313,7 +326,7 @@ func (node *Node)keepaliveMember(m *Member){
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
-	msg.Data = "Keepalive"
+	msg.Data = ae.Encode()
 	node.Transport.Send(msg)
 }
 
@@ -326,6 +339,11 @@ func (node *Node)replicateMember(m *Member){
 	}
 	prev := node.entries[m.NextIndex - 1]
 
+	ae := new(AppendEntry)
+	ae.Type = "Entry"
+	ae.CommitIndex = node.commitIndex
+	ae.Entry = next
+
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
 	msg.Src = node.Id
@@ -335,8 +353,8 @@ func (node *Node)replicateMember(m *Member){
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
-	msg.Data = next.Encode()
+	msg.Data = ae.Encode()
 	node.Transport.Send(msg)
 
-	m.KeepaliveTimeout = KeepaliveTimeout
+	m.HeartbeatTimeout = HeartbeatTimeout
 }
