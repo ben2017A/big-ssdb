@@ -46,6 +46,42 @@ func NewNode() *Node{
 	return node
 }
 
+func (node *Node)Tick(timeElapse int){
+	if node.Role == "candidate" {
+		node.requestVoteTimeout -= timeElapse
+		if node.requestVoteTimeout <= 0 {
+			log.Println("RequestVote timeout")
+			node.becomeFollower()
+			return
+		}
+		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+			log.Println("Got majority votes")
+			node.becomeLeader()
+		}
+	}
+	if node.Role == "follower" {
+		node.electionTimeout -= timeElapse
+		if node.electionTimeout <= 0 {
+			log.Println("Election timeout")
+			node.becomeCandidate()
+		}
+	}
+	if node.Role == "leader" {
+		for _, m := range node.Members {
+			m.ReplicationTimeout -= timeElapse
+			if m.ReplicationTimeout <= 0 {
+				node.replicateMember(m)
+			}
+
+			m.HeartbeatTimeout -= timeElapse
+			if m.HeartbeatTimeout <= 0 {
+				// log.Println("Heartbeat timeout for node", m.Id)
+				node.heartbeatMember(m)
+			}
+		}
+	}
+}
+
 func (node *Node)becomeFollower(){
 	log.Println("convert", node.Role, " => follower")
 	node.Role = "follower"
@@ -93,40 +129,52 @@ func (node *Node)becomeLeader(){
 	}
 }
 
-func (node *Node)Tick(timeElapse int){
-	if node.Role == "candidate" {
-		node.requestVoteTimeout -= timeElapse
-		if node.requestVoteTimeout <= 0 {
-			log.Println("RequestVote timeout")
-			node.becomeFollower()
-			return
-		}
-		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
-			log.Println("Got majority votes")
-			node.becomeLeader()
-		}
-	}
-	if node.Role == "follower" {
-		node.electionTimeout -= timeElapse
-		if node.electionTimeout <= 0 {
-			log.Println("Election timeout")
-			node.becomeCandidate()
-		}
-	}
-	if node.Role == "leader" {
-		for _, m := range node.Members {
-			m.ReplicationTimeout -= timeElapse
-			if m.ReplicationTimeout <= 0 {
-				node.replicateMember(m)
-			}
+/* ############################################# */
 
-			m.HeartbeatTimeout -= timeElapse
-			if m.HeartbeatTimeout <= 0 {
-				// log.Println("Heartbeat timeout for node", m.Id)
-				node.heartbeatMember(m)
-			}
-		}
+func (node *Node)heartbeatMember(m *Member){
+	m.HeartbeatTimeout = HeartbeatTimeout
+
+	next := new(Entry)
+	next.Type = "Heartbeat"
+	next.CommitIndex = node.commitIndex
+	prev := node.entries[m.NextIndex - 1]
+
+	msg := new(Message)
+	msg.Cmd = "AppendEntry"
+	msg.Src = node.Id
+	msg.Dst = m.Id
+	msg.Term = node.Term
+	if prev != nil {
+		msg.PrevIndex = prev.Index
+		msg.PrevTerm = prev.Term
 	}
+	msg.Data = next.Encode()
+	node.Transport.Send(msg)
+}
+
+func (node *Node)replicateMember(m *Member){
+	m.ReplicationTimeout = ReplicationTimeout
+
+	next := node.entries[m.NextIndex]
+	if next == nil {
+		return;
+	}
+	next.CommitIndex = node.commitIndex
+	prev := node.entries[m.NextIndex - 1]
+
+	msg := new(Message)
+	msg.Cmd = "AppendEntry"
+	msg.Src = node.Id
+	msg.Dst = m.Id
+	msg.Term = node.Term
+	if prev != nil {
+		msg.PrevIndex = prev.Index
+		msg.PrevTerm = prev.Term
+	}
+	msg.Data = next.Encode()
+	node.Transport.Send(msg)
+
+	m.HeartbeatTimeout = HeartbeatTimeout
 }
 
 /* ############################################# */
@@ -231,27 +279,14 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 		node.entries[entry.Index] = entry
 	
-		for{
-			// increase lastLogIndex by 1, in case there are gaps between entries received
-			next := node.entries[node.lastEntry.Index + 1]
-			if next == nil {
-				break;
-			}
-			log.Println("WALFile.append", next.Encode())
-			node.lastEntry = next
-		}
-	
+		node.flushEntryInRecvBuffer()
 		node.sendAppendEntryAck(msg.Src, true)	
 	}
 
 	// update commitIndex
 	if node.commitIndex < entry.CommitIndex{
-		if entry.CommitIndex <= node.lastEntry.Index {
-			node.commitIndex = entry.CommitIndex
-		}else{
-			node.commitIndex = node.lastEntry.Index
-		}
-		log.Println("update commitIndex to", node.commitIndex)
+		commitIndex := MinU64(entry.CommitIndex, node.lastEntry.Index)
+		node.commitEntryToIndex(commitIndex)
 	}
 }
 
@@ -259,22 +294,14 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
 
 	if msg.Data == "false" {
-		m.NextIndex -= 1
-		if m.NextIndex < 1{
-			m.NextIndex = 1
-		}
+		m.NextIndex = MaxU64(1, m.NextIndex - 1)
 		m.MatchIndex = 0
 		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 	}else{
-		if m.NextIndex <= msg.PrevIndex {
-			m.NextIndex = msg.PrevIndex + 1
-		}
-		if m.MatchIndex < msg.PrevIndex {
-			m.MatchIndex = msg.PrevIndex
-		}
+		m.NextIndex = MaxU64(m.NextIndex, msg.PrevIndex + 1)
+		m.MatchIndex = MaxU64(m.MatchIndex, msg.PrevIndex)
 	
-		// commit log
-		// sort matchIndex[] in descend order, commitIndex = matchIndex[n/2]
+		// sort matchIndex[] in descend order
 		matchIndex := make([]uint64, len(node.Members) + 1)
 		matchIndex[0] = node.lastEntry.Index
 		for _, m := range node.Members {
@@ -285,18 +312,34 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		})
 		log.Println(matchIndex)
 		commitIndex := matchIndex[len(matchIndex)/2]
-
-		for idx := node.commitIndex + 1; idx <= commitIndex ; idx ++{
-			// commit idx
-			// entry := node.entries[idx]
-		}
-		node.commitIndex = commitIndex
+		node.commitEntryToIndex(commitIndex)
 	}
 
 	node.replicateMember(m)
 }
 
 /* ############################################# */
+
+func (node *Node)flushEntryInRecvBuffer(){
+	for{
+		// increase lastLogIndex by 1, in case there are gaps between entries received
+		next := node.entries[node.lastEntry.Index + 1]
+		if next == nil {
+			break;
+		}
+		log.Println("WALFile.append", next.Encode())
+		node.lastEntry = next
+	}
+}
+
+func (node *Node)commitEntryToIndex(commitIndex uint64){
+	for idx := node.commitIndex + 1; idx <= commitIndex ; idx ++{
+		// commit idx
+		// entry := node.entries[idx]
+		node.commitIndex = idx
+		log.Println("commit #", node.commitIndex)
+	}
+}
 
 func (node *Node)Write(data string){
 	entry := new(Entry)
@@ -315,48 +358,4 @@ func (node *Node)Write(data string){
 	}
 }
 
-func (node *Node)heartbeatMember(m *Member){
-	m.HeartbeatTimeout = HeartbeatTimeout
-
-	next := new(Entry)
-	next.Type = "Heartbeat"
-	next.CommitIndex = node.commitIndex
-	prev := node.entries[m.NextIndex - 1]
-
-	msg := new(Message)
-	msg.Cmd = "AppendEntry"
-	msg.Src = node.Id
-	msg.Dst = m.Id
-	msg.Term = node.Term
-	if prev != nil {
-		msg.PrevIndex = prev.Index
-		msg.PrevTerm = prev.Term
-	}
-	msg.Data = next.Encode()
-	node.Transport.Send(msg)
-}
-
-func (node *Node)replicateMember(m *Member){
-	m.ReplicationTimeout = ReplicationTimeout
-
-	next := node.entries[m.NextIndex]
-	if next == nil {
-		return;
-	}
-	next.CommitIndex = node.commitIndex
-	prev := node.entries[m.NextIndex - 1]
-
-	msg := new(Message)
-	msg.Cmd = "AppendEntry"
-	msg.Src = node.Id
-	msg.Dst = m.Id
-	msg.Term = node.Term
-	if prev != nil {
-		msg.PrevIndex = prev.Index
-		msg.PrevTerm = prev.Term
-	}
-	msg.Data = next.Encode()
-	node.Transport.Send(msg)
-
-	m.HeartbeatTimeout = HeartbeatTimeout
-}
+/* ############################################# */

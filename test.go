@@ -73,7 +73,3 @@ func main(){
 		}
 	}
 }
-
-type UdpApi struct{
-
-}

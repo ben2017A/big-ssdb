@@ -13,7 +13,7 @@
 		ErrorAck(not used)
 			wrong srcId
 			wrong dstId
-		UpdateTerm
+		Noop
 		RequestVote
 		RequestVoteAck
 		AppendEntry
