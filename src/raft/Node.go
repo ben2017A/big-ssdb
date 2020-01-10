@@ -327,6 +327,9 @@ func (node *Node)flushEntryInRecvBuffer(){
 		if next == nil {
 			break;
 		}
+		next.CommitIndex = node.commitIndex
+		
+		// TODO:
 		log.Println("WALFile.append", next.Encode())
 		node.lastEntry = next
 	}
@@ -334,7 +337,7 @@ func (node *Node)flushEntryInRecvBuffer(){
 
 func (node *Node)commitEntryToIndex(commitIndex uint64){
 	for idx := node.commitIndex + 1; idx <= commitIndex ; idx ++{
-		// commit idx
+		// TODO: commit idx
 		// entry := node.entries[idx]
 		node.commitIndex = idx
 		log.Println("commit #", node.commitIndex)
@@ -349,6 +352,7 @@ func (node *Node)Write(data string){
 	entry.Term = node.Term
 	entry.Data = data
 
+	// TODO:
 	log.Println("WALFile.append", entry.Encode())
 	node.entries[entry.Index] = entry
 	node.lastEntry = entry
