@@ -32,13 +32,13 @@ func (store *Store)AppendEntry(entry Entry){
 func (store *Store)CommitEntry(commitIndex uint64){
 	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
 		// TODO: commit idx
-		// for each entry, apply
+		// for each entry, apply to state machine
 		log.Println("commit #", idx)
 		store.CommitIndex = idx
 	}
 }
 
-func (store *Store)FlushEntryBuffer(){
+func (store *Store)flushEntryBuffer(){
 	for{
 		next := store.GetEntry(store.LastIndex + 1)
 		if next == nil {
