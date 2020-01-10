@@ -45,14 +45,14 @@ func NewNode() *Node{
 }
 
 func (node *Node)becomeFollower(){
-	log.Println("convert to follower from", node.Role)
+	log.Println("convert", node.Role, " => follower")
 	node.Role = "follower"
 	node.voteFor = ""
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 }
 
 func (node *Node)becomeCandidate(){
-	log.Println("convert to candidate from", node.Role)
+	log.Println("convert", node.Role, " => candidate")
 	node.Role = "candidate"
 	node.Term += 1
 	node.voteFor = node.Id
@@ -74,7 +74,7 @@ func (node *Node)becomeCandidate(){
 }
 
 func (node *Node)becomeLeader(){
-	log.Println("convert to leader from", node.Role)
+	log.Println("convert", node.Role, " => leader")
 	node.Role = "leader"
 	node.voteFor = ""
 
@@ -261,6 +261,7 @@ func (node *Node)Write(data string){
 
 	log.Println("WAL.write", entry.Index, entry.Term, entry.Data)
 	node.entries[entry.Index] = entry
+	node.lastEntry = entry
 
 	for _, m := range node.Members {
 		node.replicateMember(m)
