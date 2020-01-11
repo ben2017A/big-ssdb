@@ -15,15 +15,6 @@ type Entry struct{
 	Data string
 }
 
-func NewHeartbeatEntry(commitIndex uint64) *Entry{
-	ent := new(Entry)
-	ent.Type = "Heartbeat"
-	ent.Index = 0
-	ent.Term = 0
-	ent.CommitIndex = commitIndex
-	return ent
-}
-
 func DecodeEntry(buf string) *Entry{
 	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 5)
@@ -42,4 +33,22 @@ func DecodeEntry(buf string) *Entry{
 
 func (e *Entry)Encode() string{
 	return fmt.Sprintf("%d %d %d %s %s", e.Index, e.Term, e.CommitIndex, e.Type, e.Data)
+}
+
+func NewHeartbeatEntry(commitIndex uint64) *Entry{
+	ent := new(Entry)
+	ent.Type = "Heartbeat"
+	ent.Index = 0
+	ent.Term = 0
+	ent.CommitIndex = commitIndex
+	return ent
+}
+
+func NewCommitEntry(commitIndex uint64) *Entry{
+	ent := new(Entry)
+	ent.Type = "Commit"
+	ent.Index = 0
+	ent.Term = 0
+	ent.CommitIndex = commitIndex
+	return ent
 }

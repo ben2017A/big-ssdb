@@ -44,6 +44,8 @@ func NewNode(store *Storage, transport Transport) *Node{
 	node.store = store
 	node.transport = transport
 
+	store.AddSubscriber(node)
+
 	return node
 }
 
@@ -332,6 +334,17 @@ func (node *Node)Write(data string){
 	ent := node.newEntry("Write", data)
 	node.store.AppendEntry(*ent)
 	node.replicateAllMembers()
+}
+
+/* #################### Subscriber interface ######################### */
+
+func (node *Node)LastApplied() uint64{
+	return node.lastApplied
+}
+
+func (node *Node)ApplyEntry(ent *Entry){
+	node.lastApplied = ent.Index
+	log.Println("apply #", ent.Index)
 }
 
 /* ############################################# */

@@ -14,6 +14,8 @@ type Storage struct{
 
 	dir string
 	wal *store.WALFile
+
+	subscribers []Subscriber
 }
 
 func OpenStorage(dir string) *Storage{
@@ -21,6 +23,7 @@ func OpenStorage(dir string) *Storage{
 	ret.entries = make(map[uint64]*Entry)
 	ret.dir = dir
 	ret.wal = store.OpenWALFile(dir + "/entry.wal")
+	ret.subscribers = make([]Subscriber, 0)
 	log.Println("open store", dir)
 	return ret
 }
@@ -29,6 +32,10 @@ func (store *Storage)Close(){
 	if store.wal != nil {
 		store.wal.Close()
 	}
+}
+
+func (store *Storage)AddSubscriber(sub Subscriber){
+	store.subscribers = append(store.subscribers, sub)
 }
 
 func (store *Storage)GetEntry(index uint64) *Entry{
@@ -45,17 +52,17 @@ func (store *Storage)AppendEntry(ent Entry){
 	store.entries[ent.Index] = &ent
 
 	for{
-		next := store.GetEntry(store.LastIndex + 1)
-		if next == nil {
+		ent := store.GetEntry(store.LastIndex + 1)
+		if ent == nil {
 			break;
 		}
-		next.CommitIndex = store.CommitIndex
+		ent.CommitIndex = store.CommitIndex
 
-		log.Println("WALFile.append", next.Encode())
-		store.wal.Append(next.Encode())
+		store.wal.Append(ent.Encode())
+		log.Println("WALFile.append:", ent.Encode())
 
-		store.LastIndex = next.Index
-		store.LastTerm = next.Term
+		store.LastIndex = ent.Index
+		store.LastTerm = ent.Term
 	}
 }
 
@@ -67,12 +74,15 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 		commitIndex = store.LastIndex
 	}
 
-	// TODO: WALFile.append
-	log.Println("commit #", commitIndex)
+	ent := NewCommitEntry(commitIndex)
+	store.wal.Append(ent.Encode())
+	log.Println("WALFile.append:", ent.Encode())
 	store.CommitIndex = commitIndex
 
-	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
-		log.Println("apply #", idx)
-		// TODO: apply to state machine
+	for _, sub := range store.subscribers {
+		if sub.LastApplied() < store.CommitIndex {
+			ent := store.GetEntry(sub.LastApplied() + 1)
+			sub.ApplyEntry(ent)
+		}
 	}
 }
