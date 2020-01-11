@@ -24,6 +24,14 @@ func Utoa64(u uint64) string{
 	return fmt.Sprintf("%d", u)
 }
 
+func MinInt(a, b int) int{
+	if a < b {
+		return a
+	} else {
+		return b
+	}
+}
+
 func MinU64(a, b uint64) uint64{
 	if a < b {
 		return a

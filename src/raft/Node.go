@@ -40,7 +40,7 @@ func NewNode(store *Storage, transport Transport) *Node{
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = ElectionTimeout
+	node.electionTimeout = 2000
 
 	node.store = store
 	node.transport = transport
@@ -86,6 +86,7 @@ func (node *Node)becomeFollower(){
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.voteFor = ""
+	node.saveState()
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 	for _, m := range node.Members {
@@ -99,6 +100,8 @@ func (node *Node)becomeCandidate(){
 	node.Role = "candidate"
 	node.Term += 1
 	node.voteFor = node.Id
+	node.saveState()
+
 	node.votesReceived = make(map[string]string)
 	node.requestVoteTimeout = RequestVoteTimeout
 
@@ -120,6 +123,7 @@ func (node *Node)becomeLeader(){
 	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
 	node.voteFor = ""
+	node.saveState()
 
 	for _, m := range node.Members {
 		m.Role = "follower"
@@ -156,6 +160,14 @@ func (node *Node)replicateMember(m *Member){
 	prev := node.store.GetEntry(m.NextIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
+	if m.ResendIndex == ent.Index {
+		m.ResendCount ++
+		m.ReplicationTimeout = myutil.MinInt(m.ResendCount * ReplicationTimeout, HeartbeatTimeout * 2)
+		// log.Println("retransmission", m.ResendCount)
+	}else{
+		m.ResendCount = 0
+	}
+	m.ResendIndex = ent.Index
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
 
@@ -171,6 +183,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 	// node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		node.Term = msg.Term
+		node.saveState()
 		if node.Role != "follower" {
 			node.becomeFollower()
 		}
@@ -207,6 +220,7 @@ func (node *Node)handleRequestVote(msg *Message){
 		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		log.Println("vote for", msg.Src)
 		node.voteFor = msg.Src
+		node.saveState()
 		node.send(NewRequestVoteAck(msg.Src, true))
 	}
 }
@@ -332,15 +346,6 @@ func (node *Node)Write(data string){
 	node.replicateAllMembers()
 }
 
-func (node *Node)doAddMember(nodeId string, nodeAddr string){
-	if nodeId != node.Id {
-		m := NewMember(nodeId, nodeAddr)
-		node.Members[m.Id] = m
-		node.resetMemberState(m)
-		node.transport.Connect(m.Id, m.Addr)
-	}
-}
-
 /* #################### Subscriber interface ######################### */
 
 func (node *Node)LastApplied() uint64{
@@ -367,8 +372,18 @@ func (node *Node)ApplyEntry(ent *Entry){
 
 /* ############################################# */
 
-func (node *Node)saveState(){
+func (node *Node)doAddMember(nodeId string, nodeAddr string){
+	if nodeId != node.Id {
+		m := NewMember(nodeId, nodeAddr)
+		node.Members[m.Id] = m
+		node.resetMemberState(m)
+		node.transport.Connect(m.Id, m.Addr)
+	}
+	node.saveState()
+}
 
+func (node *Node)saveState(){
+	// Id, Term, VoteFor, Members(+self)
 }
 
 /* ############################################# */

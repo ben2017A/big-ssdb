@@ -9,6 +9,9 @@ type Member struct{
 	NextIndex uint64
 	MatchIndex uint64
 
+	ResendIndex uint64
+	ResendCount int
+
 	HeartbeatTimeout int
 	ReplicationTimeout int
 }
