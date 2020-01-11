@@ -174,12 +174,13 @@ func (node *Node)replicateMember(m *Member){
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
+	// smaller msg.Term is rejected
 	if msg.Term < node.Term {
-		// TODO: false Ack
+		// TODO: notify sender to update term by reply an Ack
 		log.Println("ignore msg.Term =", msg.Term, " < currentTerm = ", node.Term)
 		return
 	}
-
+	// node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		node.Term = msg.Term
 		if node.Role != "follower" {
@@ -209,17 +210,14 @@ func (node *Node)HandleRaftMessage(msg *Message){
 
 func (node *Node)handleRequestVote(msg *Message){
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
-	if node.voteFor != "" {
-		return
-	}
-	// node.Term is set to be larger msg.Term previously
-	if node.Term != msg.Term {
+	if node.voteFor != "" || node.voteFor != msg.Src {
+		// TODO:
 		return
 	}
 	if msg.PrevTerm > node.store.LastTerm || (msg.PrevTerm == node.store.LastTerm && msg.PrevIndex >= node.store.LastIndex) {
+		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		log.Println("vote for", msg.Src)
 		node.voteFor = msg.Src
-		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 		ack := new(Message)
 		ack.Cmd = "RequestVoteAck"
@@ -234,6 +232,7 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
+	// checkQuorum
 	if msg.Term == node.Term && msg.PrevIndex <= node.store.LastIndex {
 		log.Println("receive ack from", msg.Src)
 		node.votesReceived[msg.Src] = "ok"
@@ -244,6 +243,8 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 		}
 	}
 }
+
+// send(msg *Message)
 
 func (node *Node)sendAppendEntryAck(leaderId string, success bool){
 	ack := new(Message)
@@ -263,6 +264,7 @@ func (node *Node)sendAppendEntryAck(leaderId string, success bool){
 
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	// TODO: 判断是否已经存在 leader
 	node.Members[msg.Src].Role = "leader"
 
 	if msg.PrevIndex > 0 && msg.PrevTerm > 0 {
