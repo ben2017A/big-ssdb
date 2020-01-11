@@ -4,6 +4,8 @@ import (
 	"log"
 	"sort"
 	"math/rand"
+
+	"myutil"
 )
 
 const ElectionTimeout = 5 * 1000
@@ -281,7 +283,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	// update commitIndex
 	if node.store.CommitIndex < entry.CommitIndex{
-		commitIndex := MinU64(entry.CommitIndex, node.store.LastIndex)
+		commitIndex := myutil.MinU64(entry.CommitIndex, node.store.LastIndex)
 		node.store.CommitEntry(commitIndex)
 	}
 }
@@ -290,12 +292,12 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
 
 	if msg.Data == "false" {
-		m.NextIndex = MaxU64(1, m.NextIndex - 1)
+		m.NextIndex = myutil.MaxU64(1, m.NextIndex - 1)
 		m.MatchIndex = 0
 		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 	}else{
-		m.NextIndex = MaxU64(m.NextIndex, msg.PrevIndex + 1)
-		m.MatchIndex = MaxU64(m.MatchIndex, msg.PrevIndex)
+		m.NextIndex = myutil.MaxU64(m.NextIndex, msg.PrevIndex + 1)
+		m.MatchIndex = myutil.MaxU64(m.MatchIndex, msg.PrevIndex)
 	
 		// sort matchIndex[] in descend order
 		matchIndex := make([]uint64, len(node.Members) + 1)

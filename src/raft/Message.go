@@ -3,6 +3,8 @@ package raft
 import (
 	// "fmt"
 	"strings"
+
+	"myutil"
 )
 
 type Message struct{
@@ -16,8 +18,8 @@ type Message struct{
 }
 
 func (m *Message)Encode() string{
-	ps := []string{m.Cmd, m.Src, m.Dst, Utoa(m.Term),
-		Utoa64(m.PrevIndex), Utoa(m.PrevTerm), m.Data}
+	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Utoa(m.Term),
+		myutil.Utoa64(m.PrevIndex), myutil.Utoa(m.PrevTerm), m.Data}
 	return strings.Join(ps, " ")
 }
 
@@ -31,9 +33,9 @@ func DecodeMessage(buf string) *Message{
 	msg.Cmd = ps[0]
 	msg.Src = ps[1]
 	msg.Dst = ps[2]
-	msg.Term = Atou(ps[3])
-	msg.PrevIndex = Atou64(ps[4])
-	msg.PrevTerm = Atou(ps[5])
+	msg.Term = myutil.Atou(ps[3])
+	msg.PrevIndex = myutil.Atou64(ps[4])
+	msg.PrevTerm = myutil.Atou(ps[5])
 	msg.Data = ps[6]
 	return msg
 }

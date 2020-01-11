@@ -3,6 +3,8 @@ package raft
 import (
 	"fmt"
 	"strings"
+
+	"myutil"
 )
 
 type Entry struct{
@@ -22,9 +24,9 @@ func DecodeEntry(buf string) *Entry{
 
 	e := new(Entry);
 	e.Type = ps[0]
-	e.CommitIndex = Atou64(ps[1])
-	e.Index = Atou64(ps[2])
-	e.Term = Atou(ps[3])
+	e.CommitIndex = myutil.Atou64(ps[1])
+	e.Index = myutil.Atou64(ps[2])
+	e.Term = myutil.Atou(ps[3])
 	e.Data = ps[4]
 	return e
 }

@@ -10,6 +10,8 @@ type Store struct{
 	CommitIndex uint64
 	// entries may not be continuous(for follower)
 	entries map[uint64]*Entry
+
+	work_dir string
 }
 
 func NewStore() *Store{
@@ -24,21 +26,13 @@ func (store *Store)GetEntry(index uint64) *Entry{
 }
 
 func (store *Store)AppendEntry(entry Entry){
+	if entry.Index < store.CommitIndex {
+		return
+	}
+
 	// TODO:
 	store.entries[entry.Index] = &entry
-	store.flushEntryBuffer()
-}
 
-func (store *Store)CommitEntry(commitIndex uint64){
-	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
-		// TODO: commit idx
-		// for each entry, apply to state machine
-		log.Println("commit #", idx)
-		store.CommitIndex = idx
-	}
-}
-
-func (store *Store)flushEntryBuffer(){
 	for{
 		next := store.GetEntry(store.LastIndex + 1)
 		if next == nil {
@@ -50,5 +44,14 @@ func (store *Store)flushEntryBuffer(){
 		log.Println("WALFile.append", next.Encode())
 		store.LastIndex = next.Index
 		store.LastTerm = next.Term
+	}
+}
+
+func (store *Store)CommitEntry(commitIndex uint64){
+	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
+		// TODO: commit idx
+		// for each entry, apply to state machine
+		log.Println("commit #", idx)
+		store.CommitIndex = idx
 	}
 }
