@@ -10,8 +10,8 @@ type Message struct{
 	Src string
 	Dst string
 	Term uint32
-	PrevIndex uint64
-	PrevTerm  uint32
+	PrevIndex uint64 // LastIndex for RequestVote
+	PrevTerm  uint32 // LastTerm for RequestVote
 	Data string
 }
 

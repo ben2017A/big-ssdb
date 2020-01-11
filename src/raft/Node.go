@@ -96,13 +96,9 @@ func (node *Node)becomeCandidate(){
 	for _, m := range node.Members {
 		msg := new(Message)
 		msg.Cmd = "RequestVote"
-		msg.Src = node.Id
 		msg.Dst = m.Id
-		msg.Term = node.Term;
-		msg.PrevIndex = node.store.LastIndex
-		msg.PrevTerm = node.store.LastTerm
 		msg.Data = "please vote me"
-		node.Transport.Send(msg)
+		node.send(msg)
 	}
 
 	node.requestVoteTimeout = RequestVoteTimeout
@@ -135,15 +131,13 @@ func (node *Node)heartbeatMember(m *Member){
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
-	msg.Src = node.Id
 	msg.Dst = m.Id
-	msg.Term = node.Term
 	if prev != nil {
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
 	msg.Data = next.Encode()
-	node.Transport.Send(msg)
+	node.send(msg)
 }
 
 func (node *Node)replicateMember(m *Member){
@@ -158,15 +152,13 @@ func (node *Node)replicateMember(m *Member){
 
 	msg := new(Message)
 	msg.Cmd = "AppendEntry"
-	msg.Src = node.Id
 	msg.Dst = m.Id
-	msg.Term = node.Term
 	if prev != nil {
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
 	msg.Data = next.Encode()
-	node.Transport.Send(msg)
+	node.send(msg)
 
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
@@ -221,13 +213,9 @@ func (node *Node)handleRequestVote(msg *Message){
 
 		ack := new(Message)
 		ack.Cmd = "RequestVoteAck"
-		ack.Src = node.Id
 		ack.Dst = msg.Src
-		ack.Term = node.Term;
-		ack.PrevIndex = node.store.LastIndex
-		ack.PrevTerm = node.store.LastTerm
 		ack.Data = "true"
-		node.Transport.Send(ack)
+		node.send(ack)
 	}
 }
 
@@ -244,22 +232,26 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	}
 }
 
-// send(msg *Message)
+func (node *Node)send(msg *Message){
+	msg.Src = node.Id
+	msg.Term = node.Term
+	if msg.PrevIndex == 0 || msg.PrevTerm == 0{
+		msg.PrevIndex = node.store.LastIndex
+		msg.PrevTerm = node.store.LastTerm
+	}
+	node.Transport.Send(msg)
+}
 
 func (node *Node)sendAppendEntryAck(leaderId string, success bool){
 	ack := new(Message)
 	ack.Cmd = "AppendEntryAck"
-	ack.Src = node.Id
 	ack.Dst = leaderId
-	ack.Term = node.Term;
-	ack.PrevIndex = node.store.LastIndex
-	ack.PrevTerm = node.store.LastTerm
 	if success {
 		ack.Data = "true"
 	}else{
 		ack.Data = "false"
 	}
-	node.Transport.Send(ack)
+	node.send(ack)
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
