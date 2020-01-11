@@ -67,12 +67,12 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 		commitIndex = store.LastIndex
 	}
 
+	// TODO: WALFile.append
+	log.Println("commit #", commitIndex)
+	store.CommitIndex = commitIndex
+
 	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
 		log.Println("apply #", idx)
 		// TODO: apply to state machine
 	}
-
-	// TODO: WALFile.append
-	log.Println("commit #", commitIndex)
-	store.CommitIndex = commitIndex
 }

@@ -99,11 +99,7 @@ func (node *Node)becomeCandidate(){
 	node.votesReceived = make(map[string]string)
 	node.requestVoteTimeout = RequestVoteTimeout
 
-	msg := new(Message)
-	msg.Cmd = "RequestVote"
-	msg.Data = "please vote me"
-	node.broadcast(msg)
-
+	node.broadcast(NewRequestVoteMsg())
 	if len(node.Members) == 0 {
 		node.checkVoteResult()
 	}
@@ -140,40 +136,22 @@ func (node *Node)resetMemberState(m *Member){
 
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
-
-	prev := node.store.GetEntry(m.NextIndex - 1)
-
-	msg := new(Message)
-	msg.Cmd = "AppendEntry"
-	msg.Dst = m.Id
-	if prev != nil {
-		msg.PrevIndex = prev.Index
-		msg.PrevTerm = prev.Term
-	}
+	
 	ent := NewHeartbeatEntry(node.store.CommitIndex)
-	msg.Data = ent.Encode()
-	node.send(msg)
+	prev := node.store.GetEntry(m.NextIndex - 1)
+	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimeout = ReplicationTimeout
 
-	next := node.store.GetEntry(m.NextIndex)
-	if next == nil {
+	ent := node.store.GetEntry(m.NextIndex)
+	if ent == nil {
 		return;
 	}
-	next.CommitIndex = node.store.CommitIndex
+	ent.CommitIndex = node.store.CommitIndex
 	prev := node.store.GetEntry(m.NextIndex - 1)
-
-	msg := new(Message)
-	msg.Cmd = "AppendEntry"
-	msg.Dst = m.Id
-	if prev != nil {
-		msg.PrevIndex = prev.Index
-		msg.PrevTerm = prev.Term
-	}
-	msg.Data = next.Encode()
-	node.send(msg)
+	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
@@ -226,12 +204,7 @@ func (node *Node)handleRequestVote(msg *Message){
 		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		log.Println("vote for", msg.Src)
 		node.voteFor = msg.Src
-
-		ack := new(Message)
-		ack.Cmd = "RequestVoteAck"
-		ack.Dst = msg.Src
-		ack.Data = "true"
-		node.send(ack)
+		node.send(NewRequestVoteAck(msg.Src, true))
 	}
 }
 
@@ -243,18 +216,6 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	}
 }
 
-func (node *Node)sendAppendEntryAck(leaderId string, success bool){
-	ack := new(Message)
-	ack.Cmd = "AppendEntryAck"
-	ack.Dst = leaderId
-	if success {
-		ack.Data = "true"
-	}else{
-		ack.Data = "false"
-	}
-	node.send(ack)
-}
-
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 	// TODO: 判断是否已经存在 leader
@@ -263,7 +224,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if msg.PrevIndex > 0 && msg.PrevTerm > 0 {
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil || prev.Term != msg.PrevTerm {
-			node.sendAppendEntryAck(msg.Src, false)
+			node.send(NewAppendEntryAck(msg.Src, false))
 			return
 		}
 	}
@@ -276,7 +237,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			log.Println("delete conflict entry")
 		}
 		node.store.AppendEntry(*ent)
-		node.sendAppendEntryAck(msg.Src, true)	
+		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
 	node.store.CommitEntry(ent.CommitIndex)

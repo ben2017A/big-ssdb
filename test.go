@@ -40,6 +40,14 @@ func main(){
 	node := raft.NewNode(store, transport)
 	node.Id = nodeId
 
+	if port == 8001 {
+		node.Members["8002"] = raft.NewMember("8002", "127.0.0.1:8002")
+		transport.Connect("8002", "127.0.0.1:8002")
+	}else{
+		node.Members["8001"] = raft.NewMember("8001", "127.0.0.1:8001")
+		transport.Connect("8001", "127.0.0.1:8001")
+	}
+	
 	for{
 		select{
 		case <-ticker.C:

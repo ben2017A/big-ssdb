@@ -39,3 +39,46 @@ func (m *Message)Encode() string{
 		myutil.Utoa64(m.PrevIndex), myutil.Utoa(m.PrevTerm), m.Data}
 	return strings.Join(ps, " ")
 }
+
+func NewRequestVoteMsg() *Message{
+	msg := new(Message)
+	msg.Cmd = "RequestVote"
+	msg.Data = "please vote me"
+	return msg
+}
+
+func NewRequestVoteAck(voteFor string, success bool) *Message{
+	msg := new(Message)
+	msg.Cmd = "RequestVoteAck"
+	msg.Dst = voteFor
+	if success {
+		msg.Data = "true"
+	}else{
+		msg.Data = "false"
+	}
+	return msg
+}
+
+func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
+	msg := new(Message)
+	msg.Cmd = "AppendEntry"
+	msg.Dst = dst
+	if prev != nil {
+		msg.PrevIndex = prev.Index
+		msg.PrevTerm = prev.Term
+	}
+	msg.Data = ent.Encode()
+	return msg
+}
+
+func NewAppendEntryAck(dst string, success bool) *Message{
+	msg := new(Message)
+	msg.Cmd = "AppendEntryAck"
+	msg.Dst = dst
+	if success {
+		msg.Data = "true"
+	}else{
+		msg.Data = "false"
+	}
+	return msg
+}
