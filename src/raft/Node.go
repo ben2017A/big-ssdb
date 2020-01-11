@@ -40,7 +40,7 @@ func NewNode(store *Storage, transport Transport) *Node{
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = 0
+	node.electionTimeout = ElectionTimeout
 
 	node.store = store
 	node.transport = transport
@@ -258,8 +258,8 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		m.MatchIndex = myutil.MaxU64(m.MatchIndex, msg.PrevIndex)
 	
 		// sort matchIndex[] in descend order
-		matchIndex := make([]uint64, len(node.Members) + 1)
-		matchIndex[0] = node.store.LastIndex
+		matchIndex := make([]uint64, 0, len(node.Members) + 1)
+		matchIndex = append(matchIndex, node.store.LastIndex)
 		for _, m := range node.Members {
 			matchIndex = append(matchIndex, m.MatchIndex)
 		}
