@@ -2,7 +2,6 @@
 		cmd
 		src
 		dst
-		index
 		term
 		data
 
@@ -21,4 +20,5 @@
 			AddMember
 			DelMember
 			Entry
+			Commit
 		AppendEntryAck

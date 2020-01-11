@@ -28,18 +28,19 @@ type Node struct{
 	electionTimeout int
 	requestVoteTimeout int
 
-	store *Store
-	Transport Transport
+	store *Storage
+	transport Transport
 }
 
-func NewNode() *Node{
+func NewNode(store *Storage, transport Transport) *Node{
 	node := new(Node)
+	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-
-	node.store = NewStore()
-
 	node.electionTimeout = ElectionTimeout + rand.Intn(100)
+
+	node.store = store
+	node.transport = transport
 
 	return node
 }
@@ -242,7 +243,7 @@ func (node *Node)send(msg *Message){
 		msg.PrevIndex = node.store.LastIndex
 		msg.PrevTerm = node.store.LastTerm
 	}
-	node.Transport.Send(msg)
+	node.transport.Send(msg)
 }
 
 func (node *Node)sendAppendEntryAck(leaderId string, success bool){

@@ -5,7 +5,7 @@ import (
 	"store"
 )
 
-type Store struct{
+type Storage struct{
 	LastIndex uint64
 	LastTerm uint32
 	CommitIndex uint64
@@ -16,26 +16,27 @@ type Store struct{
 	wal *store.WALFile
 }
 
-func NewStore() *Store{
-	ret := new(Store)
-	ret.entries = make(map[uint64]*Entry)
-	return ret
-}
-
-func OpenStore(dir string) *Store{
-	ret := new(Store)
+func OpenStorage(dir string) *Storage{
+	ret := new(Storage)
 	ret.entries = make(map[uint64]*Entry)
 	ret.dir = dir
 	ret.wal = store.OpenWALFile(dir + "/entry.wal")
+	log.Println("open store", dir)
 	return ret
 }
 
-func (store *Store)GetEntry(index uint64) *Entry{
+func (store *Storage)Close(){
+	if store.wal != nil {
+		store.wal.Close()
+	}
+}
+
+func (store *Storage)GetEntry(index uint64) *Entry{
 	// TODO:
 	return store.entries[index]
 }
 
-func (store *Store)AppendEntry(entry Entry){
+func (store *Storage)AppendEntry(entry Entry){
 	if entry.Index < store.CommitIndex {
 		return
 	}
@@ -50,17 +51,22 @@ func (store *Store)AppendEntry(entry Entry){
 		}
 		next.CommitIndex = store.CommitIndex
 
-		// TODO:
 		log.Println("WALFile.append", next.Encode())
+		store.wal.Append(next.Encode())
+
 		store.LastIndex = next.Index
 		store.LastTerm = next.Term
 	}
 }
 
-func (store *Store)CommitEntry(commitIndex uint64){
+func (store *Storage)CommitEntry(commitIndex uint64){
+	if commitIndex <= store.CommitIndex {
+		return
+	}
 	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
-		// TODO: commit idx
 		// for each entry, apply to state machine
+
+		// TODO: commit idx
 		log.Println("commit #", idx)
 		store.CommitIndex = idx
 	}
