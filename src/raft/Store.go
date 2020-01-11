@@ -2,6 +2,7 @@ package raft
 
 import (
 	"log"
+	"store"
 )
 
 type Store struct{
@@ -11,12 +12,21 @@ type Store struct{
 	// entries may not be continuous(for follower)
 	entries map[uint64]*Entry
 
-	work_dir string
+	dir string
+	wal *store.WALFile
 }
 
 func NewStore() *Store{
 	ret := new(Store)
 	ret.entries = make(map[uint64]*Entry)
+	return ret
+}
+
+func OpenStore(dir string) *Store{
+	ret := new(Store)
+	ret.entries = make(map[uint64]*Entry)
+	ret.dir = dir
+	ret.wal = store.OpenWALFile(dir + "/entry.wal")
 	return ret
 }
 

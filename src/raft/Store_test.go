@@ -5,5 +5,6 @@ import (
 )
 
 func TestStore(t *testing.T){
-	t.Fatalf("abc")
+	s := OpenStore("tmp")
+	t.Log(s)
 }
