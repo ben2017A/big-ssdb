@@ -8,7 +8,7 @@ import (
 )
 
 type Entry struct{
-	Type string // Heartbeat, AddMember, DelMember, Entry
+	Type string // Heartbeat, AddMember, DelMember, Write, Commit
 	Index uint64
 	Term uint32
 	CommitIndex uint64

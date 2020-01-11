@@ -63,6 +63,10 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 	if commitIndex <= store.CommitIndex {
 		return
 	}
+	if commitIndex > store.LastIndex {
+		commitIndex = store.LastIndex
+	}
+	
 	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
 		// for each entry, apply to state machine
 

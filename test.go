@@ -66,7 +66,7 @@ func main(){
 			if ps[0] == "AddMember" {
 
 			}
-			if ps[0] == "Entry" {
+			if ps[0] == "Write" {
 				node.Write(ps[1])
 			}
 		}

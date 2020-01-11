@@ -95,16 +95,12 @@ func (node *Node)becomeCandidate(){
 	node.Term += 1
 	node.voteFor = node.Id
 	node.votesReceived = make(map[string]string)
-
-	for _, m := range node.Members {
-		msg := new(Message)
-		msg.Cmd = "RequestVote"
-		msg.Dst = m.Id
-		msg.Data = "please vote me"
-		node.send(msg)
-	}
-
 	node.requestVoteTimeout = RequestVoteTimeout
+
+	msg := new(Message)
+	msg.Cmd = "RequestVote"
+	msg.Data = "please vote me"
+	node.broadcast(msg)
 }
 
 func (node *Node)becomeLeader(){
@@ -164,6 +160,12 @@ func (node *Node)replicateMember(m *Member){
 	node.send(msg)
 
 	m.HeartbeatTimeout = HeartbeatTimeout
+}
+
+func (node *Node)replicateAllMembers(){
+	for _, m := range node.Members {
+		node.replicateMember(m)
+	}
 }
 
 /* ############################################# */
@@ -236,16 +238,6 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	}
 }
 
-func (node *Node)send(msg *Message){
-	msg.Src = node.Id
-	msg.Term = node.Term
-	if msg.Cmd != "AppendEntry" {
-		msg.PrevIndex = node.store.LastIndex
-		msg.PrevTerm = node.store.LastTerm
-	}
-	node.transport.Send(msg)
-}
-
 func (node *Node)sendAppendEntryAck(leaderId string, success bool){
 	ack := new(Message)
 	ack.Cmd = "AppendEntryAck"
@@ -273,7 +265,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	entry := DecodeEntry(msg.Data)
 
-	if entry.Type == "Entry" {
+	if entry.Type == "Write" {
 		old := node.store.GetEntry(entry.Index)
 		if old != nil && old.Term != entry.Term {
 			log.Println("overwrite conflict entry")
@@ -282,11 +274,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.sendAppendEntryAck(msg.Src, true)	
 	}
 
-	// update commitIndex
-	if node.store.CommitIndex < entry.CommitIndex{
-		commitIndex := myutil.MinU64(entry.CommitIndex, node.store.LastIndex)
-		node.store.CommitEntry(commitIndex)
-	}
+	node.store.CommitEntry(entry.CommitIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -319,18 +307,68 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 /* ############################################# */
 
-func (node *Node)Write(data string){
+func (node *Node)newEntry(type_, data string) *Entry{
 	entry := new(Entry)
-	entry.Type = "Entry"
+	entry.Type = type_
 	entry.Index = node.store.LastIndex + 1
 	entry.Term = node.Term
 	entry.Data = data
-	
-	node.store.AppendEntry(*entry)
+	return entry
+}
 
-	for _, m := range node.Members {
-		node.replicateMember(m)
+func (node *Node)AddMember(nodeId, addr string){
+	if nodeId == node.Id {
+		log.Println("could not add self:", nodeId)
+		return
 	}
+	if node.Members[nodeId] != nil {
+		log.Println("member already exists:", nodeId)
+		return
+	}
+
+	data := fmt.Sprintf("%s %s", nodeId, addr)
+	entry := node.newEntry("AddMember", data)
+	node.store.AppendEntry(*entry)
+	node.replicateAllMembers()	
+}
+
+func (node *Node)DelMember(nodeId){
+	if nodeId == node.Id {
+		log.Println("could not del self:", nodeId)
+		return
+	}
+	if node.Members[nodeId] == nil {
+		log.Println("member not exists:", nodeId)
+		return
+	}
+
+	data := fmt.Sprintf("%s", nodeId)
+	entry := node.newEntry("DelMember", data)
+	node.store.AppendEntry(*entry)
+	node.replicateAllMembers()	
+}
+
+func (node *Node)Write(data string){
+	entry := node.newEntry("Write", data)
+	node.store.AppendEntry(*entry)
+	node.replicateAllMembers()
 }
 
 /* ############################################# */
+
+func (node *Node)send(msg *Message){
+	msg.Src = node.Id
+	msg.Term = node.Term
+	if msg.Cmd != "AppendEntry" {
+		msg.PrevIndex = node.store.LastIndex
+		msg.PrevTerm = node.store.LastTerm
+	}
+	node.transport.Send(msg)
+}
+
+func (node *Node)broadcast(msg *Message){
+	for _, m := range node.Members {
+		msg.Dst = m.Id
+		node.send(msg)
+	}
+}

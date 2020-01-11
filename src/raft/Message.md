@@ -16,9 +16,4 @@
 		RequestVote
 		RequestVoteAck
 		AppendEntry
-			Heartbeat
-			AddMember
-			DelMember
-			Entry
-			Commit
 		AppendEntryAck
