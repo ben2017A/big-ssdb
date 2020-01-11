@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"math/rand"
+	"strings"
 
 	"myutil"
 )
@@ -301,12 +302,7 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 		log.Println("member already exists:", nodeId)
 		return
 	}
-	if nodeId != node.Id {
-		m := NewMember(nodeId, nodeAddr)
-		node.Members[m.Id] = m
-		node.resetMemberState(m)
-		node.transport.Connect(m.Id, m.Addr)
-	}
+	node.doAddMember(nodeId, nodeAddr)
 
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.newEntry("AddMember", data)
@@ -336,6 +332,15 @@ func (node *Node)Write(data string){
 	node.replicateAllMembers()
 }
 
+func (node *Node)doAddMember(nodeId string, nodeAddr string){
+	if nodeId != node.Id {
+		m := NewMember(nodeId, nodeAddr)
+		node.Members[m.Id] = m
+		node.resetMemberState(m)
+		node.transport.Connect(m.Id, m.Addr)
+	}
+}
+
 /* #################### Subscriber interface ######################### */
 
 func (node *Node)LastApplied() uint64{
@@ -344,7 +349,26 @@ func (node *Node)LastApplied() uint64{
 
 func (node *Node)ApplyEntry(ent *Entry){
 	node.lastApplied = ent.Index
-	log.Println("apply #", ent.Index)
+	// send hearbeat immediately after any log committed
+	for _, m := range node.Members {
+		m.HeartbeatTimeout = 0
+	}
+
+	if ent.Type == "AddMember" {
+		log.Println("apply ", ent.Encode())
+		ps := strings.Split(ent.Data, " ")
+		nodeId, nodeAddr := ps[0], ps[1]
+		node.doAddMember(nodeId, nodeAddr)
+	}else if ent.Type == "DelMember" {
+	}else{
+		log.Println("don't apply #", ent.Index, ent.Type)
+	}
+}
+
+/* ############################################# */
+
+func (node *Node)saveState(){
+
 }
 
 /* ############################################# */
