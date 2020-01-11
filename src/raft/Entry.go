@@ -8,11 +8,20 @@ import (
 )
 
 type Entry struct{
-	Type string // Heartbeat, AddMember, DelMember, Write, Commit
 	Index uint64
 	Term uint32
 	CommitIndex uint64
+	Type string // Heartbeat, AddMember, DelMember, Write, Commit
 	Data string
+}
+
+func NewHeartbeatEntry(commitIndex uint64) *Entry{
+	ent := new(Entry)
+	ent.Type = "Heartbeat"
+	ent.Index = 0
+	ent.Term = 0
+	ent.CommitIndex = commitIndex
+	return ent
 }
 
 func DecodeEntry(buf string) *Entry{
@@ -23,14 +32,14 @@ func DecodeEntry(buf string) *Entry{
 	}
 
 	e := new(Entry);
-	e.Type = ps[0]
-	e.Index = myutil.Atou64(ps[1])
-	e.Term = myutil.Atou(ps[2])
-	e.CommitIndex = myutil.Atou64(ps[3])
+	e.Index = myutil.Atou64(ps[0])
+	e.Term = myutil.Atou(ps[1])
+	e.CommitIndex = myutil.Atou64(ps[2])
+	e.Type = ps[3]
 	e.Data = ps[4]
 	return e
 }
 
 func (e *Entry)Encode() string{
-	return fmt.Sprintf("%s %d %d %d %s", e.Type, e.Index, e.Term, e.CommitIndex, e.Data)
+	return fmt.Sprintf("%d %d %d %s %s", e.Index, e.Term, e.CommitIndex, e.Type, e.Data)
 }

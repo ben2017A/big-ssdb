@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"math/rand"
@@ -37,7 +38,7 @@ func NewNode(store *Storage, transport Transport) *Node{
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = ElectionTimeout + rand.Intn(100)
+	node.electionTimeout = 0
 
 	node.store = store
 	node.transport = transport
@@ -101,6 +102,18 @@ func (node *Node)becomeCandidate(){
 	msg.Cmd = "RequestVote"
 	msg.Data = "please vote me"
 	node.broadcast(msg)
+
+	if len(node.Members) == 0 {
+		node.checkVoteResult()
+	}
+}
+
+func (node *Node)checkVoteResult(){
+	// checkQuorum
+	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+		log.Println("Got majority votes")
+		node.becomeLeader()
+	}
 }
 
 func (node *Node)becomeLeader(){
@@ -110,22 +123,23 @@ func (node *Node)becomeLeader(){
 
 	for _, m := range node.Members {
 		m.Role = "follower"
-		m.NextIndex = node.store.LastIndex + 1
-		m.MatchIndex = 0
-		m.HeartbeatTimeout = 0
-		m.ReplicationTimeout = ReplicationTimeout
+		node.resetMemberState(m)
 		node.heartbeatMember(m)
 	}
 }
 
 /* ############################################# */
 
+func (node *Node)resetMemberState(m *Member){
+	m.NextIndex = node.store.LastIndex + 1
+	m.MatchIndex = 0
+	m.HeartbeatTimeout = 0
+	m.ReplicationTimeout = ReplicationTimeout
+}
+
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
 
-	next := new(Entry)
-	next.Type = "Heartbeat"
-	next.CommitIndex = node.store.CommitIndex
 	prev := node.store.GetEntry(m.NextIndex - 1)
 
 	msg := new(Message)
@@ -135,7 +149,8 @@ func (node *Node)heartbeatMember(m *Member){
 		msg.PrevIndex = prev.Index
 		msg.PrevTerm = prev.Term
 	}
-	msg.Data = next.Encode()
+	ent := NewHeartbeatEntry(node.store.CommitIndex)
+	msg.Data = ent.Encode()
 	node.send(msg)
 }
 
@@ -160,12 +175,6 @@ func (node *Node)replicateMember(m *Member){
 	node.send(msg)
 
 	m.HeartbeatTimeout = HeartbeatTimeout
-}
-
-func (node *Node)replicateAllMembers(){
-	for _, m := range node.Members {
-		node.replicateMember(m)
-	}
 }
 
 /* ############################################# */
@@ -226,15 +235,10 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	// checkQuorum
 	if msg.Term == node.Term && msg.PrevIndex <= node.store.LastIndex {
-		log.Println("receive ack from", msg.Src)
+		log.Println("receive vote from", msg.Src)
 		node.votesReceived[msg.Src] = "ok"
-
-		if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
-			log.Println("Got majority votes")
-			node.becomeLeader()
-		}
+		node.checkVoteResult()
 	}
 }
 
@@ -263,18 +267,18 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 	}
 
-	entry := DecodeEntry(msg.Data)
+	ent := DecodeEntry(msg.Data)
 
-	if entry.Type == "Write" {
-		old := node.store.GetEntry(entry.Index)
-		if old != nil && old.Term != entry.Term {
+	if ent.Type == "Write" {
+		old := node.store.GetEntry(ent.Index)
+		if old != nil && old.Term != ent.Term {
 			log.Println("overwrite conflict entry")
 		}
-		node.store.AppendEntry(*entry)
+		node.store.AppendEntry(*ent)
 		node.sendAppendEntryAck(msg.Src, true)	
 	}
 
-	node.store.CommitEntry(entry.CommitIndex)
+	node.store.CommitEntry(ent.CommitIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -308,49 +312,62 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 /* ############################################# */
 
 func (node *Node)newEntry(type_, data string) *Entry{
-	entry := new(Entry)
-	entry.Type = type_
-	entry.Index = node.store.LastIndex + 1
-	entry.Term = node.Term
-	entry.Data = data
-	return entry
+	ent := new(Entry)
+	ent.Type = type_
+	ent.Index = node.store.LastIndex + 1
+	ent.Term = node.Term
+	ent.Data = data
+	return ent
 }
 
-func (node *Node)AddMember(nodeId, addr string){
-	if nodeId == node.Id {
-		log.Println("could not add self:", nodeId)
+func (node *Node)JoinGroup(leaderId string, leaderAddr string){
+	if leaderId == node.Id {
+		log.Println("could not join self:", leaderId)
 		return
 	}
+	m := NewMember(leaderId, leaderAddr)
+	node.Members[m.Id] = m
+	node.resetMemberState(m)
+	node.transport.Connect(m.Id, m.Addr)
+}
+
+func (node *Node)AddMember(nodeId string, nodeAddr string){
 	if node.Members[nodeId] != nil {
 		log.Println("member already exists:", nodeId)
 		return
 	}
+	if nodeId != node.Id {
+		m := NewMember(nodeId, nodeAddr)
+		node.Members[m.Id] = m
+		node.resetMemberState(m)
+		node.transport.Connect(m.Id, m.Addr)
+	}
 
-	data := fmt.Sprintf("%s %s", nodeId, addr)
-	entry := node.newEntry("AddMember", data)
-	node.store.AppendEntry(*entry)
+	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
+	ent := node.newEntry("AddMember", data)
+	node.store.AppendEntry(*ent)
 	node.replicateAllMembers()	
 }
 
-func (node *Node)DelMember(nodeId){
-	if nodeId == node.Id {
-		log.Println("could not del self:", nodeId)
-		return
-	}
-	if node.Members[nodeId] == nil {
-		log.Println("member not exists:", nodeId)
-		return
-	}
+// func (node *Node)DelMember(nodeId string){
+// 	if nodeId == node.Id {
+// 		log.Println("could not del self:", nodeId)
+// 		return
+// 	}
+// 	if node.Members[nodeId] == nil {
+// 		log.Println("member not exists:", nodeId)
+// 		return
+// 	}
 
-	data := fmt.Sprintf("%s", nodeId)
-	entry := node.newEntry("DelMember", data)
-	node.store.AppendEntry(*entry)
-	node.replicateAllMembers()	
-}
+// 	data := fmt.Sprintf("%s", nodeId)
+// 	ent := node.newEntry("DelMember", data)
+// 	node.store.AppendEntry(*ent)
+// 	node.replicateAllMembers()	
+// }
 
 func (node *Node)Write(data string){
-	entry := node.newEntry("Write", data)
-	node.store.AppendEntry(*entry)
+	ent := node.newEntry("Write", data)
+	node.store.AppendEntry(*ent)
 	node.replicateAllMembers()
 }
 
@@ -370,5 +387,16 @@ func (node *Node)broadcast(msg *Message){
 	for _, m := range node.Members {
 		msg.Dst = m.Id
 		node.send(msg)
+	}
+}
+
+func (node *Node)replicateAllMembers(){
+	for _, m := range node.Members {
+		node.replicateMember(m)
+	}
+
+	// allow single node mode, commit every entry immediately
+	if node.Role == "leader" && len(node.Members) == 0 {
+		node.store.CommitEntry(node.store.LastIndex)
 	}
 }

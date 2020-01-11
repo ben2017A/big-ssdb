@@ -21,7 +21,7 @@ func main(){
 	if len(os.Args) > 1 {
 		port, _ = strconv.Atoi(os.Args[1])
 	}
-	nodeId := fmt.Sprintf("n%d", port)
+	nodeId := fmt.Sprintf("%d", port)
 
 	ticker := time.NewTicker(TimerInterval * time.Millisecond)
 	defer ticker.Stop()
@@ -40,8 +40,13 @@ func main(){
 	node := raft.NewNode(store, transport)
 	node.Id = nodeId
 
-	// node.Members["n1"] = raft.NewMember("n1", "127.0.0.1:8001")
-	// transport.Connect("n1", "127.0.0.1:8001")
+	// for testing
+	// if len(node.Members) == 0 {
+	// 	node.Role = "leader"
+	// 	if node.Term == 0 {
+	// 		node.Term = 1
+	// 	}
+	// }
 
 	for{
 		select{
@@ -57,18 +62,18 @@ func main(){
 		case buf := <-serv.C:
 			s := string(buf)
 			s = strings.Trim(s, "\r\n")
-			if node.Role != "leader" {
-				log.Println("reject client's request:", s)
-				continue
+			if node.Role == "leader" {
+				ps := strings.Split(s, " ")
+				if ps[0] == "AddMember" {
+					node.AddMember(ps[1], ps[2])
+				}
+				if ps[0] == "Write" {
+					node.Write(ps[1])
+				}
+				// log.Println("reject client's request:", s)
+				// continue
 			}
 
-			ps := strings.Split(s, " ")
-			if ps[0] == "AddMember" {
-
-			}
-			if ps[0] == "Write" {
-				node.Write(ps[1])
-			}
 		}
 	}
 }

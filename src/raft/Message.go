@@ -17,12 +17,6 @@ type Message struct{
 	Data string
 }
 
-func (m *Message)Encode() string{
-	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Utoa(m.Term),
-		myutil.Utoa64(m.PrevIndex), myutil.Utoa(m.PrevTerm), m.Data}
-	return strings.Join(ps, " ")
-}
-
 func DecodeMessage(buf string) *Message{
 	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 7)
@@ -38,4 +32,10 @@ func DecodeMessage(buf string) *Message{
 	msg.PrevTerm = myutil.Atou(ps[5])
 	msg.Data = ps[6]
 	return msg
+}
+
+func (m *Message)Encode() string{
+	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Utoa(m.Term),
+		myutil.Utoa64(m.PrevIndex), myutil.Utoa(m.PrevTerm), m.Data}
+	return strings.Join(ps, " ")
 }

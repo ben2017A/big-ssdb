@@ -36,13 +36,13 @@ func (store *Storage)GetEntry(index uint64) *Entry{
 	return store.entries[index]
 }
 
-func (store *Storage)AppendEntry(entry Entry){
-	if entry.Index < store.CommitIndex {
+func (store *Storage)AppendEntry(ent Entry){
+	if ent.Index < store.CommitIndex {
 		return
 	}
 
 	// TODO:
-	store.entries[entry.Index] = &entry
+	store.entries[ent.Index] = &ent
 
 	for{
 		next := store.GetEntry(store.LastIndex + 1)
@@ -66,12 +66,14 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 	if commitIndex > store.LastIndex {
 		commitIndex = store.LastIndex
 	}
-	
-	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
-		// for each entry, apply to state machine
 
-		// TODO: commit idx
+	for idx := store.CommitIndex + 1; idx <= commitIndex ; idx ++{
 		log.Println("commit #", idx)
-		store.CommitIndex = idx
+		// TODO: commit log
+
+		log.Println("apply #", idx)
+		// TODO: apply to state machine
 	}
+
+	store.CommitIndex = commitIndex
 }

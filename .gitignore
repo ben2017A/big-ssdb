@@ -10,6 +10,5 @@ tmp
 *_cpy_*
 *.dSYM*
 log.txt
-test
 .vscode
-
+/test

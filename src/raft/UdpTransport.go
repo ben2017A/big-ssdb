@@ -56,6 +56,7 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 func (tp *UdpTransport)Send(msg *Message) bool{
 	addr := tp.dns[msg.Dst]
 	if addr == "" {
+		log.Printf("dst: %s not connected", msg.Dst)
 		return false
 	}
 
