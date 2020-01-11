@@ -20,6 +20,7 @@ type Node struct{
 	Role string
 
 	Term uint32
+	lastApplied uint64
 
 	Members map[string]*Member
 
@@ -269,10 +270,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == "Write" {
+	if ent.Type != "Heartbeat" {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
-			log.Println("overwrite conflict entry")
+			log.Println("delete conflict entry")
 		}
 		node.store.AppendEntry(*ent)
 		node.sendAppendEntryAck(msg.Src, true)	
@@ -329,6 +330,7 @@ func (node *Node)JoinGroup(leaderId string, leaderAddr string){
 	node.Members[m.Id] = m
 	node.resetMemberState(m)
 	node.transport.Connect(m.Id, m.Addr)
+	node.becomeFollower()
 }
 
 func (node *Node)AddMember(nodeId string, nodeAddr string){

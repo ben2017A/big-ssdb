@@ -40,14 +40,6 @@ func main(){
 	node := raft.NewNode(store, transport)
 	node.Id = nodeId
 
-	// for testing
-	// if len(node.Members) == 0 {
-	// 	node.Role = "leader"
-	// 	if node.Term == 0 {
-	// 		node.Term = 1
-	// 	}
-	// }
-
 	for{
 		select{
 		case <-ticker.C:
@@ -62,8 +54,14 @@ func main(){
 		case buf := <-serv.C:
 			s := string(buf)
 			s = strings.Trim(s, "\r\n")
+			ps := strings.Split(s, " ")
+
+			if ps[0] == "JoinGroup" {
+				node.JoinGroup(ps[1], ps[2])
+				continue
+			}
+
 			if node.Role == "leader" {
-				ps := strings.Split(s, " ")
 				if ps[0] == "AddMember" {
 					node.AddMember(ps[1], ps[2])
 				}
