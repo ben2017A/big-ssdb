@@ -209,22 +209,27 @@ func (node *Node)HandleRaftMessage(msg *Message){
 
 func (node *Node)handleRequestVote(msg *Message){
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
-	if node.voteFor == "" {
-		if msg.Term == node.Term && msg.PrevIndex >= node.store.LastIndex {
-			log.Println("vote for", msg.Src)
-			node.voteFor = msg.Src
-			node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	if node.voteFor != "" {
+		return
+	}
+	// node.Term is set to be larger msg.Term previously
+	if node.Term != msg.Term {
+		return
+	}
+	if msg.PrevTerm > node.store.LastTerm || (msg.PrevTerm == node.store.LastTerm && msg.PrevIndex >= node.store.LastIndex) {
+		log.Println("vote for", msg.Src)
+		node.voteFor = msg.Src
+		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
-			ack := new(Message)
-			ack.Cmd = "RequestVoteAck"
-			ack.Src = node.Id
-			ack.Dst = msg.Src
-			ack.Term = node.Term;
-			ack.PrevIndex = node.store.LastIndex
-			ack.PrevTerm = node.store.LastTerm
-			ack.Data = ""
-			node.Transport.Send(ack)
-		}
+		ack := new(Message)
+		ack.Cmd = "RequestVoteAck"
+		ack.Src = node.Id
+		ack.Dst = msg.Src
+		ack.Term = node.Term;
+		ack.PrevIndex = node.store.LastIndex
+		ack.PrevTerm = node.store.LastTerm
+		ack.Data = "true"
+		node.Transport.Send(ack)
 	}
 }
 

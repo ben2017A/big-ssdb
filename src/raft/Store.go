@@ -26,7 +26,7 @@ func (store *Store)GetEntry(index uint64) *Entry{
 func (store *Store)AppendEntry(entry Entry){
 	// TODO:
 	store.entries[entry.Index] = &entry
-	store.FlushEntryBuffer()
+	store.flushEntryBuffer()
 }
 
 func (store *Store)CommitEntry(commitIndex uint64){
