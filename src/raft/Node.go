@@ -202,8 +202,9 @@ func (node *Node)HandleRaftMessage(msg *Message){
 
 func (node *Node)handleRequestVote(msg *Message){
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
-	if node.voteFor != "" || node.voteFor != msg.Src {
+	if node.voteFor != "" && node.voteFor != msg.Src {
 		// TODO:
+		log.Println(node.voteFor, msg.Src)
 		return
 	}
 	if msg.PrevTerm > node.store.LastTerm || (msg.PrevTerm == node.store.LastTerm && msg.PrevIndex >= node.store.LastIndex) {
@@ -235,7 +236,7 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 func (node *Node)send(msg *Message){
 	msg.Src = node.Id
 	msg.Term = node.Term
-	if msg.PrevIndex == 0 || msg.PrevTerm == 0{
+	if msg.Cmd != "AppendEntry" {
 		msg.PrevIndex = node.store.LastIndex
 		msg.PrevTerm = node.store.LastTerm
 	}
