@@ -7,11 +7,14 @@ import (
 	"myutil"
 )
 
+// Heartbeat: tell follower to commit
+// Commit: tell storage to commit
+
 type Entry struct{
 	Index uint64
 	Term uint32
 	CommitIndex uint64
-	Type string // Heartbeat, AddMember, DelMember, Write, Commit
+	Type string // Heartbeat, AddMember, DelMember, Noop, Write, Commit
 	Data string
 }
 

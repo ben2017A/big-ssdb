@@ -126,19 +126,25 @@ func (node *Node)becomeLeader(){
 	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
 
-	for _, m := range node.Members {
-		m.Role = "follower"
-		node.resetMemberState(m)
-		node.heartbeatMember(m)
+	// write noop entry with currentTerm
+	if len(node.Members) > 0 {
+		ent := node.newEntry("Noop", "")
+		node.store.AppendEntry(*ent)
+
+		for _, m := range node.Members {
+			node.resetMemberState(m)
+			node.replicateMember(m)
+		}
 	}
 }
 
 /* ############################################# */
 
 func (node *Node)resetMemberState(m *Member){
+	m.Role = "follower"
 	m.NextIndex = node.store.LastIndex + 1
 	m.MatchIndex = 0
-	m.HeartbeatTimeout = 0
+	m.HeartbeatTimeout = HeartbeatTimeout
 	m.ReplicationTimeout = ReplicationTimeout
 }
 
@@ -291,10 +297,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type != "Heartbeat" {
+	if ent.Type == "Heartbeat" {
+		// send ack
+	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
-			log.Println("delete conflict entry")
+			log.Println("delete conflict entry, and entries that follow")
 		}
 		node.store.AppendEntry(*ent)
 		node.send(NewAppendEntryAck(msg.Src, true))
@@ -325,7 +333,13 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		})
 		log.Println(matchIndex)
 		commitIndex := matchIndex[len(matchIndex)/2]
-		node.store.CommitEntry(commitIndex)
+
+		ent := node.store.GetEntry(commitIndex)
+		// only commit currentTerm's log
+		if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
+			node.store.CommitEntry(commitIndex)
+			// TODO: notify followers to commit
+		}
 	}
 
 	node.replicateMember(m)
@@ -361,13 +375,23 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.newEntry("AddMember", data)
 	node.store.AppendEntry(*ent)
-	node.replicateAllMembers()	
+	node.replicateEntries()	
 }
 
 func (node *Node)Write(data string){
 	ent := node.newEntry("Write", data)
 	node.store.AppendEntry(*ent)
-	node.replicateAllMembers()
+	node.replicateEntries()
+}
+
+func (node *Node)replicateEntries(){
+	for _, m := range node.Members {
+		node.replicateMember(m)
+	}
+	// allow single node mode, commit every entry immediately
+	if node.Role == "leader" && len(node.Members) == 0 {
+		node.store.CommitEntry(node.store.LastIndex)
+	}
 }
 
 /* #################### Subscriber interface ######################### */
@@ -407,16 +431,5 @@ func (node *Node)broadcast(msg *Message){
 	for _, m := range node.Members {
 		msg.Dst = m.Id
 		node.send(msg)
-	}
-}
-
-func (node *Node)replicateAllMembers(){
-	for _, m := range node.Members {
-		node.replicateMember(m)
-	}
-
-	// allow single node mode, commit every entry immediately
-	if node.Role == "leader" && len(node.Members) == 0 {
-		node.store.CommitEntry(node.store.LastIndex)
 	}
 }

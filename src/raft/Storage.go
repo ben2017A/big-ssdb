@@ -97,7 +97,6 @@ func (store *Storage)loadEntries(){
 		if ent == nil {
 			log.Println("bad entry format:", r)
 		} else {
-			log.Println("   ", ent.Encode())
 			if ent.Index > 0 && ent.Term > 0 {
 				store.entries[ent.Index] = ent
 				store.LastIndex = ent.Index
@@ -143,11 +142,11 @@ func (store *Storage)AppendEntry(ent Entry){
 }
 
 func (store *Storage)CommitEntry(commitIndex uint64){
-	if commitIndex <= store.CommitIndex {
-		return
-	}
 	if commitIndex > store.LastIndex {
 		commitIndex = store.LastIndex
+	}
+	if commitIndex <= store.CommitIndex {
+		return
 	}
 
 	ent := NewCommitEntry(commitIndex)
