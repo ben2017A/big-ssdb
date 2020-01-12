@@ -10,6 +10,8 @@ import (
 	"myutil"
 )
 
+// IMPORTANT! must prove that delayed msg doesn't matter
+
 const ElectionTimeout = 5 * 1000
 const HeartbeatTimeout   = 4 * 1000
 
@@ -83,6 +85,10 @@ func (node *Node)Tick(timeElapse int){
 }
 
 func (node *Node)becomeFollower(){
+	if node.Role == "follower" {
+		return
+	}
+
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.voteFor = ""
@@ -174,62 +180,86 @@ func (node *Node)replicateMember(m *Member){
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
-	// smaller msg.Term is rejected
+	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
-		// TODO: notify sender to update term by reply an Ack
-		log.Println("ignore msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+		if msg.Cmd == "RequestVote" {
+			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+			node.send(NewRequestVoteAck(msg.Src, false))
+		} else if msg.Cmd == "AppendEntry" {
+			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+			node.send(NewAppendEntryAck(msg.Src, false))
+		} else {
+			log.Println("ignore", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+		}
+		// finish processing msg
 		return
 	}
-	// node.Term is set to be larger msg.Term
+	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		node.Term = msg.Term
 		node.saveState()
-		if node.Role != "follower" {
-			node.becomeFollower()
-		}
+		node.becomeFollower()
+		// continue processing msg
 	}
 
 	if node.Role == "leader" {
 		if msg.Cmd == "AppendEntryAck" {
 			node.handleAppendEntryAck(msg)
 		}
+		return
 	}
 	if node.Role == "candidate" {
 		if msg.Cmd == "RequestVoteAck" {
 			node.handleRequestVoteAck(msg)
 		}
+		return
 	}
 	if node.Role == "follower" {
 		if msg.Cmd == "RequestVote" {
 			node.handleRequestVote(msg)
-		}
-		if msg.Cmd == "AppendEntry" {
+		} else if msg.Cmd == "AppendEntry" {
 			node.handleAppendEntry(msg)
 		}
+		return
 	}
 }
 
 func (node *Node)handleRequestVote(msg *Message){
 	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
 	if node.voteFor != "" && node.voteFor != msg.Src {
-		// TODO:
-		log.Println(node.voteFor, msg.Src)
+		// just ignore
+		log.Println("already vote for", node.voteFor, "ignore", msg.Src)
 		return
 	}
-	if msg.PrevTerm > node.store.LastTerm || (msg.PrevTerm == node.store.LastTerm && msg.PrevIndex >= node.store.LastIndex) {
+	granted := false
+	if msg.PrevTerm > node.store.LastTerm {
+		granted = true
+	} else if msg.PrevTerm == node.store.LastTerm && msg.PrevIndex >= node.store.LastIndex {
+		granted = true
+	} else {
+		// we've got newer log, reject
+	}
+
+	if granted {
 		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		log.Println("vote for", msg.Src)
 		node.voteFor = msg.Src
 		node.saveState()
 		node.send(NewRequestVoteAck(msg.Src, true))
+	} else {
+		node.send(NewRequestVoteAck(msg.Src, false))
 	}
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	if msg.Term == node.Term && msg.PrevIndex <= node.store.LastIndex {
-		log.Println("receive vote from", msg.Src)
-		node.votesReceived[msg.Src] = "ok"
+	granted := (msg.Data == "true")
+	if granted {
+		log.Println("receive vote grant from", msg.Src)
+		node.votesReceived[msg.Src] = "true"
 		node.checkVoteResult()
+	} else {
+		log.Println("receive vote reject from", msg.Src)
+		node.becomeFollower()
 	}
 }
 
@@ -300,6 +330,7 @@ func (node *Node)newEntry(type_, data string) *Entry{
 }
 
 func (node *Node)JoinGroup(leaderId string, leaderAddr string){
+	log.Println("JoinGroup", leaderId, leaderAddr)
 	if leaderId == node.Id {
 		log.Println("could not join self:", leaderId)
 		return

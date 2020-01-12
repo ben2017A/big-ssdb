@@ -18,6 +18,7 @@ type Member struct{
 
 func NewMember(id, addr string) *Member{
 	ret := new(Member)
+	ret.Role = "follower"
 	ret.Id = id
 	ret.Addr = addr
 	return ret
