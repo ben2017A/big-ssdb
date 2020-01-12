@@ -172,9 +172,26 @@ func (node *Node)replicateMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
 
+func (node *Node)ConnectMember(nodeId string, nodeAddr string){
+	if nodeId == node.Id {
+		node.Addr = nodeAddr
+	} else {
+		m := NewMember(nodeId, nodeAddr)
+		node.Members[m.Id] = m
+		node.resetMemberState(m)
+		node.xport.Connect(m.Id, m.Addr)
+	}
+	log.Println("    connect member", nodeId, nodeAddr)
+}
+
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
+	if node.Members[msg.Src] == nil {
+		log.Println("drop message from", msg.Src)
+		return
+	}
+
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
 		if msg.Cmd == "RequestVote" {
@@ -192,6 +209,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		node.Term = msg.Term
+		node.VoteFor = ""
 		node.store.SaveState()
 		node.becomeFollower()
 		// continue processing msg
@@ -360,35 +378,17 @@ func (node *Node)LastApplied() uint64{
 
 func (node *Node)ApplyEntry(ent *Entry){
 	node.lastApplied = ent.Index
-	// send hearbeat immediately after any log committed
-	for _, m := range node.Members {
-		m.HeartbeatTimeout = 0
-	}
 
 	if ent.Type == "AddMember" {
-		log.Println("apply ", ent.Encode())
+		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
 		node.ConnectMember(ps[0], ps[1])
 		node.store.SaveState()
 	}else if ent.Type == "DelMember" {
 		//
-	}else{
-		log.Println("don't apply #", ent.Index, ent.Type)
+	}else if ent.Type == "Write"{
+		log.Println("[Apply]", ent.Encode())
 	}
-}
-
-/* ############################################# */
-
-func (node *Node)ConnectMember(nodeId string, nodeAddr string){
-	if nodeId == node.Id {
-		node.Addr = nodeAddr
-	} else {
-		m := NewMember(nodeId, nodeAddr)
-		node.Members[m.Id] = m
-		node.resetMemberState(m)
-		node.xport.Connect(m.Id, m.Addr)
-	}
-	log.Println("    connect member", nodeId, nodeAddr)
 }
 
 /* ############################################# */

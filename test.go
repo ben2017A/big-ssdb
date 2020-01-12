@@ -26,9 +26,6 @@ func main(){
 	ticker := time.NewTicker(TimerInterval * time.Millisecond)
 	defer ticker.Stop()
 
-	store := raft.OpenStorage(fmt.Sprintf("tmp/%s", nodeId))
-	defer store.Close()
-
 	log.Println("api server started at", port+100)
 	serv := raft.NewUdpTransport("127.0.0.1", port+100)
 	defer serv.Stop()
@@ -36,6 +33,9 @@ func main(){
 	log.Println("raft server started at", port)
 	xport := raft.NewUdpTransport("127.0.0.1", port)
 	defer xport.Stop()
+
+	store := raft.OpenStorage(fmt.Sprintf("./tmp/%s", nodeId))
+	defer store.Close()
 
 	node := raft.NewNode(store, xport)
 	node.Id = nodeId

@@ -37,7 +37,7 @@ func OpenStorage(dir string) *Storage{
 	ret.loadState()
 	ret.loadEntries()
 
-	log.Println("open store", dir)
+	log.Println("open storage at:", dir)
 	return ret
 }
 
@@ -79,7 +79,7 @@ func (store *Storage)loadState(){
 func (store *Storage)SaveState(){
 	store.state = NewStateFromNode(store.node)
 	store.stateWAL.Append(store.state.Encode())
-	log.Println("stateWAL.append:", store.state.Encode())
+	log.Println("[WAL]", store.state.Encode())
 }
 
 /* #################### Entry ###################### */
@@ -135,7 +135,7 @@ func (store *Storage)AppendEntry(ent Entry){
 		ent.CommitIndex = store.CommitIndex
 
 		store.entryWAL.Append(ent.Encode())
-		log.Println("entryWAL.append:", ent.Encode())
+		log.Println("[WAL]", ent.Encode())
 
 		store.LastIndex = ent.Index
 		store.LastTerm = ent.Term
@@ -152,7 +152,7 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 
 	ent := NewCommitEntry(commitIndex)
 	store.entryWAL.Append(ent.Encode())
-	log.Println("entryWAL.append:", ent.Encode())
+	log.Println("[WAL]", ent.Encode())
 
 	store.CommitIndex = commitIndex
 	store.applyEntries()
