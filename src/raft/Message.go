@@ -18,26 +18,34 @@ type Message struct{
 }
 
 func DecodeMessage(buf string) *Message{
-	buf = strings.Trim(buf, "\r\n")
-	ps := strings.SplitN(buf, " ", 7)
-	if len(ps) != 7 {
+	m := new(Message);
+	if m.Decode(buf) {
+		return m
+	} else {
 		return nil
 	}
-	msg := new(Message);
-	msg.Cmd = ps[0]
-	msg.Src = ps[1]
-	msg.Dst = ps[2]
-	msg.Term = myutil.Atou(ps[3])
-	msg.PrevIndex = myutil.Atou64(ps[4])
-	msg.PrevTerm = myutil.Atou(ps[5])
-	msg.Data = ps[6]
-	return msg
 }
 
 func (m *Message)Encode() string{
 	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Utoa(m.Term),
 		myutil.Utoa64(m.PrevIndex), myutil.Utoa(m.PrevTerm), m.Data}
 	return strings.Join(ps, " ")
+}
+
+func (m *Message)Decode(buf string) bool{
+	buf = strings.Trim(buf, "\r\n")
+	ps := strings.SplitN(buf, " ", 7)
+	if len(ps) != 7 {
+		return false
+	}
+	m.Cmd = ps[0]
+	m.Src = ps[1]
+	m.Dst = ps[2]
+	m.Term = myutil.Atou(ps[3])
+	m.PrevIndex = myutil.Atou64(ps[4])
+	m.PrevTerm = myutil.Atou(ps[5])
+	m.Data = ps[6]
+	return true
 }
 
 func NewRequestVoteMsg() *Message{

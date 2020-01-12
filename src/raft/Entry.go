@@ -16,23 +16,31 @@ type Entry struct{
 }
 
 func DecodeEntry(buf string) *Entry{
+	m := new(Entry);
+	if m.Decode(buf) {
+		return m
+	} else {
+		return nil
+	}
+}
+
+func (e *Entry)Encode() string{
+	return fmt.Sprintf("%d %d %d %s %s", e.Index, e.Term, e.CommitIndex, e.Type, e.Data)
+}
+
+func (e *Entry)Decode(buf string) bool{
 	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 5)
 	if len(ps) != 5 {
-		return nil
+		return false
 	}
 
-	e := new(Entry);
 	e.Index = myutil.Atou64(ps[0])
 	e.Term = myutil.Atou(ps[1])
 	e.CommitIndex = myutil.Atou64(ps[2])
 	e.Type = ps[3]
 	e.Data = ps[4]
-	return e
-}
-
-func (e *Entry)Encode() string{
-	return fmt.Sprintf("%d %d %d %s %s", e.Index, e.Term, e.CommitIndex, e.Type, e.Data)
+	return true
 }
 
 func NewHeartbeatEntry(commitIndex uint64) *Entry{

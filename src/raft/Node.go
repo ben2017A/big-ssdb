@@ -10,8 +10,6 @@ import (
 	"myutil"
 )
 
-// IMPORTANT! must prove that delayed msg doesn't matter
-
 const ElectionTimeout = 5 * 1000
 const HeartbeatTimeout   = 4 * 1000
 
@@ -21,23 +19,24 @@ const ReplicationTimeout = 1 * 1000
 type Node struct{
 	Id string
 	Role string
+	Addr string
 
 	Term uint32
 	lastApplied uint64
 
 	Members map[string]*Member
 
-	voteFor string
+	VoteFor string
 	votesReceived map[string]string
 
 	electionTimeout int
 	requestVoteTimeout int
 
 	store *Storage
-	transport Transport
+	xport Transport
 }
 
-func NewNode(store *Storage, transport Transport) *Node{
+func NewNode(store *Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Role = "follower"
 	node.Term = 0
@@ -45,8 +44,9 @@ func NewNode(store *Storage, transport Transport) *Node{
 	node.electionTimeout = 2000
 
 	node.store = store
-	node.transport = transport
+	node.xport = xport
 
+	store.SetNode(node)
 	store.AddSubscriber(node)
 
 	return node
@@ -91,8 +91,8 @@ func (node *Node)becomeFollower(){
 
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
-	node.voteFor = ""
-	node.saveState()
+	node.VoteFor = ""
+	node.store.SaveState()
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 	for _, m := range node.Members {
@@ -105,8 +105,8 @@ func (node *Node)becomeCandidate(){
 	log.Println("convert", node.Role, "=> candidate")
 	node.Role = "candidate"
 	node.Term += 1
-	node.voteFor = node.Id
-	node.saveState()
+	node.VoteFor = node.Id
+	node.store.SaveState()
 
 	node.votesReceived = make(map[string]string)
 	node.requestVoteTimeout = RequestVoteTimeout
@@ -128,8 +128,8 @@ func (node *Node)checkVoteResult(){
 func (node *Node)becomeLeader(){
 	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
-	node.voteFor = ""
-	node.saveState()
+	node.VoteFor = ""
+	node.store.SaveState()
 
 	for _, m := range node.Members {
 		m.Role = "follower"
@@ -197,7 +197,7 @@ func (node *Node)HandleRaftMessage(msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		node.Term = msg.Term
-		node.saveState()
+		node.store.SaveState()
 		node.becomeFollower()
 		// continue processing msg
 	}
@@ -225,10 +225,10 @@ func (node *Node)HandleRaftMessage(msg *Message){
 }
 
 func (node *Node)handleRequestVote(msg *Message){
-	// node.voteFor == msg.Src: retransimitted/duplicated RequestVote
-	if node.voteFor != "" && node.voteFor != msg.Src {
+	// node.VoteFor == msg.Src: retransimitted/duplicated RequestVote
+	if node.VoteFor != "" && node.VoteFor != msg.Src {
 		// just ignore
-		log.Println("already vote for", node.voteFor, "ignore", msg.Src)
+		log.Println("already vote for", node.VoteFor, "ignore", msg.Src)
 		return
 	}
 	granted := false
@@ -243,8 +243,8 @@ func (node *Node)handleRequestVote(msg *Message){
 	if granted {
 		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 		log.Println("vote for", msg.Src)
-		node.voteFor = msg.Src
-		node.saveState()
+		node.VoteFor = msg.Src
+		node.store.SaveState()
 		node.send(NewRequestVoteAck(msg.Src, true))
 	} else {
 		node.send(NewRequestVoteAck(msg.Src, false))
@@ -338,7 +338,7 @@ func (node *Node)JoinGroup(leaderId string, leaderAddr string){
 	m := NewMember(leaderId, leaderAddr)
 	node.Members[m.Id] = m
 	node.resetMemberState(m)
-	node.transport.Connect(m.Id, m.Addr)
+	node.xport.Connect(m.Id, m.Addr)
 	node.becomeFollower()
 }
 
@@ -404,17 +404,15 @@ func (node *Node)ApplyEntry(ent *Entry){
 /* ############################################# */
 
 func (node *Node)doAddMember(nodeId string, nodeAddr string){
-	if nodeId != node.Id {
+	if nodeId == node.Id {
+		node.Addr = nodeAddr
+	} else {
 		m := NewMember(nodeId, nodeAddr)
 		node.Members[m.Id] = m
 		node.resetMemberState(m)
-		node.transport.Connect(m.Id, m.Addr)
+		node.xport.Connect(m.Id, m.Addr)
 	}
-	node.saveState()
-}
-
-func (node *Node)saveState(){
-	// Id, Term, VoteFor, Members(+self)
+	node.store.SaveState()
 }
 
 /* ############################################# */
@@ -426,7 +424,7 @@ func (node *Node)send(msg *Message){
 		msg.PrevIndex = node.store.LastIndex
 		msg.PrevTerm = node.store.LastTerm
 	}
-	node.transport.Send(msg)
+	node.xport.Send(msg)
 }
 
 func (node *Node)broadcast(msg *Message){

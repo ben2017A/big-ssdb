@@ -34,18 +34,18 @@ func main(){
 	defer serv.Stop()
 
 	log.Println("raft server started at", port)
-	transport := raft.NewUdpTransport("127.0.0.1", port)
-	defer transport.Stop()
+	xport := raft.NewUdpTransport("127.0.0.1", port)
+	defer xport.Stop()
 
-	node := raft.NewNode(store, transport)
+	node := raft.NewNode(store, xport)
 	node.Id = nodeId
 
 	// if port == 8001 {
 	// 	node.Members["8002"] = raft.NewMember("8002", "127.0.0.1:8002")
-	// 	transport.Connect("8002", "127.0.0.1:8002")
+	// 	xport.Connect("8002", "127.0.0.1:8002")
 	// }else{
 	// 	node.Members["8001"] = raft.NewMember("8001", "127.0.0.1:8001")
-	// 	transport.Connect("8001", "127.0.0.1:8001")
+	// 	xport.Connect("8001", "127.0.0.1:8001")
 	// }
 
 	if port == 8001 {
@@ -61,7 +61,7 @@ func main(){
 		select{
 		case <-ticker.C:
 			node.Tick(TimerInterval)
-		case buf := <-transport.C:
+		case buf := <-xport.C:
 			msg := raft.DecodeMessage(string(buf));
 			if msg == nil {
 				log.Println("decode error:", buf)

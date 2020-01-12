@@ -9,29 +9,61 @@ type Storage struct{
 	LastIndex uint64
 	LastTerm uint32
 	CommitIndex uint64
-	// entries may not be continuous(for follower)
-	entries map[uint64]*Entry
 
 	dir string
-	wal *store.WALFile
 
+	node *Node
+	stateWAL *store.WALFile
+
+	// entries may not be continuous(for follower)
+	entries map[uint64]*Entry
+	entryWAL *store.WALFile
 	subscribers []Subscriber
 }
 
 func OpenStorage(dir string) *Storage{
 	ret := new(Storage)
-	ret.entries = make(map[uint64]*Entry)
 	ret.dir = dir
-	ret.wal = store.OpenWALFile(dir + "/entry.wal")
+
+	ret.stateWAL = store.OpenWALFile(dir + "/state.wal")
+
+	ret.entries = make(map[uint64]*Entry)
+	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
+
 	ret.subscribers = make([]Subscriber, 0)
 	log.Println("open store", dir)
 	return ret
 }
 
 func (store *Storage)Close(){
-	if store.wal != nil {
-		store.wal.Close()
+	if store.stateWAL != nil {
+		store.stateWAL.Close()
 	}
+	if store.entryWAL != nil {
+		store.entryWAL.Close()
+	}
+}
+
+/* #################### State ###################### */
+
+func (store *Storage)loadState(){
+
+}
+
+func (store *Storage)SetNode(node *Node){
+	store.node = node
+}
+
+func (store *Storage)SaveState(){
+	s := NewStateFromNode(store.node)
+	store.stateWAL.Append(s.Encode())
+	log.Println("stateWAL.append:", s.Encode())
+}
+
+/* #################### Entry ###################### */
+
+func (store *Storage)loadEntries(){
+	
 }
 
 func (store *Storage)AddSubscriber(sub Subscriber){
@@ -58,8 +90,8 @@ func (store *Storage)AppendEntry(ent Entry){
 		}
 		ent.CommitIndex = store.CommitIndex
 
-		store.wal.Append(ent.Encode())
-		log.Println("WALFile.append:", ent.Encode())
+		store.entryWAL.Append(ent.Encode())
+		log.Println("entryWAL.append:", ent.Encode())
 
 		store.LastIndex = ent.Index
 		store.LastTerm = ent.Term
@@ -75,8 +107,9 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 	}
 
 	ent := NewCommitEntry(commitIndex)
-	store.wal.Append(ent.Encode())
-	log.Println("WALFile.append:", ent.Encode())
+	store.entryWAL.Append(ent.Encode())
+	log.Println("entryWAL.append:", ent.Encode())
+
 	store.CommitIndex = commitIndex
 
 	for _, sub := range store.subscribers {
