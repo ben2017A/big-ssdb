@@ -62,23 +62,17 @@ func (store *Storage)SetNode(node *Node){
 	for nodeId, nodeAddr := range s.Members {
 		node.ConnectMember(nodeId, nodeAddr)
 	}
+
+	store.AddSubscriber(node)
+	store.applyEntries()
 }
 
 /* #################### State ###################### */
 
 func (store *Storage)loadState(){
-	wal := store.stateWAL
-	wal.Seek(0)
-	var lastLine string
-	for {
-		b := wal.Read()
-		if b == "" {
-			break;
-		}
-		lastLine = b
-	}
-	if lastLine != "" {
-		store.state.Decode(lastLine)
+	last := store.stateWAL.ReadLast()
+	if last != "" {
+		store.state.Decode(last)
 	}
 }
 
@@ -91,7 +85,29 @@ func (store *Storage)SaveState(){
 /* #################### Entry ###################### */
 
 func (store *Storage)loadEntries(){
-	
+	wal := store.entryWAL
+	wal.Seek(0)
+	for {
+		r := wal.Read()
+		if r == "" {
+			break
+		}
+
+		ent := DecodeEntry(r)
+		if ent == nil {
+			log.Println("bad entry format:", r)
+		} else {
+			log.Println("   ", ent.Encode())
+			if ent.Index > 0 && ent.Term > 0 {
+				store.entries[ent.Index] = ent
+				store.LastIndex = ent.Index
+				store.LastTerm = ent.Term
+			}
+			if ent.CommitIndex > 0 {
+				store.CommitIndex = ent.CommitIndex
+			}
+		}
+	}
 }
 
 func (store *Storage)AddSubscriber(sub Subscriber){
@@ -139,10 +155,17 @@ func (store *Storage)CommitEntry(commitIndex uint64){
 	log.Println("entryWAL.append:", ent.Encode())
 
 	store.CommitIndex = commitIndex
+	store.applyEntries()
+}
 
+func (store *Storage)applyEntries(){
 	for _, sub := range store.subscribers {
-		if sub.LastApplied() < store.CommitIndex {
+		for sub.LastApplied() < store.CommitIndex {
 			ent := store.GetEntry(sub.LastApplied() + 1)
+			if ent == nil {
+				log.Fatal("lost entry#", sub.LastApplied() + 1)
+				break;
+			}
 			sub.ApplyEntry(ent)
 		}
 	}

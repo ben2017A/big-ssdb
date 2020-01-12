@@ -47,7 +47,6 @@ func NewNode(store *Storage, xport Transport) *Node{
 	node.xport = xport
 
 	store.SetNode(node)
-	store.AddSubscriber(node)
 
 	return node
 }

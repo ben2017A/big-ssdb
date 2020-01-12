@@ -69,6 +69,19 @@ func (wal *WALFile)Read() string{
 	return wal.scanner.Text()
 }
 
+func (wal *WALFile)ReadLast() string{
+	wal.Seek(0)
+	var last string
+	for {
+		b := wal.Read()
+		if b == "" {
+			break;
+		}
+		last = b
+	}
+	return last
+}
+
 func (wal *WALFile)Append(record string) bool{
 	record += "\n"
 	buf := []byte(record)
