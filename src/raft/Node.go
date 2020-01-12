@@ -41,7 +41,7 @@ func NewNode(store *Storage, xport Transport) *Node{
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = 2000
+	node.electionTimeout = ElectionTimeout
 
 	node.store = store
 	node.xport = xport
@@ -187,8 +187,8 @@ func (node *Node)ConnectMember(nodeId string, nodeAddr string){
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
-	if node.Members[msg.Src] == nil {
-		log.Println("drop message from", msg.Src)
+	if msg.Dst != node.Id || node.Members[msg.Src] == nil {
+		log.Println("drop message src", msg.Src, "dst", msg.Dst)
 		return
 	}
 
