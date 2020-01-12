@@ -128,11 +128,12 @@ func (node *Node)becomeLeader(){
 
 	// write noop entry with currentTerm
 	if len(node.Members) > 0 {
-		ent := node.newEntry("Noop", "")
-		node.store.AppendEntry(*ent)
-
 		for _, m := range node.Members {
 			node.resetMemberState(m)
+		}
+		ent := node.newEntry("Noop", "")
+		node.store.AppendEntry(*ent)
+		for _, m := range node.Members {
 			node.replicateMember(m)
 		}
 	}
@@ -298,7 +299,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == "Heartbeat" {
-		// send ack
+		node.send(NewAppendEntryAck(msg.Src, true))
 	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
@@ -320,26 +321,28 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		m.MatchIndex = 0
 		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 	}else{
+		oldMatchIndex := m.MatchIndex
 		m.NextIndex = myutil.MaxU64(m.NextIndex, msg.PrevIndex + 1)
 		m.MatchIndex = myutil.MaxU64(m.MatchIndex, msg.PrevIndex)
-	
-		// sort matchIndex[] in descend order
-		matchIndex := make([]uint64, 0, len(node.Members) + 1)
-		matchIndex = append(matchIndex, node.store.LastIndex)
-		for _, m := range node.Members {
-			matchIndex = append(matchIndex, m.MatchIndex)
-		}
-		sort.Slice(matchIndex, func(i, j int) bool{
-			return matchIndex[i] > matchIndex[j]
-		})
-		log.Println(matchIndex)
-		commitIndex := matchIndex[len(matchIndex)/2]
+		if m.MatchIndex > oldMatchIndex {
+			// sort matchIndex[] in descend order
+			matchIndex := make([]uint64, 0, len(node.Members) + 1)
+			matchIndex = append(matchIndex, node.store.LastIndex)
+			for _, m := range node.Members {
+				matchIndex = append(matchIndex, m.MatchIndex)
+			}
+			sort.Slice(matchIndex, func(i, j int) bool{
+				return matchIndex[i] > matchIndex[j]
+			})
+			log.Println(matchIndex)
+			commitIndex := matchIndex[len(matchIndex)/2]
 
-		ent := node.store.GetEntry(commitIndex)
-		// only commit currentTerm's log
-		if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
-			node.store.CommitEntry(commitIndex)
-			// TODO: notify followers to commit
+			ent := node.store.GetEntry(commitIndex)
+			// only commit currentTerm's log
+			if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
+				node.store.CommitEntry(commitIndex)
+				// TODO: notify followers to commit
+			}
 		}
 	}
 
