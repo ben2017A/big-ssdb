@@ -302,6 +302,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
+			// TODO:
 			log.Println("delete conflict entry, and entries that follow")
 		}
 		node.store.AppendEntry(*ent)

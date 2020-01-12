@@ -7,8 +7,8 @@ import (
 	"myutil"
 )
 
-// Heartbeat: tell follower to commit
-// Commit: tell storage to commit
+// Commit: commit entry#n and prior entries
+// Rollback: rollback uncommitted entry#n and further entries
 
 type Entry struct{
 	Index uint64
