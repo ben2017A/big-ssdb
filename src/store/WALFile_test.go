@@ -16,19 +16,19 @@ func TestWALFile(t *testing.T){
 	wal.Append("2")
 
 	var s string
-	wal.Seek(1)
+	wal.SeekTo(1)
 	s = wal.Read()
 	if s != "1" {
 		t.Fatal("")
 	}
 
-	wal.Seek(0)
+	wal.SeekTo(0)
 	s = wal.Read()
 	if s != "0" {
 		t.Fatal("")
 	}
 
-	wal.Seek(2)
+	wal.SeekTo(2)
 	s = wal.Read()
 	if s != "2" {
 		t.Fatal("")

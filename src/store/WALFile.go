@@ -46,7 +46,7 @@ func (wal *WALFile)Close(){
 }
 
 // seek to n-th(0 based) record
-func (wal *WALFile)Seek(n int) bool {
+func (wal *WALFile)SeekTo(n int) bool {
 	_, err := wal.fp.Seek(0, os.SEEK_SET)
 	if err != nil {
 		return false
@@ -70,7 +70,7 @@ func (wal *WALFile)Read() string{
 }
 
 func (wal *WALFile)ReadLast() string{
-	wal.Seek(0)
+	wal.SeekTo(0)
 	var last string
 	for {
 		b := wal.Read()

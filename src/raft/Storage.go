@@ -86,7 +86,7 @@ func (store *Storage)SaveState(){
 
 func (store *Storage)loadEntries(){
 	wal := store.entryWAL
-	wal.Seek(0)
+	wal.SeekTo(0)
 	for {
 		r := wal.Read()
 		if r == "" {
