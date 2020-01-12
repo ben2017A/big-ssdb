@@ -10,9 +10,11 @@ type Storage struct{
 	LastTerm uint32
 	CommitIndex uint64
 
+	node *Node
+
 	dir string
 
-	node *Node
+	state *State
 	stateWAL *store.WALFile
 
 	// entries may not be continuous(for follower)
@@ -25,12 +27,16 @@ func OpenStorage(dir string) *Storage{
 	ret := new(Storage)
 	ret.dir = dir
 
+	ret.state = new(State)
 	ret.stateWAL = store.OpenWALFile(dir + "/state.wal")
 
 	ret.entries = make(map[uint64]*Entry)
 	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
-
 	ret.subscribers = make([]Subscriber, 0)
+
+	ret.loadState()
+	ret.loadEntries()
+
 	log.Println("open store", dir)
 	return ret
 }
@@ -44,20 +50,42 @@ func (store *Storage)Close(){
 	}
 }
 
+func (store *Storage)SetNode(node *Node){
+	store.node = node
+
+	s := store.state
+	node.Id = s.Id
+	node.Addr = s.Addr
+	node.Term = s.Term
+	node.VoteFor = s.VoteFor
+
+	for nodeId, nodeAddr := range s.Members {
+		node.ConnectMember(nodeId, nodeAddr)
+	}
+}
+
 /* #################### State ###################### */
 
 func (store *Storage)loadState(){
-
-}
-
-func (store *Storage)SetNode(node *Node){
-	store.node = node
+	wal := store.stateWAL
+	wal.Seek(0)
+	var lastLine string
+	for {
+		b := wal.Read()
+		if b == "" {
+			break;
+		}
+		lastLine = b
+	}
+	if lastLine != "" {
+		store.state.Decode(lastLine)
+	}
 }
 
 func (store *Storage)SaveState(){
-	s := NewStateFromNode(store.node)
-	store.stateWAL.Append(s.Encode())
-	log.Println("stateWAL.append:", s.Encode())
+	store.state = NewStateFromNode(store.node)
+	store.stateWAL.Append(store.state.Encode())
+	log.Println("stateWAL.append:", store.state.Encode())
 }
 
 /* #################### Entry ###################### */

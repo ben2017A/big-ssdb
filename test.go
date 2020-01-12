@@ -41,21 +41,13 @@ func main(){
 	node.Id = nodeId
 
 	// if port == 8001 {
-	// 	node.Members["8002"] = raft.NewMember("8002", "127.0.0.1:8002")
-	// 	xport.Connect("8002", "127.0.0.1:8002")
-	// }else{
-	// 	node.Members["8001"] = raft.NewMember("8001", "127.0.0.1:8001")
-	// 	xport.Connect("8001", "127.0.0.1:8001")
+	// 	node.Role = "leader"
+	// 	node.Term = 1
+	// 	node.AddMember("8001", "127.0.0.1:8001")
+	// 	node.AddMember("8002", "127.0.0.1:8002")
+	// } else {
+	// 	node.JoinGroup("8001", "127.0.0.1:8001")
 	// }
-
-	if port == 8001 {
-		node.Role = "leader"
-		node.Term = 1
-		node.AddMember("8001", "127.0.0.1:8001")
-		node.AddMember("8002", "127.0.0.1:8002")
-	} else {
-		node.JoinGroup("8001", "127.0.0.1:8001")
-	}
 
 	for{
 		select{

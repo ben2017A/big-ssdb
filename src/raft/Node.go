@@ -91,8 +91,6 @@ func (node *Node)becomeFollower(){
 
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
-	node.VoteFor = ""
-	node.store.SaveState()
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 	for _, m := range node.Members {
@@ -128,8 +126,6 @@ func (node *Node)checkVoteResult(){
 func (node *Node)becomeLeader(){
 	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
-	node.VoteFor = ""
-	node.store.SaveState()
 
 	for _, m := range node.Members {
 		m.Role = "follower"
@@ -329,16 +325,14 @@ func (node *Node)newEntry(type_, data string) *Entry{
 	return ent
 }
 
-func (node *Node)JoinGroup(leaderId string, leaderAddr string){
-	log.Println("JoinGroup", leaderId, leaderAddr)
-	if leaderId == node.Id {
-		log.Println("could not join self:", leaderId)
+func (node *Node)JoinGroup(nodeId string, nodeAddr string){
+	log.Println("JoinGroup", nodeId, nodeAddr)
+	if nodeId == node.Id {
+		log.Println("could not join self:", nodeId)
 		return
 	}
-	m := NewMember(leaderId, leaderAddr)
-	node.Members[m.Id] = m
-	node.resetMemberState(m)
-	node.xport.Connect(m.Id, m.Addr)
+	node.ConnectMember(nodeId, nodeAddr)
+	node.store.SaveState()
 	node.becomeFollower()
 }
 
@@ -347,29 +341,11 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 		log.Println("member already exists:", nodeId)
 		return
 	}
-	node.doAddMember(nodeId, nodeAddr)
-
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.newEntry("AddMember", data)
 	node.store.AppendEntry(*ent)
 	node.replicateAllMembers()	
 }
-
-// func (node *Node)DelMember(nodeId string){
-// 	if nodeId == node.Id {
-// 		log.Println("could not del self:", nodeId)
-// 		return
-// 	}
-// 	if node.Members[nodeId] == nil {
-// 		log.Println("member not exists:", nodeId)
-// 		return
-// 	}
-
-// 	data := fmt.Sprintf("%s", nodeId)
-// 	ent := node.newEntry("DelMember", data)
-// 	node.store.AppendEntry(*ent)
-// 	node.replicateAllMembers()	
-// }
 
 func (node *Node)Write(data string){
 	ent := node.newEntry("Write", data)
@@ -393,9 +369,10 @@ func (node *Node)ApplyEntry(ent *Entry){
 	if ent.Type == "AddMember" {
 		log.Println("apply ", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
-		nodeId, nodeAddr := ps[0], ps[1]
-		node.doAddMember(nodeId, nodeAddr)
+		node.ConnectMember(ps[0], ps[1])
+		node.store.SaveState()
 	}else if ent.Type == "DelMember" {
+		//
 	}else{
 		log.Println("don't apply #", ent.Index, ent.Type)
 	}
@@ -403,7 +380,7 @@ func (node *Node)ApplyEntry(ent *Entry){
 
 /* ############################################# */
 
-func (node *Node)doAddMember(nodeId string, nodeAddr string){
+func (node *Node)ConnectMember(nodeId string, nodeAddr string){
 	if nodeId == node.Id {
 		node.Addr = nodeAddr
 	} else {
@@ -412,7 +389,7 @@ func (node *Node)doAddMember(nodeId string, nodeAddr string){
 		node.resetMemberState(m)
 		node.xport.Connect(m.Id, m.Addr)
 	}
-	node.store.SaveState()
+	log.Println("    connect member", nodeId, nodeAddr)
 }
 
 /* ############################################# */
