@@ -13,7 +13,6 @@ import (
 const ElectionTimeout = 5 * 1000
 const HeartbeatTimeout   = 4 * 1000
 
-const RequestVoteTimeout = 1 * 1000
 const ReplicationTimeout = 1 * 1000
 
 type Node struct{
@@ -30,7 +29,6 @@ type Node struct{
 	votesReceived map[string]string
 
 	electionTimeout int
-	requestVoteTimeout int
 
 	store *Storage
 	xport Transport
@@ -52,19 +50,11 @@ func NewNode(store *Storage, xport Transport) *Node{
 }
 
 func (node *Node)Tick(timeElapse int){
-	if node.Role == "candidate" {
-		node.requestVoteTimeout -= timeElapse
-		if node.requestVoteTimeout <= 0 {
-			log.Println("RequestVote timeout")
-			node.becomeFollower()
-			return
-		}
-	}
-	if node.Role == "follower" {
+	if node.Role == "follower" || node.Role == "candidate" {
 		node.electionTimeout -= timeElapse
 		if node.electionTimeout <= 0 {
 			log.Println("Election timeout")
-			node.becomeCandidate()
+			node.startElection()
 		}
 	}
 	if node.Role == "leader" {
@@ -87,7 +77,6 @@ func (node *Node)becomeFollower(){
 	if node.Role == "follower" {
 		return
 	}
-
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
@@ -98,15 +87,17 @@ func (node *Node)becomeFollower(){
 	}
 }
 
-func (node *Node)becomeCandidate(){
-	log.Println("convert", node.Role, "=> candidate")
+func (node *Node)startElection(){
+	if node.Role != "candidate" {
+		log.Println("convert", node.Role, "=> candidate")
+	}
 	node.Role = "candidate"
 	node.Term += 1
 	node.VoteFor = node.Id
 	node.store.SaveState()
 
 	node.votesReceived = make(map[string]string)
-	node.requestVoteTimeout = RequestVoteTimeout
+	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
 	node.broadcast(NewRequestVoteMsg())
 	if len(node.Members) == 0 {
