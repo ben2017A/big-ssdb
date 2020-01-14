@@ -34,7 +34,7 @@ func main(){
 	xport := raft.NewUdpTransport("127.0.0.1", port)
 	defer xport.Stop()
 
-	store := raft.OpenStorage(fmt.Sprintf("./tmp/%s", nodeId))
+	store := raft.OpenStorage(fmt.Sprintf("./tmp/%s/raft", nodeId))
 	defer store.Close()
 
 	node := raft.NewNode(store, xport)
