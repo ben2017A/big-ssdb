@@ -2,22 +2,27 @@ package store
 
 import (
 	"testing"
-	// "os"
+	"os"
 )
 
 func TestSSTFile(t *testing.T){
 	filename := "tmp/a.sst"
-	// os.Remove(filename)
+	os.Remove(filename)
 
 	sst := OpenSSTFile(filename)
 	defer sst.Close()
 
-	// kvs := make(map[string]string)
-	// kvs["a"] = "1"
-	// kvs["c"] = "3"
-	// kvs["b"] = "2"
-	// t.Log(kvs)
-	// sst.Save(kvs)
+	kvs := make(map[string]string)
+	kvs["a"] = "1"
+	kvs["c"] = "3"
+	kvs["b"] = "2"
+	t.Log(kvs)
+	if sst.Save(kvs) == false {
+		t.Fatal("")
+	}
+	if sst.Save(kvs) == true {
+		t.Fatal("")
+	}
 
 	t.Log(sst.Get("a"))
 	t.Log(sst.Get("c"))

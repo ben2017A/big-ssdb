@@ -5,10 +5,11 @@ import (
 	"log"
 	"sort"
 	"strings"
-	// "myutil"
+	"myutil"
 )
 
 type SSTFile struct{
+	readonly bool
 	valid bool
 	key string
 	val string
@@ -18,6 +19,11 @@ type SSTFile struct{
 func OpenSSTFile(filename string) *SSTFile{
 	sst := new(SSTFile)
 	sst.valid = false
+	if myutil.FileExists(filename) {
+		sst.readonly = true
+	}else{
+		sst.readonly = false
+	}
 	sst.wal = OpenWALFile(filename) // TODO: 不使用 WALFile
 	if sst.wal == nil {
 		return nil
@@ -29,7 +35,13 @@ func (sst *SSTFile)Close(){
 	sst.wal.Close()
 }
 
-func (sst *SSTFile)Save(kvs map[string]string){
+func (sst *SSTFile)Save(kvs map[string]string) bool{
+	if sst.readonly {
+		return false
+	}
+	// only allow save once
+	sst.readonly = true
+
 	arr := make([][2]string, len(kvs))
 	n := 0
 	for k, v := range kvs {
@@ -44,6 +56,8 @@ func (sst *SSTFile)Save(kvs map[string]string){
 		s := kv[0] + " " + kv[1]
 		sst.wal.Append(s)
 	}
+
+	return true
 }
 
 func (sst *SSTFile)Get(key string) (val string, found bool){
