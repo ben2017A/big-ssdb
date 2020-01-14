@@ -4,7 +4,7 @@ import (
 	"log"
 	"store"
 
-	"myutil"
+	// "myutil"
 )
 
 type Storage struct{
@@ -143,7 +143,6 @@ func (store *Storage)AppendEntry(ent Entry){
 }
 
 func (store *Storage)CommitEntry(commitIndex uint64){
-	commitIndex = myutil.MinU64(commitIndex, store.LastIndex)
 	if commitIndex <= store.CommitIndex {
 		return
 	}

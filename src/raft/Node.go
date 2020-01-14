@@ -301,7 +301,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	node.store.CommitEntry(ent.CommitIndex)
+	if ent.CommitIndex > node.store.CommitIndex {
+		commitIndex := myutil.MinU64(ent.CommitIndex, node.store.LastIndex)
+		node.store.CommitEntry(commitIndex)
+	}
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
