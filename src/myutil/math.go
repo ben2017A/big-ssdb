@@ -3,7 +3,6 @@ package myutil
 import (
 	"fmt"
 	"strconv"
-	"os"
 )
 
 func Atou(s string) uint32{
@@ -46,12 +45,4 @@ func MaxU64(a, b uint64) uint64{
 	} else {
 		return b
 	}
-}
-
-func IsDir(path string) bool{
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }

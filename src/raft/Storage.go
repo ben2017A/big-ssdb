@@ -94,7 +94,6 @@ func (store *Storage)loadEntries(){
 		if r == "" {
 			break
 		}
-
 		ent := DecodeEntry(r)
 		if ent == nil {
 			log.Println("bad entry format:", r)
