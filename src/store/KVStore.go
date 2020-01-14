@@ -1,7 +1,7 @@
 package store
 
 type KVStore struct{
-
+	mm map[string]string
 }
 
 func (store *KVStore)Get(key string) (string, bool){
