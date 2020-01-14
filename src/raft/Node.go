@@ -311,9 +311,15 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
 
 	if msg.Data == "false" {
-		m.NextIndex = myutil.MaxU64(1, m.NextIndex - 1)
+		if msg.PrevIndex + 5 < node.store.LastIndex {
+			// fast recover
+			m.NextIndex = myutil.MaxU64(1, msg.PrevIndex + 1)
+			log.Println("fast recover NextIndex for node", m.Id, "to", m.NextIndex)
+		} else {
+			m.NextIndex = myutil.MaxU64(1, m.NextIndex - 1)
+			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
+		}
 		m.MatchIndex = 0
-		log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 	}else{
 		oldMatchIndex := m.MatchIndex
 		m.NextIndex = myutil.MaxU64(m.NextIndex, msg.PrevIndex + 1)
