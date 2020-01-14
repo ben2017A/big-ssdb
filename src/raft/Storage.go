@@ -30,10 +30,10 @@ func OpenStorage(dir string) *Storage{
 	ret.dir = dir
 
 	ret.state = new(State)
-	ret.stateWAL = store.OpenWALFile(dir + "/state.wal")
+	ret.stateWAL = store.OpenWALFile(dir + "/raft/state.wal")
 
 	ret.entries = make(map[uint64]*Entry)
-	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
+	ret.entryWAL = store.OpenWALFile(dir + "/raft/entry.wal")
 	ret.subscribers = make([]Subscriber, 0)
 
 	ret.loadState()
