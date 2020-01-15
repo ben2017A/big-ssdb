@@ -11,6 +11,7 @@ import (
 
 type WALFile struct{
 	fp *os.File
+	Filename string
 	scanner *bufio.Scanner
 }
 
@@ -37,6 +38,7 @@ func OpenWALFile(filename string) *WALFile{
 
 	ret := new(WALFile)
 	ret.fp = fp
+	ret.Filename = filename
 
 	return ret
 }

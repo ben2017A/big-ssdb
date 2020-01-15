@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"os"
 	"log"
 	"store"
 
@@ -43,19 +44,19 @@ func OpenStorage(dir string) *Storage{
 	return ret
 }
 
-func (store *Storage)Close(){
-	if store.stateWAL != nil {
-		store.stateWAL.Close()
+func (st *Storage)Close(){
+	if st.stateWAL != nil {
+		st.stateWAL.Close()
 	}
-	if store.entryWAL != nil {
-		store.entryWAL.Close()
+	if st.entryWAL != nil {
+		st.entryWAL.Close()
 	}
 }
 
-func (store *Storage)SetNode(node *Node){
-	store.node = node
+func (st *Storage)SetNode(node *Node){
+	st.node = node
 
-	s := store.state
+	s := st.state
 	node.Id = s.Id
 	node.Addr = s.Addr
 	node.Term = s.Term
@@ -65,29 +66,47 @@ func (store *Storage)SetNode(node *Node){
 		node.ConnectMember(nodeId, nodeAddr)
 	}
 
-	store.AddSubscriber(node)
-	store.applyEntries()
+	st.AddSubscriber(node)
+	st.applyEntries()
+}
+
+func (st *Storage)AddSubscriber(sub Subscriber){
+	st.subscribers = append(st.subscribers, sub)
 }
 
 /* #################### State ###################### */
 
-func (store *Storage)loadState(){
-	last := store.stateWAL.ReadLast()
-	if last != "" {
-		store.state.Decode(last)
-	}
+func (st *Storage)SaveState(){
+	st.state = NewStateFromNode(st.node)
+	st.stateWAL.Append(st.state.Encode())
+	log.Println("[WAL]", st.state.Encode())
 }
 
-func (store *Storage)SaveState(){
-	store.state = NewStateFromNode(store.node)
-	store.stateWAL.Append(store.state.Encode())
-	log.Println("[WAL]", store.state.Encode())
+func (st *Storage)loadState(){
+	last := st.stateWAL.ReadLast()
+	if last != "" {
+		st.state.Decode(last)
+	}
+	st.compactStateWAL()
+}
+
+func (st *Storage)compactStateWAL(){
+	wal := store.OpenWALFile(st.dir + "/state.wal.tmp")
+	wal.Append(st.state.Encode())
+
+	// TODO
+	st.stateWAL.Close()
+	os.Remove(st.stateWAL.Filename)
+	os.Rename(wal.Filename, st.stateWAL.Filename)
+
+	st.stateWAL = wal
+	log.Println("[state WAL] compacted")
 }
 
 /* #################### Entry ###################### */
 
-func (store *Storage)loadEntries(){
-	wal := store.entryWAL
+func (st *Storage)loadEntries(){
+	wal := st.entryWAL
 	wal.SeekTo(0)
 	for {
 		r := wal.Read()
@@ -99,66 +118,62 @@ func (store *Storage)loadEntries(){
 			log.Println("bad entry format:", r)
 		} else {
 			if ent.Index > 0 && ent.Term > 0 {
-				store.entries[ent.Index] = ent
-				store.LastIndex = ent.Index
-				store.LastTerm = ent.Term
+				st.entries[ent.Index] = ent
+				st.LastIndex = ent.Index
+				st.LastTerm = ent.Term
 			}
 			if ent.CommitIndex > 0 {
-				store.CommitIndex = ent.CommitIndex
+				st.CommitIndex = ent.CommitIndex
 			}
 		}
 	}
 }
 
-func (store *Storage)AddSubscriber(sub Subscriber){
-	store.subscribers = append(store.subscribers, sub)
-}
-
-func (store *Storage)GetEntry(index uint64) *Entry{
+func (st *Storage)GetEntry(index uint64) *Entry{
 	// TODO:
-	return store.entries[index]
+	return st.entries[index]
 }
 
-func (store *Storage)AppendEntry(ent Entry){
-	if ent.Index < store.CommitIndex {
+func (st *Storage)AppendEntry(ent Entry){
+	if ent.Index < st.CommitIndex {
 		return
 	}
 
 	// TODO:
-	store.entries[ent.Index] = &ent
+	st.entries[ent.Index] = &ent
 
 	for{
-		ent := store.GetEntry(store.LastIndex + 1)
+		ent := st.GetEntry(st.LastIndex + 1)
 		if ent == nil {
 			break;
 		}
-		ent.CommitIndex = store.CommitIndex
+		ent.CommitIndex = st.CommitIndex
 
-		store.entryWAL.Append(ent.Encode())
+		st.entryWAL.Append(ent.Encode())
 		log.Println("[WAL]", ent.Encode())
 
-		store.LastIndex = ent.Index
-		store.LastTerm = ent.Term
+		st.LastIndex = ent.Index
+		st.LastTerm = ent.Term
 	}
 }
 
-func (store *Storage)CommitEntry(commitIndex uint64){
-	if commitIndex <= store.CommitIndex {
+func (st *Storage)CommitEntry(commitIndex uint64){
+	if commitIndex <= st.CommitIndex {
 		return
 	}
 
 	ent := NewCommitEntry(commitIndex)
-	store.entryWAL.Append(ent.Encode())
+	st.entryWAL.Append(ent.Encode())
 	log.Println("[WAL]", ent.Encode())
 
-	store.CommitIndex = commitIndex
-	store.applyEntries()
+	st.CommitIndex = commitIndex
+	st.applyEntries()
 }
 
-func (store *Storage)applyEntries(){
-	for _, sub := range store.subscribers {
-		for sub.LastApplied() < store.CommitIndex {
-			ent := store.GetEntry(sub.LastApplied() + 1)
+func (st *Storage)applyEntries(){
+	for _, sub := range st.subscribers {
+		for sub.LastApplied() < st.CommitIndex {
+			ent := st.GetEntry(sub.LastApplied() + 1)
 			if ent == nil {
 				log.Fatal("lost entry#", sub.LastApplied() + 1)
 				break;
