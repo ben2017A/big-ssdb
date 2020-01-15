@@ -1,7 +1,7 @@
 package raft
 
 import (
-	"os"
+	// "os"
 	"log"
 	"store"
 
@@ -87,21 +87,21 @@ func (st *Storage)loadState(){
 	if last != "" {
 		st.state.Decode(last)
 	}
-	st.compactStateWAL()
+	// st.compactStateWAL()
 }
 
-func (st *Storage)compactStateWAL(){
-	wal := store.OpenWALFile(st.dir + "/state.wal.tmp")
-	wal.Append(st.state.Encode())
+// func (st *Storage)compactStateWAL(){
+// 	wal := store.OpenWALFile(st.dir + "/state.wal.tmp")
+// 	wal.Append(st.state.Encode())
 
-	// TODO
-	st.stateWAL.Close()
-	os.Remove(st.stateWAL.Filename)
-	os.Rename(wal.Filename, st.stateWAL.Filename)
+// 	// TODO
+// 	st.stateWAL.Close()
+// 	os.Remove(st.stateWAL.Filename)
+// 	os.Rename(wal.Filename, st.stateWAL.Filename)
 
-	st.stateWAL = wal
-	log.Println("[state WAL] compacted")
-}
+// 	st.stateWAL = wal
+// 	log.Println("[state WAL] compacted")
+// }
 
 /* #################### Entry ###################### */
 

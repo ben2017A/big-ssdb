@@ -1,4 +1,4 @@
-package kvdb
+package store
 
 type KVStore struct{
 	mm map[string]string
