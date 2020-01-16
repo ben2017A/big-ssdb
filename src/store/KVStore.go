@@ -70,6 +70,8 @@ func (db *KVStore)compactWAL(){
 func (db *KVStore)loadWALFile(fn string){
 	log.Println("load", fn)
 	wal := OpenWALFile(fn)
+	defer wal.Close()
+	
 	wal.SeekTo(0)
 	for {
 		r := wal.Read()
