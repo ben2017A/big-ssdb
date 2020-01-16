@@ -32,6 +32,8 @@ func OpenKVStore(dir string) *KVStore{
 	fn_old := dir + "/log.wal" + ".OLD"
 	fn_tmp := dir + "/log.wal" + ".TMP"
 
+	db.wal = OpenWALFile(fn_new)
+
 	if myutil.FileExists(fn_old) {
 		db.loadWALFile(fn_old)
 	}
@@ -48,13 +50,7 @@ func OpenKVStore(dir string) *KVStore{
 	wal.Close()
 
 	os.Rename(fn_tmp, fn_old)
-	if myutil.FileExists(fn_new) {
-		os.Rename(fn_new, fn_cur)
-	} else {
-		os.Remove(fn_cur)
-	}
-
-	db.wal = OpenWALFile(fn_cur)
+	os.Rename(fn_new, fn_cur)
 
 	return db
 }
