@@ -39,6 +39,7 @@ func OpenKVStore(dir string) *KVStore{
 		db.loadWALFile(fn_cur)
 	}
 
+	os.Remove(fn_tmp)
 	wal := OpenWALFile(fn_tmp)
 	for k, v := range db.mm {
 		r := fmt.Sprintf("set %s %s", k, v);
