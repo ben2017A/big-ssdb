@@ -64,6 +64,8 @@ func OpenKVStore(dir string) *KVStore{
 
 		os.Remove(fn_cur);
 		os.Remove(fn_new);
+
+		os.Rename(fn_old, fn_cur)
 	}
 
 	db.wal = OpenWALFile(fn_cur)
