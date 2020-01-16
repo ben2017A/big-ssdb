@@ -19,7 +19,7 @@ type WALFile struct{
 func OpenWALFile(filename string) *WALFile{
 	dirname := path.Dir(filename)
 	if !myutil.IsDir(dirname) {
-		os.MkdirAll(dirname, 0655)
+		os.MkdirAll(dirname, 0755)
 	}
 	if !myutil.IsDir(dirname) {
 		return nil
