@@ -14,13 +14,6 @@ type KVStore struct{
 	mm map[string]string
 	wal *WALFile
 }
-/*
-# WAL switch
-create(NEW)
-compact(log, OLD)
-remove(log)
-rename(NEW, log)
-*/
 
 func OpenKVStore(dir string) *KVStore{
 	if !myutil.IsDir(dir) {
@@ -34,38 +27,30 @@ func OpenKVStore(dir string) *KVStore{
 	db.dir = dir
 	db.mm = make(map[string]string)
 
-	// normally, at most 2 of these 3 files should exists
+	fn_new := dir + "/log.wal" + ".NEW"
 	fn_cur := dir + "/log.wal"
-	fn_old := fn_cur + ".OLD"
-	fn_new := fn_cur + ".NEW"
-	if myutil.FileExists(fn_new) {
-		if myutil.FileExists(fn_old) {
-			os.Rename(fn_old, fn_cur)
-		}
-	} else {
-		if myutil.FileExists(fn_cur) {
-			os.Rename(fn_cur, fn_new)
-		}
-		if myutil.FileExists(fn_old) {
-			os.Rename(fn_old, fn_cur)
-		}
+	fn_old := dir + "/log.wal" + ".OLD"
+	fn_tmp := dir + "/log.wal" + ".TMP"
+
+	if myutil.FileExists(fn_old) {
+		db.loadWALFile(fn_old)
+	}
+	if myutil.FileExists(fn_cur) {
+		db.loadWALFile(fn_cur)
 	}
 
-	{
-		db.loadWALFile(fn_cur)
-		db.loadWALFile(fn_new)
+	wal := OpenWALFile(fn_tmp)
+	for k, v := range db.mm {
+		r := fmt.Sprintf("set %s %s", k, v);
+		wal.Append(r)
+	}
+	wal.Close()
 
-		wal := OpenWALFile(fn_old)
-		for k, v := range db.mm {
-			r := fmt.Sprintf("set %s %s", k, v);
-			wal.Append(r)
-		}
-		wal.Close()
-
-		os.Remove(fn_cur);
-		os.Remove(fn_new);
-
-		os.Rename(fn_old, fn_cur)
+	os.Rename(fn_tmp, fn_old)
+	if myutil.FileExists(fn_new) {
+		os.Rename(fn_new, fn_cur)
+	} else {
+		os.Remove(fn_cur)
 	}
 
 	db.wal = OpenWALFile(fn_cur)
