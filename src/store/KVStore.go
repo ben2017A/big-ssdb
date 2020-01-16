@@ -4,7 +4,6 @@ import (
 	"os"
 	"log"
 	"fmt"
-	"sort"
 	"strings"
 	// "path/filepath"
 	"myutil"
@@ -14,12 +13,14 @@ type KVStore struct{
 	dir string
 	mm map[string]string
 	wal *WALFile
-
-	filenums map[int]string // num : ext
-	minnum int
-	maxnum int
-	nextnum int
 }
+/*
+# WAL switch
+create(NEW)
+compact(log, OLD)
+remove(log)
+rename(NEW, log)
+*/
 
 func OpenKVStore(dir string) *KVStore{
 	if !myutil.IsDir(dir) {
@@ -32,88 +33,47 @@ func OpenKVStore(dir string) *KVStore{
 	db := new(KVStore)
 	db.dir = dir
 	db.mm = make(map[string]string)
-	db.filenums = make(map[int]string)
-	db.minnum = 100000
-	db.maxnum = 999999
-	db.nextnum = db.minnum
 
-	db.scanFiles()
-
-	nums := make([]int, 0)
-	for num, ext := range db.filenums {
-		if ext == "wal" {
-			nums = append(nums, num)
+	// normally, at most 2 of these 3 files should exists
+	fn_cur := dir + "/log.wal"
+	fn_old := fn_cur + ".OLD"
+	fn_new := fn_cur + ".NEW"
+	if myutil.FileExists(fn_new) {
+		if myutil.FileExists(fn_old) {
+			os.Rename(fn_old, fn_cur)
+		}
+	} else {
+		if myutil.FileExists(fn_cur) {
+			os.Rename(fn_cur, fn_new)
+		}
+		if myutil.FileExists(fn_old) {
+			os.Rename(fn_old, fn_cur)
 		}
 	}
-	sort.Ints(nums)
-	for _, num := range nums {
-		name := fmt.Sprintf("%s/%d.wal", db.dir, num)
-		log.Println("load", name)
-		wal := OpenWALFile(name)
-		defer wal.Close()
-		db.loadWAL(wal)
+
+	{
+		db.loadWALFile(fn_cur)
+		db.loadWALFile(fn_new)
+
+		wal := OpenWALFile(fn_old)
+		for k, v := range db.mm {
+			r := fmt.Sprintf("set %s %s", k, v);
+			wal.Append(r)
+		}
+		wal.Close()
+
+		os.Remove(fn_cur);
+		os.Remove(fn_new);
 	}
 
-	log.Println(db.mm)
+	db.wal = OpenWALFile(fn_cur)
 
-	db.wal = db.nextWAL()
-	for k, v := range db.mm {
-		r := fmt.Sprintf("set %s %s", k, v);
-		db.wal.Append(r)
-	}
-
-	for _, num := range nums {
-		name := fmt.Sprintf("%s/%d.wal", db.dir, num)
-		os.Remove(name)
-	}
-
-	/*
-	# WAL switch
-	create(wal.NEW)
-	write(wal.NEW, data)
-	rename(wal, wal.OLD)
-	rename(wal.NEW, wal)
-	remove(wal.OLD)
-	*/
 	return db
 }
 
-func (db *KVStore)scanFiles(){
-	f, _ := os.Open(db.dir)
-	defer f.Close()
-	names, _ := f.Readdirnames(-1)
-	for _, n := range names {
-		ps := strings.Split(n, ".")
-		if len(ps) != 2 {
-			continue
-		}
-		ext := ps[1]
-		if ext == "wal" {
-			num := myutil.Atoi(ps[0])
-			if num > db.minnum {
-				db.filenums[num] = ext
-			}
-			if num > db.nextnum {
-				db.nextnum = num
-			}
-		}
-	}
-}
-
-func (db *KVStore)nextWAL() *WALFile{
-	for db.filenums[db.nextnum] != "" {
-		db.nextnum ++;
-		if db.nextnum > db.maxnum {
-			db.nextnum = db.minnum
-		}
-	}
-	name := fmt.Sprintf("%s/%d.wal", db.dir, db.nextnum)
-	wal := OpenWALFile(name)
-	db.filenums[db.nextnum] = "wal"
-	return wal
-}
-
-func (db *KVStore)loadWAL(wal *WALFile){
+func (db *KVStore)loadWALFile(fn string){
+	log.Println("load", fn)
+	wal := OpenWALFile(fn)
 	wal.SeekTo(0)
 	for {
 		r := wal.Read()
