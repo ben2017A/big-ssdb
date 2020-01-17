@@ -5,7 +5,7 @@ import (
 	"log"
 	"fmt"
 	"strings"
-	// "path/filepath"
+	"path/filepath"
 	"myutil"
 )
 
@@ -21,6 +21,7 @@ type KVStore struct{
 }
 
 func OpenKVStore(dir string) *KVStore{
+	dir, _ = filepath.Abs(dir)
 	if !myutil.IsDir(dir) {
 		os.MkdirAll(dir, 0755)
 	}
@@ -71,7 +72,7 @@ func (db *KVStore)loadWALFile(fn string){
 	log.Println("load", fn)
 	wal := OpenWALFile(fn)
 	defer wal.Close()
-	
+
 	wal.SeekTo(0)
 	for {
 		r := wal.Read()
