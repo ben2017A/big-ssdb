@@ -9,6 +9,7 @@ import (
 	"myutil"
 )
 
+// kvdb
 type KVStore struct{
 	dir string
 	mm map[string]string
