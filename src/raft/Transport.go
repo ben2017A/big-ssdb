@@ -1,7 +1,7 @@
 package raft
 
 type Transport interface{
-	Stop()
+	Close()
 	Connect(nodeId string, addr string)
 	Disconnect(nodeId string)
 

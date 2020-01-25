@@ -44,9 +44,16 @@ func NewNode(store *Storage, xport Transport) *Node{
 	node.store = store
 	node.xport = xport
 
-	store.SetNode(node)
-
 	return node
+}
+
+func (node *Node)Start(){
+	node.store.SetNode(node)
+}
+
+func (node *Node)Stop(){
+	node.store.Close()
+	node.xport.Close()
 }
 
 func (node *Node)Tick(timeElapse int){
@@ -382,12 +389,6 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 	node.replicateEntries()	
 }
 
-func (node *Node)Write(data string){
-	ent := node.newEntry("Write", data)
-	node.store.AppendEntry(*ent)
-	node.replicateEntries()
-}
-
 func (node *Node)replicateEntries(){
 	for _, m := range node.Members {
 		node.replicateMember(m)
@@ -396,6 +397,16 @@ func (node *Node)replicateEntries(){
 	if node.Role == "leader" && len(node.Members) == 0 {
 		node.store.CommitEntry(node.store.LastIndex)
 	}
+}
+
+func (node *Node)AddSubscriber(sub Subscriber){
+	node.store.AddSubscriber(sub)
+}
+
+func (node *Node)Replicate(data string){
+	ent := node.newEntry("Replicate", data)
+	node.store.AppendEntry(*ent)
+	node.replicateEntries()
 }
 
 /* #################### Subscriber interface ######################### */
@@ -414,8 +425,8 @@ func (node *Node)ApplyEntry(ent *Entry){
 		node.store.SaveState()
 	}else if ent.Type == "DelMember" {
 		//
-	}else if ent.Type == "Write"{
-		log.Println("[Apply]", ent.Encode())
+	}else if ent.Type == "Replicate"{
+		// log.Println("[Apply]", ent.Encode())
 	}
 }
 

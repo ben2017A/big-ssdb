@@ -11,10 +11,6 @@ JoinGroup 8001 127.0.0.1:8001
 # nc -u 127.0.0.1 8103
 JoinGroup 8001 127.0.0.1:8001
 
-Write [k0]
-Write [k1]
-Write [k2]
-Write [k3]
 ```
 
 Raft 集群启动方式:

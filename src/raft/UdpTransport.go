@@ -40,7 +40,7 @@ func (tp *UdpTransport)start(){
 	}()
 }
 
-func (tp *UdpTransport)Stop(){
+func (tp *UdpTransport)Close(){
 	tp.conn.Close()
 	close(tp.C)
 } 
