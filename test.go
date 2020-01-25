@@ -29,7 +29,7 @@ func NewService(dir string, node *raft.Node) *Service {
 	svc.meta_db = store.OpenKVStore(dir + "/meta")
 	svc.data_db = store.OpenKVStore(dir + "/data")
 
-	s, _ := svc.meta_db.Get("LastApplied")
+	s := svc.meta_db.Get("LastApplied")
 	svc.lastApplied = myutil.Atou64(s)
 
 	svc.node = node

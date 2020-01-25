@@ -96,21 +96,19 @@ func (db *KVStore)Close(){
 	}
 }
 
-func (db *KVStore)Get(key string) (string, bool){
-	v, ok := db.mm[key]
-	return v, ok
+func (db *KVStore)Get(key string) string{
+	v, _ := db.mm[key]
+	return v
 }
 
-func (db *KVStore)Set(key string, val string) error{
+func (db *KVStore)Set(key string, val string){
 	r := fmt.Sprintf("set %s %s", key, val);
 	db.wal.Append(r)
 	db.mm[key] = val
-	return nil
 }
 
-func (db *KVStore)Del(key string) error{
+func (db *KVStore)Del(key string){
 	r := fmt.Sprintf("del %s", key);
 	db.wal.Append(r)
 	delete(db.mm, key)
-	return nil
 }
