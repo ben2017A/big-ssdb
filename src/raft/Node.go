@@ -304,7 +304,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 			// TODO:
 			log.Println("delete conflict entry, and entries that follow")
 		}
+		// 如果存在空洞, store 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 		node.store.AppendEntry(*ent)
+		// 不用验证 ent.Index, node.send 会忽略 entry 空洞
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 

@@ -142,6 +142,7 @@ func (st *Storage)AppendEntry(ent Entry){
 	// TODO:
 	st.entries[ent.Index] = &ent
 
+	// 更新 LastTer 和 LastIndex, 忽略空洞
 	for{
 		ent := st.GetEntry(st.LastIndex + 1)
 		if ent == nil {
