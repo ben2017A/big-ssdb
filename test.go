@@ -40,7 +40,7 @@ func NewService(dir string, node *raft.Node) *Service {
 
 func (svc *Service)Set(key string, val string){
 	s := fmt.Sprintf("set %s %s", key, val)
-	svc.node.Replicate(s)
+	svc.node.Write(s)
 }
 
 func (svc *Service)Get(key string){
@@ -49,7 +49,7 @@ func (svc *Service)Get(key string){
 
 func (svc *Service)Del(key string){
 	s := fmt.Sprintf("del %s", key)
-	svc.node.Replicate(s)
+	svc.node.Write(s)
 }
 
 /* #################### raft.Subscriber interface ######################### */
@@ -61,7 +61,7 @@ func (svc *Service)LastApplied() uint64{
 func (svc *Service)ApplyEntry(ent *raft.Entry){
 	svc.lastApplied = ent.Index
 
-	if ent.Type == "Replicate"{
+	if ent.Type == "Write"{
 		log.Println("[Apply]", ent.Data)
 		ps := strings.Split(ent.Data, " ")
 		if ps[0] == "set" {

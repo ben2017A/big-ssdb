@@ -13,7 +13,7 @@ type Entry struct{
 	Index uint64
 	Term uint32
 	CommitIndex uint64
-	Type string // Heartbeat, AddMember, DelMember, Noop, Replicate, Commit
+	Type string // Heartbeat, AddMember, DelMember, Noop, Write, Commit
 	Data string
 }
 

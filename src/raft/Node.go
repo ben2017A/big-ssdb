@@ -401,12 +401,13 @@ func (node *Node)replicateEntries(){
 	}
 }
 
+// rename AddService
 func (node *Node)AddSubscriber(sub Subscriber){
 	node.store.AddSubscriber(sub)
 }
 
-func (node *Node)Replicate(data string){
-	ent := node.newEntry("Replicate", data)
+func (node *Node)Write(data string){
+	ent := node.newEntry("Write", data)
 	node.store.AppendEntry(*ent)
 	node.replicateEntries()
 }
@@ -427,7 +428,7 @@ func (node *Node)ApplyEntry(ent *Entry){
 		node.store.SaveState()
 	}else if ent.Type == "DelMember" {
 		//
-	}else if ent.Type == "Replicate"{
+	}else if ent.Type == "Write"{
 		// log.Println("[Apply]", ent.Encode())
 	}
 }
