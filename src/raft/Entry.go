@@ -9,7 +9,6 @@ import (
 
 // Commit: commit entry#n and prior entries
 // Rollback: rollback uncommitted entry#n and further entries
-
 type Entry struct{
 	Index uint64
 	Term uint32
