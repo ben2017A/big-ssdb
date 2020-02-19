@@ -20,8 +20,8 @@ type Node struct{
 	Role string
 	Addr string
 
-	Term uint32
-	lastApplied uint64
+	Term int32
+	lastApplied int64
 
 	Members map[string]*Member
 
@@ -298,7 +298,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	if ent.Type == "Heartbeat" {
 		node.send(NewAppendEntryAck(msg.Src, true))
-	} else {
+	} else if ent.Type == "Write" {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
 			// TODO:
@@ -311,7 +311,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 
 	if ent.CommitIndex > node.store.CommitIndex {
-		commitIndex := myutil.MinU64(ent.CommitIndex, node.store.LastIndex)
+		commitIndex := myutil.MinInt64(ent.CommitIndex, node.store.LastIndex)
 		node.store.CommitEntry(commitIndex)
 	}
 }
@@ -322,20 +322,20 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	if msg.Data == "false" {
 		if msg.PrevIndex + 5 < node.store.LastIndex {
 			// fast recover
-			m.NextIndex = myutil.MaxU64(1, msg.PrevIndex + 1)
+			m.NextIndex = myutil.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("fast recover NextIndex for node", m.Id, "to", m.NextIndex)
 		} else {
-			m.NextIndex = myutil.MaxU64(1, m.NextIndex - 1)
+			m.NextIndex = myutil.MaxInt64(1, m.NextIndex - 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 		}
 		m.MatchIndex = 0
 	}else{
 		oldMatchIndex := m.MatchIndex
-		m.NextIndex = myutil.MaxU64(m.NextIndex, msg.PrevIndex + 1)
-		m.MatchIndex = myutil.MaxU64(m.MatchIndex, msg.PrevIndex)
+		m.NextIndex = myutil.MaxInt64(m.NextIndex, msg.PrevIndex + 1)
+		m.MatchIndex = myutil.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		if m.MatchIndex > oldMatchIndex {
 			// sort matchIndex[] in descend order
-			matchIndex := make([]uint64, 0, len(node.Members) + 1)
+			matchIndex := make([]int64, 0, len(node.Members) + 1)
 			matchIndex = append(matchIndex, node.store.LastIndex)
 			for _, m := range node.Members {
 				matchIndex = append(matchIndex, m.MatchIndex)
@@ -414,7 +414,7 @@ func (node *Node)Write(data string){
 
 /* #################### Subscriber interface ######################### */
 
-func (node *Node)LastApplied() uint64{
+func (node *Node)LastApplied() int64{
 	return node.lastApplied
 }
 

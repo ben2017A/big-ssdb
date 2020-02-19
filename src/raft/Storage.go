@@ -9,9 +9,9 @@ import (
 )
 
 type Storage struct{
-	LastIndex uint64
-	LastTerm uint32
-	CommitIndex uint64
+	LastIndex int64
+	LastTerm int32
+	CommitIndex int64
 
 	node *Node
 
@@ -21,7 +21,7 @@ type Storage struct{
 	stateWAL *store.WALFile
 
 	// entries may not be continuous(for follower)
-	entries map[uint64]*Entry
+	entries map[int64]*Entry
 	entryWAL *store.WALFile
 	subscribers []Subscriber
 }
@@ -33,7 +33,7 @@ func OpenStorage(dir string) *Storage{
 	ret.state = new(State)
 	ret.stateWAL = store.OpenWALFile(dir + "/state.wal")
 
-	ret.entries = make(map[uint64]*Entry)
+	ret.entries = make(map[int64]*Entry)
 	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
 	ret.subscribers = make([]Subscriber, 0)
 
@@ -129,7 +129,7 @@ func (st *Storage)loadEntries(){
 	}
 }
 
-func (st *Storage)GetEntry(index uint64) *Entry{
+func (st *Storage)GetEntry(index int64) *Entry{
 	// TODO:
 	return st.entries[index]
 }
@@ -158,7 +158,7 @@ func (st *Storage)AppendEntry(ent Entry){
 	}
 }
 
-func (st *Storage)CommitEntry(commitIndex uint64){
+func (st *Storage)CommitEntry(commitIndex int64){
 	if commitIndex <= st.CommitIndex {
 		return
 	}

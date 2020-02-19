@@ -15,7 +15,7 @@ import (
 )
 
 type Service struct{
-	lastApplied uint64
+	lastApplied int64
 	
 	meta_db *store.KVStore
 	data_db *store.KVStore
@@ -30,7 +30,7 @@ func NewService(dir string, node *raft.Node) *Service {
 	svc.data_db = store.OpenKVStore(dir + "/data")
 
 	s := svc.meta_db.Get("LastApplied")
-	svc.lastApplied = myutil.Atou64(s)
+	svc.lastApplied = myutil.Atoi64(s)
 
 	svc.node = node
 	svc.node.AddSubscriber(svc)
@@ -54,7 +54,7 @@ func (svc *Service)Del(key string){
 
 /* #################### raft.Subscriber interface ######################### */
 
-func (svc *Service)LastApplied() uint64{
+func (svc *Service)LastApplied() int64{
 	return svc.lastApplied
 }
 

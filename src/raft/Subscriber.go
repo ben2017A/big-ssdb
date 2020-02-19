@@ -2,7 +2,8 @@ package raft
 
 // rename to Service?
 type Subscriber interface{
-	LastApplied() uint64
-	// LastCommitted() uint64;
+	// LastCommitted() int64;
+
+	LastApplied() int64
 	ApplyEntry(ent *Entry)
 }

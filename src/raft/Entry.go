@@ -8,12 +8,11 @@ import (
 )
 
 // Commit: commit entry#n and prior entries
-// Rollback: rollback uncommitted entry#n and further entries
 type Entry struct{
-	Index uint64
-	Term uint32
-	CommitIndex uint64
-	Type string // Heartbeat, AddMember, DelMember, Noop, Write, Commit
+	Index int64
+	Term int32
+	CommitIndex int64
+	Type string // AddMember, DelMember, Heartbeat, Noop, Commit, Write
 	Data string
 }
 
@@ -37,15 +36,15 @@ func (e *Entry)Decode(buf string) bool{
 		return false
 	}
 
-	e.Index = myutil.Atou64(ps[0])
-	e.Term = myutil.Atou(ps[1])
-	e.CommitIndex = myutil.Atou64(ps[2])
+	e.Index = myutil.Atoi64(ps[0])
+	e.Term = myutil.Atoi32(ps[1])
+	e.CommitIndex = myutil.Atoi64(ps[2])
 	e.Type = ps[3]
 	e.Data = ps[4]
 	return true
 }
 
-func NewHeartbeatEntry(commitIndex uint64) *Entry{
+func NewHeartbeatEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
 	ent.Type = "Heartbeat"
 	ent.Index = 0
@@ -54,7 +53,7 @@ func NewHeartbeatEntry(commitIndex uint64) *Entry{
 	return ent
 }
 
-func NewCommitEntry(commitIndex uint64) *Entry{
+func NewCommitEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
 	ent.Type = "Commit"
 	ent.Index = 0

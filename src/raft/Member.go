@@ -6,10 +6,10 @@ type Member struct{
 	Addr string
 
 	// sliding window
-	NextIndex uint64
-	MatchIndex uint64
+	NextIndex int64
+	MatchIndex int64
 
-	ResendIndex uint64
+	ResendIndex int64
 	ResendCount int
 
 	HeartbeatTimeout int

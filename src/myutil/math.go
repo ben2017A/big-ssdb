@@ -5,26 +5,21 @@ import (
 	"strconv"
 )
 
-func Atoi(s string) int{
-	n, _ := strconv.Atoi(s)
-	return n
+func Atoi32(s string) int32{
+	n, _ := strconv.ParseInt(s, 10, 32)
+	return int32(n)
 }
 
-func Atou(s string) uint32{
-	n, _ := strconv.ParseUint(s, 10, 32)
-	return uint32(n)
-}
-
-func Utoa(u uint32) string{
+func Itoa32(u int32) string{
 	return fmt.Sprintf("%d", u)
 }
 
-func Atou64(s string) uint64{
-	n, _ := strconv.ParseUint(s, 10, 64)
+func Atoi64(s string) int64{
+	n, _ := strconv.ParseInt(s, 10, 64)
 	return n
 }
 
-func Utoa64(u uint64) string{
+func Itoa64(u int64) string{
 	return fmt.Sprintf("%d", u)
 }
 
@@ -36,7 +31,7 @@ func MinInt(a, b int) int{
 	}
 }
 
-func MinU64(a, b uint64) uint64{
+func MinInt64(a, b int64) int64{
 	if a < b {
 		return a
 	} else {
@@ -44,7 +39,7 @@ func MinU64(a, b uint64) uint64{
 	}
 }
 
-func MaxU64(a, b uint64) uint64{
+func MaxInt64(a, b int64) int64{
 	if a > b {
 		return a
 	} else {
