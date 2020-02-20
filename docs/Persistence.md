@@ -2,13 +2,13 @@
 
 ## Binlog
 
-Raft 状态机就是 Binlog 的实现. Binlog 记录的是业务操作, 不一定是幂等, 例如 incr 操作.
+Raft 状态机就是 binlog 的实现. Binlog 记录的是业务操作, 不一定是幂等, 例如 incr 操作.
 
 ## Redolog
 
-Redolog 记录的是 set 和 del 操作, 是幂等的. 每一条 Redolog 都隐式地 commit 一条 Binlog.
+Redolog 记录的是 set 和 del 操作, 是幂等的. 每一条 redolog 都隐式地 commit 一条 binlog.
 
-Binlog 转换成幂等操作, 然后写入 Redolog. 写入成功之后, 等待更新 db. 如果 db 更新成功, 往 Binlog 中追加 checkpoint.
+Binlog 转换成幂等操作, 然后写入 redolog. 写入成功之后, 等待更新 db. 如果 db 更新成功, 往 binlog 中追加 checkpoint.
 
 	set a=1
 	checkpoint
@@ -16,6 +16,8 @@ Binlog 转换成幂等操作, 然后写入 Redolog. 写入成功之后, 等待�
 	del a
 
 故障重启时, 将最后一个 checkpoint 之后的 log 重新执行一遍更新 db.
+
+**优化:** binlog 和 redolog 不必一一对应, 可以将 redolog 缓存起来, 再最终持久化, 最后一条 redolog 带有 commit index.
 
 ## Undolog
 
