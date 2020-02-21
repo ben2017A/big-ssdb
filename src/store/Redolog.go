@@ -1,7 +1,9 @@
 package store
 
+// begin, commit, set, del, check
 type Redolog struct{
 	wal *WALFile
+	commitIndex int64
 }
 
 func (rd *Redolog)SeekToLastCheckpoint() {
@@ -16,16 +18,8 @@ func (rd *Redolog)Check() {
 	
 }
 
-func (rd *Redolog)Begin(idx int64) {
-}
-
-func (rd *Redolog)Commit(idx int64) {
-}
-
-func (rd *Redolog)Set(idx int64, key string, val string) {
+// 如果出错, 可能无法将完整的 transaction 完全写入
+func (rd *Redolog)WriteTransaction(trx *Transaction){
 	
 }
 
-func (rd *Redolog)Del(idx int64, key string) {
-	
-}
