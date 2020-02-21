@@ -4,7 +4,7 @@
 
 ### 分层与解耦
 
-Raft 只负责 log 同步, Subscriber/Service 只负责 log 重放. Service引入 Apply 和 Commit 两个概念, 让 Raft 与业务无关.
+Raft 只负责 log 同步, Service 只负责 log 重放. Service引入 Apply 和 Commit 两个概念, 让 Raft 与业务无关.
 
 ### Raft
 

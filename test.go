@@ -33,7 +33,7 @@ func NewService(dir string, node *raft.Node) *Service {
 	svc.lastApplied = myutil.Atoi64(s)
 
 	svc.node = node
-	svc.node.AddSubscriber(svc)
+	svc.node.AddService(svc)
 
 	return svc
 }
@@ -52,7 +52,7 @@ func (svc *Service)Del(key string){
 	svc.node.Write(s)
 }
 
-/* #################### raft.Subscriber interface ######################### */
+/* #################### raft.Service interface ######################### */
 
 func (svc *Service)LastApplied() int64{
 	return svc.lastApplied

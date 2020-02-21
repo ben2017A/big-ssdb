@@ -23,7 +23,7 @@ type Storage struct{
 	// entries may not be continuous(for follower)
 	entries map[int64]*Entry
 	entryWAL *store.WALFile
-	subscribers []Subscriber
+	services []Service
 }
 
 func OpenStorage(dir string) *Storage{
@@ -35,7 +35,7 @@ func OpenStorage(dir string) *Storage{
 
 	ret.entries = make(map[int64]*Entry)
 	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
-	ret.subscribers = make([]Subscriber, 0)
+	ret.services = make([]Service, 0)
 
 	ret.loadState()
 	ret.loadEntries()
@@ -66,12 +66,12 @@ func (st *Storage)SetNode(node *Node){
 		node.ConnectMember(nodeId, nodeAddr)
 	}
 
-	st.AddSubscriber(node)
+	st.AddService(node)
 	st.applyEntries()
 }
 
-func (st *Storage)AddSubscriber(sub Subscriber){
-	st.subscribers = append(st.subscribers, sub)
+func (st *Storage)AddService(svc Servide){
+	st.services = append(st.services, svc)
 }
 
 /* #################### State ###################### */
@@ -87,21 +87,7 @@ func (st *Storage)loadState(){
 	if last != "" {
 		st.state.Decode(last)
 	}
-	// st.compactStateWAL()
 }
-
-// func (st *Storage)compactStateWAL(){
-// 	wal := store.OpenWALFile(st.dir + "/state.wal.tmp")
-// 	wal.Append(st.state.Encode())
-
-// 	// TODO
-// 	st.stateWAL.Close()
-// 	os.Remove(st.stateWAL.Filename)
-// 	os.Rename(wal.Filename, st.stateWAL.Filename)
-
-// 	st.stateWAL = wal
-// 	log.Println("[state WAL] compacted")
-// }
 
 /* #################### Entry ###################### */
 
@@ -175,14 +161,14 @@ func (st *Storage)CommitEntry(commitIndex int64){
 }
 
 func (st *Storage)applyEntries(){
-	for _, sub := range st.subscribers {
-		for sub.LastApplied() < st.CommitIndex {
-			ent := st.GetEntry(sub.LastApplied() + 1)
+	for _, svc := range st.services {
+		for svc.LastApplied() < st.CommitIndex {
+			ent := st.GetEntry(svc.LastApplied() + 1)
 			if ent == nil {
-				log.Fatal("lost entry#", sub.LastApplied() + 1)
+				log.Fatal("lost entry#", svc.LastApplied() + 1)
 				break;
 			}
-			sub.ApplyEntry(ent)
+			svc.ApplyEntry(ent)
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package raft
 
-// rename to Service?
-type Subscriber interface{
+type Service interface{
 	// LastCommitted() int64;
 
 	LastApplied() int64

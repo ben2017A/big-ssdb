@@ -398,9 +398,8 @@ func (node *Node)replicateEntries(){
 	}
 }
 
-// rename AddService
-func (node *Node)AddSubscriber(sub Subscriber){
-	node.store.AddSubscriber(sub)
+func (node *Node)AddService(svc Service){
+	node.store.AddService(svc)
 }
 
 func (node *Node)Write(data string){
@@ -409,7 +408,7 @@ func (node *Node)Write(data string){
 	node.replicateEntries()
 }
 
-/* #################### Subscriber interface ######################### */
+/* #################### Service interface ######################### */
 
 func (node *Node)LastApplied() int64{
 	return node.lastApplied
