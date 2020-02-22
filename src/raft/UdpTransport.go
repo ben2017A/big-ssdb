@@ -35,7 +35,7 @@ func (tp *UdpTransport)Addr() string {
 
 func (tp *UdpTransport)start(){
 	go func(){
-		buf := make([]byte, 1024 * 64)
+		buf := make([]byte, 64*1024)
 		for{
 			n, _, _ := tp.conn.ReadFromUDP(buf)
 			data := make([]byte, n)
