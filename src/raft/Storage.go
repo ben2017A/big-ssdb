@@ -52,17 +52,17 @@ func (st *Storage)Close(){
 	}
 }
 
+func (st *Storage)State() *State{
+	return st.state
+}
+
 func (st *Storage)SetNode(node *Node){
 	st.node = node
 
 	s := st.state
-	node.Id = s.Id
-	node.Addr = s.Addr
-	node.Term = s.Term
-	node.VoteFor = s.VoteFor
-
-	for nodeId, nodeAddr := range s.Members {
-		node.ConnectMember(nodeId, nodeAddr)
+	if s.Id != "" {
+		node.Term = s.Term
+		node.VoteFor = s.VoteFor
 	}
 
 	st.AddService(node)

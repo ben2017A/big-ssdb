@@ -17,8 +17,8 @@ const ReplicationTimeout = 1 * 1000
 
 type Node struct{
 	Id string
-	Role string
 	Addr string
+	Role string
 
 	Term int32
 	lastApplied int64
@@ -34,21 +34,27 @@ type Node struct{
 	xport Transport
 }
 
-func NewNode(store *Storage, xport Transport) *Node{
+func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node := new(Node)
+	node.Id = nodeId
+	node.Addr = xport.Addr()
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
 	node.electionTimeout = ElectionTimeout
 
 	node.store = store
+	node.store.SetNode(node)
 	node.xport = xport
 
 	return node
 }
 
 func (node *Node)Start(){
-	node.store.SetNode(node)
+	s := node.store.State()
+	for nodeId, nodeAddr := range s.Members {
+		node.ConnectMember(nodeId, nodeAddr)
+	}
 }
 
 func (node *Node)Stop(){
@@ -178,22 +184,21 @@ func (node *Node)replicateMember(m *Member){
 }
 
 func (node *Node)ConnectMember(nodeId string, nodeAddr string){
-	if nodeId == node.Id {
-		node.Addr = nodeAddr
-	} else {
+	if nodeId != node.Id {
 		m := NewMember(nodeId, nodeAddr)
 		node.Members[m.Id] = m
 		node.resetMemberState(m)
+		log.Println("    connect member", nodeId, nodeAddr)
 		node.xport.Connect(m.Id, m.Addr)
 	}
-	log.Println("    connect member", nodeId, nodeAddr)
 }
 
 /* ############################################# */
 
 func (node *Node)HandleRaftMessage(msg *Message){
 	if msg.Dst != node.Id || node.Members[msg.Src] == nil {
-		log.Println("drop message src", msg.Src, "dst", msg.Dst)
+		log.Println(node.Id)
+		log.Println("drop message src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
 		return
 	}
 
@@ -298,7 +303,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	if ent.Type == "Heartbeat" {
 		node.send(NewAppendEntryAck(msg.Src, true))
-	} else if ent.Type == "Write" {
+	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
 			// TODO:

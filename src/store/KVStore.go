@@ -95,6 +95,7 @@ func (db *KVStore)Close(){
 
 func (db *KVStore)Get(key string) string{
 	v, _ := db.mm[key]
+	log.Println(db.mm)
 	return v
 }
 

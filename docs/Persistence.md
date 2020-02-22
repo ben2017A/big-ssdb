@@ -1,6 +1,5 @@
 # Persistence
 
-
 ## Binlog
 
 Raft 状态机就是 binlog 的实现. Binlog 记录的是业务操作, 不一定是幂等, 例如 incr 操作.
@@ -9,10 +8,10 @@ Raft 状态机就是 binlog 的实现. Binlog 记录的是业务操作, 不一�
 
 Redolog 记录的是 set 和 del 操作, 是幂等的. Redolog 先缓冲在内存中(默认事务), 记录最新的 index, 然后再写入 redolog 文件:
 
-	begin #index
+	begin
 	set a=1
 	del b
-	commit #index
+	commit
 
 Fsync(), 接着刷新 db, 最后往 redolog 写入 checkpoint:
 

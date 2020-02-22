@@ -103,13 +103,12 @@ func main(){
 	xport := raft.NewUdpTransport("127.0.0.1", port)
 	store := raft.OpenStorage(base_dir + "/raft")
 
-	node := raft.NewNode(store, xport)
-	node.Id = nodeId
+	node := raft.NewNode(nodeId, store, xport)
 
 	/////////////////////////////////////
 
-	log.Println("api server started at", port+100)
-	serv_xport := raft.NewUdpTransport("127.0.0.1", port+100)
+	log.Println("api server started at", port+1000)
+	serv_xport := raft.NewUdpTransport("127.0.0.1", port+1000)
 	serv := NewService(base_dir, node)
 
 	node.Start()

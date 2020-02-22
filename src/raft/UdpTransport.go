@@ -8,6 +8,7 @@ import (
 )
 
 type UdpTransport struct{
+	addr string
 	C chan []byte
 	conn *net.UDPConn
 	dns map[string]string
@@ -19,12 +20,17 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	conn, _ := net.ListenUDP("udp", addr)
 
 	tp := new(UdpTransport)
+	tp.addr = fmt.Sprintf("%s:%d", ip, port)
 	tp.conn = conn
 	tp.C = make(chan []byte)
 	tp.dns = make(map[string]string)
 
 	tp.start()
 	return tp
+}
+
+func (tp *UdpTransport)Addr() string {
+	return tp.addr
 }
 
 func (tp *UdpTransport)start(){
