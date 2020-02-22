@@ -15,9 +15,6 @@ func OpenRedolog(filename string) *Redolog {
 	ret.wal = store.OpenWALFile(filename)
 	ret.commitIndex = 0
 	
-	ret.wal.SeekToEnd()
-	log.Println(ret.wal.Item())
-	
 	ret.wal.SeekTo(0)
 	for ret.wal.Next() {
 		r := ret.wal.Item()

@@ -17,20 +17,20 @@ func TestRedolog(t *testing.T){
 		if tx == nil {
 			break
 		}
-		fmt.Println(tx.Entries())
+		fmt.Println(tx)
 	}
 	
-	// tx := NewTransaction()
-	// for i :=0; i < 3; i++ {
-	// 	key := fmt.Sprintf("k-%d", i)
-	// 	val := fmt.Sprintf("%d", i+1)
-	// 	idx := rd.CommitIndex() + 1 + int64(i)
-	// 	tx.AddEntry(&Entry{idx, EntryTypeSet, key, val})
-	// }
-	// fmt.Println(tx.BeginEntry(), tx.CommitEntry())
+	tx := NewTransaction()
+	for i :=0; i < 3; i++ {
+		key := fmt.Sprintf("k-%d", i)
+		val := fmt.Sprintf("%d", i+1)
+		idx := rd.CommitIndex() + 1 + int64(i)
+		tx.AddEntry(&Entry{idx, EntryTypeSet, key, val})
+	}
+	fmt.Println(tx.BeginEntry(), tx.CommitEntry())
 	
-	// rd.WriteTransaction(tx)
-	// rd.WriteCheckpoint()
+	rd.WriteTransaction(tx)
+	rd.WriteCheckpoint()
 	
-	// fmt.Println(rd.CommitIndex())
+	fmt.Println(rd.CommitIndex())
 }
