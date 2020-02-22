@@ -27,7 +27,7 @@ func TestRedolog(t *testing.T){
 		key := fmt.Sprintf("k-%d", i)
 		val := fmt.Sprintf("%d", i+1)
 		idx := rd.CommitIndex() + 1 + int64(i)
-		tx.AddEntry(&Entry{idx, EntryTypeSet, key, val})
+		tx.AddEntry(Entry{idx, EntryTypeSet, key, val})
 	}
 	fmt.Println(tx.BeginEntry(), tx.CommitEntry())
 	

@@ -64,14 +64,15 @@ func (tx *Transaction)GetEntry(key string) *Entry {
 }
 
 func (tx *Transaction)Set(idx int64, key string, val string) {
-	tx.AddEntry(&Entry{idx, EntryTypeSet, key, val})
+	tx.AddEntry(Entry{idx, EntryTypeSet, key, val})
 }
 
 func (tx *Transaction)Del(idx int64, key string) {
-	tx.AddEntry(&Entry{idx, EntryTypeSet, key, "#"})
+	tx.AddEntry(Entry{idx, EntryTypeSet, key, "#"})
 }
 
-func (tx *Transaction)AddEntry(ent *Entry) {
+// 传值
+func (tx *Transaction)AddEntry(ent Entry) {
 	if ent.Index > 0 {
 		if tx.minIndex == 0 {
 			tx.minIndex = ent.Index
@@ -82,6 +83,6 @@ func (tx *Transaction)AddEntry(ent *Entry) {
 	tx.maxIndex = myutil.MaxInt64(tx.maxIndex, ent.Index)
 
 	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
-		tx.entries[ent.Key] = ent
+		tx.entries[ent.Key] = &ent
 	}
 }

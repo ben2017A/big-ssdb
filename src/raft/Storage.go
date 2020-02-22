@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"path/filepath"
 	"store"
 	"myutil"
 )
@@ -29,7 +30,7 @@ func OpenStorage(dir string) *Storage{
 	ret.entries = make(map[int64]*Entry)
 	ret.services = make([]Service, 0)
 	
-	ret.dir = dir
+	ret.dir, _ = filepath.Abs(dir)
 	ret.db = store.OpenKVStore(dir)
 
 	ret.CommitIndex = myutil.Atoi64(ret.db.Get("@CommitIndex"))
@@ -37,7 +38,7 @@ func OpenStorage(dir string) *Storage{
 	ret.loadState()
 	ret.loadEntries()
 
-	log.Println("open storage at:", dir)
+	log.Println("open storage at:", ret.dir)
 	log.Println("    CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
 	log.Println("    State:", ret.state.Encode())
 	return ret
@@ -109,7 +110,7 @@ func (st *Storage)GetEntry(index int64) *Entry{
 	return st.entries[index]
 }
 
-// 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
+// 传值. 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 func (st *Storage)AddEntry(ent Entry){
 	if ent.Index < st.CommitIndex {
 		log.Println(ent.Index, "<", st.CommitIndex)

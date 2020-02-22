@@ -82,6 +82,7 @@ func (svc *Service)LastApplied() int64{
 }
 
 func (svc *Service)ApplyEntry(ent *raft.Entry){
+	// 不需要持久化, 从 Redolog 中获取
 	svc.lastApplied = ent.Index
 
 	if ent.Type == "Write"{

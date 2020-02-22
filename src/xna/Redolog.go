@@ -58,7 +58,7 @@ func (rd *Redolog)NextTransaction() *Transaction {
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
-		tx.AddEntry(ent)
+		tx.AddEntry(*ent)
 		if ent.Type == EntryTypeCommit {
 			return tx
 		}
