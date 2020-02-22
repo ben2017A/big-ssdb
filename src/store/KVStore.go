@@ -75,11 +75,8 @@ func (db *KVStore)loadWALFile(fn string){
 	defer wal.Close()
 
 	wal.SeekTo(0)
-	for {
-		r := wal.Read()
-		if r == "" {
-			break;
-		}
+	for wal.Next() {
+		r := wal.Item()
 		ps := strings.Split(r, " ")
 		switch ps[0] {
 		case "set":

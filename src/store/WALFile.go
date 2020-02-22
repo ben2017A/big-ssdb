@@ -47,10 +47,6 @@ func (wal *WALFile)Close(){
 	wal.fp.Close()
 }
 
-func (wal *WALFile)SeekToFirst() {
-	wal.SeekTo(0)
-}
-
 func (wal *WALFile)SeekToEnd() {
 	wal.SeekTo(1 << 31)
 }
@@ -81,21 +77,15 @@ func (wal *WALFile)Item() string {
 }
 
 func (wal *WALFile)Read() string{
-	if !wal.scanner.Scan() {
-		return ""
-	}
-	return wal.scanner.Text()
+	wal.Next()
+	return wal.Item()
 }
 
 func (wal *WALFile)ReadLast() string{
 	wal.SeekTo(0)
 	var last string
-	for {
-		b := wal.Read()
-		if b == "" {
-			break;
-		}
-		last = b
+	for wal.Next() {
+		last = wal.Item()
 	}
 	return last
 }

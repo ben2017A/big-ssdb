@@ -7,6 +7,8 @@ import (
 
 func TestRedolog(t *testing.T){
 	rd := OpenRedolog("tmp/redo.log")
+	defer rd.Close()
+	
 	fmt.Println(rd.CommitIndex())
 
 	rd.SeekToLastCheckpoint()
@@ -15,7 +17,7 @@ func TestRedolog(t *testing.T){
 		if tx == nil {
 			break
 		}
-		fmt.Println(tx)
+		fmt.Println(tx.Entries())
 	}
 	
 	// tx := NewTransaction()

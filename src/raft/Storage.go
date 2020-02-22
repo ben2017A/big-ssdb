@@ -93,11 +93,8 @@ func (st *Storage)loadState(){
 func (st *Storage)loadEntries(){
 	wal := st.entryWAL
 	wal.SeekTo(0)
-	for {
-		r := wal.Read()
-		if r == "" {
-			break
-		}
+	for wal.Next() {
+		r := wal.Item()
 		ent := DecodeEntry(r)
 		if ent == nil {
 			log.Println("bad entry format:", r)

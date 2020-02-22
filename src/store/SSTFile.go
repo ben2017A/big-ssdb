@@ -74,11 +74,8 @@ func (sst *SSTFile)Seek(key string){
 
 	wal := sst.wal
 	wal.SeekTo(0)
-	for {
-		r := wal.Read()
-		if r == "" {
-			break
-		}
+	for wal.Next() {
+		r := wal.Item()
 		ps := strings.SplitN(r, " ", 2)
 		if len(ps) != 2 {
 			log.Println("bad record:", r)
