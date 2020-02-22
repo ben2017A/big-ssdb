@@ -17,8 +17,7 @@ import (
 type Service struct{
 	lastApplied int64
 	
-	meta_db *store.KVStore
-	data_db *store.KVStore
+	db *store.KVStore
 
 	node *raft.Node
 }
@@ -26,10 +25,9 @@ type Service struct{
 func NewService(dir string, node *raft.Node) *Service {
 	svc := new(Service)
 
-	svc.meta_db = store.OpenKVStore(dir + "/meta")
-	svc.data_db = store.OpenKVStore(dir + "/data")
+	svc.db = store.OpenKVStore(dir + "/data")
 
-	s := svc.meta_db.Get("LastApplied")
+	s := svc.db.Get("LastApplied")
 	svc.lastApplied = myutil.Atoi64(s)
 
 	svc.node = node
@@ -43,8 +41,14 @@ func (svc *Service)Set(key string, val string){
 	svc.node.Write(s)
 }
 
+// 非幂等操作, 需要引入 Redolog
+func (svc *Service)Incr(key string, val string){
+	s := fmt.Sprintf("set %s %s", key, val)
+	svc.node.Write(s)
+}
+
 func (svc *Service)Get(key string){
-	log.Println(svc.data_db.Get(key))
+	log.Println(svc.db.Get(key))
 }
 
 func (svc *Service)Del(key string){
@@ -65,14 +69,14 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 		log.Println("[Apply]", ent.Data)
 		ps := strings.Split(ent.Data, " ")
 		if ps[0] == "set" {
-			svc.data_db.Set(ps[1], ps[2])
+			svc.db.Set(ps[1], ps[2])
 		}
 		if ps[0] == "del" {
-			svc.data_db.Del(ps[1])
+			svc.db.Del(ps[1])
 		}
 	}
 
-	svc.meta_db.Set("LastApplied", fmt.Sprintf("%d", svc.lastApplied))
+	svc.db.Set("LastApplied", fmt.Sprintf("%d", svc.lastApplied))
 }
 
 /* ############################################# */
@@ -104,6 +108,7 @@ func main(){
 	store := raft.OpenStorage(base_dir + "/raft")
 
 	node := raft.NewNode(nodeId, store, xport)
+	node.Start()
 
 	/////////////////////////////////////
 
@@ -111,7 +116,6 @@ func main(){
 	serv_xport := raft.NewUdpTransport("127.0.0.1", port+1000)
 	serv := NewService(base_dir, node)
 
-	node.Start()
 
 	for{
 		select{

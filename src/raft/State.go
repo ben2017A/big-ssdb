@@ -12,20 +12,23 @@ type State struct{
 	Members map[string]string
 }
 
-func NewStateFromNode(node *Node) *State{
-	s := State{node.Id, node.Addr, node.Term, node.VoteFor, make(map[string]string)}
-	for _, m := range node.Members {
-		s.Members[m.Id] = m.Addr
-	}
-	return &s
-}
-
 func DecodeState(buf string) *State {
 	m := new(State)
 	if m.Decode(buf) {
 		return m
 	} else {
 		return nil
+	}
+}
+
+func (s *State)LoadFromNode(node *Node) {
+	s.Id = node.Id
+	s.Addr = node.Addr
+	s.Term = node.Term
+	s.VoteFor = node.VoteFor
+	s.Members = make(map[string]string)
+	for _, m := range node.Members {
+		s.Members[m.Id] = m.Addr
 	}
 }
 

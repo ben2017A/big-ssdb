@@ -44,16 +44,17 @@ func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node.electionTimeout = ElectionTimeout
 
 	node.store = store
-	node.store.SetNode(node)
 	node.xport = xport
 
 	return node
 }
 
 func (node *Node)Start(){
+	node.store.SetNode(node)
+	
 	s := node.store.State()
 	for nodeId, nodeAddr := range s.Members {
-		node.ConnectMember(nodeId, nodeAddr)
+		node.connectMember(nodeId, nodeAddr)
 	}
 }
 
@@ -183,7 +184,7 @@ func (node *Node)replicateMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
 
-func (node *Node)ConnectMember(nodeId string, nodeAddr string){
+func (node *Node)connectMember(nodeId string, nodeAddr string){
 	if nodeId != node.Id {
 		m := NewMember(nodeId, nodeAddr)
 		node.Members[m.Id] = m
@@ -301,7 +302,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == "Write" || ent.Type == "Noop" {
+	if ent.Type == "Hearbeat" || ent.Type == "Commit" {
+		//
+	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
 			// TODO:
@@ -376,7 +379,7 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 		log.Println("could not join self:", nodeId)
 		return
 	}
-	node.ConnectMember(nodeId, nodeAddr)
+	node.connectMember(nodeId, nodeAddr)
 	node.store.SaveState()
 	node.becomeFollower()
 }
@@ -424,8 +427,7 @@ func (node *Node)ApplyEntry(ent *Entry){
 	if ent.Type == "AddMember" {
 		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
-		node.ConnectMember(ps[0], ps[1])
-		node.store.SaveState()
+		node.connectMember(ps[0], ps[1])
 	}else if ent.Type == "DelMember" {
 		// TODO:
 	}else{

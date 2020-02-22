@@ -4,6 +4,7 @@ import (
 	"os"
 	"log"
 	"fmt"
+	"sort"
 	"strings"
 	"path/filepath"
 	"myutil"
@@ -59,9 +60,21 @@ func (db *KVStore)compactWAL(){
 
 	os.Remove(db.wal_tmp)
 	wal := OpenWALFile(db.wal_tmp)
-	for k, v := range db.mm {
-		r := fmt.Sprintf("set %s %s", k, v);
-		wal.Append(r)
+	{
+		arr := make([][2]string, len(db.mm))
+		n := 0
+		for k, v := range db.mm {
+			arr[n] = [2]string{k, v}
+			n ++
+		}
+		sort.Slice(arr, func(i, j int) bool{
+			return arr[i][0] < arr[j][0]
+		})
+		
+		for _, kv := range arr {
+			r := fmt.Sprintf("set %s %s", kv[0], kv[1]);
+			wal.Append(r)
+		}
 	}
 	wal.Close()
 
@@ -77,7 +90,7 @@ func (db *KVStore)loadWALFile(fn string){
 	wal.SeekTo(0)
 	for wal.Next() {
 		r := wal.Item()
-		ps := strings.Split(r, " ")
+		ps := strings.SplitN(r, " ", 3)
 		switch ps[0] {
 		case "set":
 			db.mm[ps[1]] = ps[2]
@@ -85,6 +98,7 @@ func (db *KVStore)loadWALFile(fn string){
 			delete(db.mm, ps[1])
 		}
 	}
+	log.Println(db.mm)
 }
 
 func (db *KVStore)Close(){
@@ -93,9 +107,12 @@ func (db *KVStore)Close(){
 	}
 }
 
+func (db *KVStore)All() map[string]string {
+	return db.mm
+}
+
 func (db *KVStore)Get(key string) string{
 	v, _ := db.mm[key]
-	log.Println(db.mm)
 	return v
 }
 

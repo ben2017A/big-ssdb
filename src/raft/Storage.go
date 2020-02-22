@@ -1,8 +1,9 @@
 package raft
 
 import (
-	// "os"
+	"fmt"
 	"log"
+	"strings"
 	"store"
 	"myutil"
 )
@@ -14,27 +15,22 @@ type Storage struct{
 
 	node *Node
 
-	dir string
-
-	state *State
-	stateWAL *store.WALFile
-
+	state State
 	// entries may not be continuous(for follower)
 	entries map[int64]*Entry
-	entryWAL *store.WALFile
 	services []Service
+	
+	dir string
+	db *store.KVStore
 }
 
 func OpenStorage(dir string) *Storage{
 	ret := new(Storage)
-	ret.dir = dir
-
-	ret.state = new(State)
-	ret.stateWAL = store.OpenWALFile(dir + "/state.wal")
-
 	ret.entries = make(map[int64]*Entry)
-	ret.entryWAL = store.OpenWALFile(dir + "/entry.wal")
 	ret.services = make([]Service, 0)
+	
+	ret.dir = dir
+	ret.db = store.OpenKVStore(dir)
 
 	ret.loadState()
 	ret.loadEntries()
@@ -44,15 +40,12 @@ func OpenStorage(dir string) *Storage{
 }
 
 func (st *Storage)Close(){
-	if st.stateWAL != nil {
-		st.stateWAL.Close()
-	}
-	if st.entryWAL != nil {
-		st.entryWAL.Close()
+	if st.db != nil {
+		st.db.Close()
 	}
 }
 
-func (st *Storage)State() *State{
+func (st *Storage)State() State{
 	return st.state
 }
 
@@ -76,28 +69,27 @@ func (st *Storage)AddService(svc Service){
 /* #################### State ###################### */
 
 func (st *Storage)SaveState(){
-	st.state = NewStateFromNode(st.node)
-	st.stateWAL.Append(st.state.Encode())
-	log.Println("[WAL]", st.state.Encode())
+	st.state.LoadFromNode(st.node)
+	// st.db.Set("State", st.state.Encode())
+	log.Println("[RAFT] State", st.state.Encode())
 }
 
 func (st *Storage)loadState(){
-	last := st.stateWAL.ReadLast()
-	if last != "" {
-		st.state.Decode(last)
-	}
+	last := st.db.Get("State")
+	st.state.Decode(last)
 }
 
 /* #################### Entry ###################### */
 
 func (st *Storage)loadEntries(){
-	wal := st.entryWAL
-	wal.SeekTo(0)
-	for wal.Next() {
-		r := wal.Item()
-		ent := DecodeEntry(r)
+	for k, v := range st.db.All() {
+		if !strings.HasPrefix(k, "log#") {
+			continue
+		}
+		
+		ent := DecodeEntry(v)
 		if ent == nil {
-			log.Println("bad entry format:", r)
+			log.Println("bad entry format:", v)
 		} else {
 			if ent.Index > 0 && ent.Term > 0 {
 				st.entries[ent.Index] = ent
@@ -133,8 +125,8 @@ func (st *Storage)AddEntry(ent Entry){
 		}
 		ent.CommitIndex = st.CommitIndex
 
-		st.entryWAL.Append(ent.Encode())
-		log.Println("[WAL]", ent.Encode())
+		st.db.Set(fmt.Sprintf("log#%d", ent.Index), ent.Encode())
+		log.Println("[RAFT] Log", ent.Encode())
 
 		st.LastIndex = ent.Index
 		st.LastTerm = ent.Term
@@ -148,17 +140,17 @@ func (st *Storage)CommitEntry(commitIndex int64){
 		return
 	}
 
-	ent := NewCommitEntry(commitIndex)
-	st.entryWAL.Append(ent.Encode())
-	log.Println("[WAL]", ent.Encode())
+	st.db.Set("CommitIndex", fmt.Sprintf("%d", commitIndex))
+	log.Println("[RAFT] CommitIndex", commitIndex)
 
 	st.CommitIndex = commitIndex
 	st.applyEntries()
 }
 
 func (st *Storage)applyEntries(){
+	idx := st.CommitIndex // Node 可能会改变 CommitIndex
 	for _, svc := range st.services {
-		for svc.LastApplied() < st.CommitIndex {
+		for svc.LastApplied() < idx {
 			ent := st.GetEntry(svc.LastApplied() + 1)
 			if ent == nil {
 				log.Fatal("lost entry#", svc.LastApplied() + 1)
