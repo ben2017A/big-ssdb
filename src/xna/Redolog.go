@@ -1,7 +1,6 @@
 package xna
 
 import (
-	"fmt"
 	"log"
 	"store"
 )
@@ -13,7 +12,7 @@ type Redolog struct{
 
 func OpenRedolog(filename string) *Redolog {
 	ret := new(Redolog)
-	ret.wal = OpenWALFile(filename)
+	ret.wal = store.OpenWALFile(filename)
 	ret.commitIndex = 0
 	
 	ret.wal.SeekTo(0)
@@ -37,8 +36,8 @@ func (rd *Redolog)SeekToLastCheckpoint() {
 	
 	num := 0
 	last_check := 0
-	for ret.wal.HasNext() {
-		r := ret.wal.Next()
+	for rd.wal.HasNext() {
+		r := rd.wal.Next()
 		ent := DecodeEntry(r)
 		if ent.Type == EntryTypeCheck {
 			last_check = num
@@ -52,8 +51,8 @@ func (rd *Redolog)SeekToLastCheckpoint() {
 // 返回下一个事务, 如果文件中的事务不完整, 则忽略
 func (rd *Redolog)NextTransaction() *Transaction {
 	tx := new(Transaction)
-	for ret.wal.HasNext() {
-		r := ret.wal.Next()
+	for rd.wal.HasNext() {
+		r := rd.wal.Next()
 		ent := DecodeEntry(r)
 		tx.AddEntry(ent)
 		if ent.Type == EntryTypeCommit {
@@ -70,13 +69,14 @@ func (rd *Redolog)WriteCheckpoint() {
 
 // 如果出错, 可能无法将完整的 transaction 完全写入
 func (rd *Redolog)WriteTransaction(tx *Transaction){
-	if tx.MinIndex() < rd.commitIndex || tx.MaxIndex() < rd.commitIndex {
-		log.Fatalln("bad transaction, minIndex: %d, maxIndex: %d", tx.MinIndex(), tx.MaxIndex())
+	if tx.MinIndex() <= rd.commitIndex || tx.MaxIndex() <= rd.commitIndex {
+		log.Fatalf("bad transaction, minIndex: %d, maxIndex: %d, when commitIndex: %d\n",
+			tx.MinIndex(), tx.MaxIndex(), rd.commitIndex)
 		return
 	}
 	
 	rd.wal.Append(tx.BeginEntry().Encode())
-	for _, ent := range tx.Entries {
+	for _, ent := range tx.Entries() {
 		rd.wal.Append(ent.Encode())
 	}
 	rd.wal.Append(tx.CommitEntry().Encode())

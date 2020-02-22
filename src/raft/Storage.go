@@ -4,8 +4,7 @@ import (
 	// "os"
 	"log"
 	"store"
-
-	// "myutil"
+	"myutil"
 )
 
 type Storage struct{
@@ -70,7 +69,7 @@ func (st *Storage)SetNode(node *Node){
 	st.applyEntries()
 }
 
-func (st *Storage)AddService(svc Servide){
+func (st *Storage)AddService(svc Service){
 	st.services = append(st.services, svc)
 }
 
@@ -147,10 +146,10 @@ func (st *Storage)AddEntry(ent Entry){
 
 // 如果存在空洞, 不会跳过空洞 commit
 func (st *Storage)CommitEntry(commitIndex int64){
+	commitIndex = myutil.MinInt64(commitIndex, st.LastIndex)
 	if commitIndex <= st.CommitIndex {
 		return
 	}
-	commitIndex := myutil.MinInt64(commitIndex, st.LastIndex)
 
 	ent := NewCommitEntry(commitIndex)
 	st.entryWAL.Append(ent.Encode())

@@ -2,6 +2,7 @@ package xna
 
 import (
 	"fmt"
+	"strings"
 	"myutil"
 )
 
@@ -40,20 +41,20 @@ func (e *Entry)Encode() string{
 func (e *Entry)Decode(buf string) bool{
 	ps := strings.Split(buf, " ")
 	e.Index = myutil.Atoi64(ps[0])
-	e.Type = ps[1]
+	e.Type = EntryType(ps[1])
 	e.Key = ps[2]
 	e.Val = ps[3]
 	return true
 }
 
 func NewCheckEntry() *Entry {
-	return &Entry{0, EntryTypeCheck, "" ""}
+	return &Entry{0, EntryTypeCheck, "", ""}
 }
 
 func NewBeginEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeBegin, "" ""}
+	return &Entry{idx, EntryTypeBegin, "", ""}
 }
 
 func NewCommitEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeCommit, "" ""}
+	return &Entry{idx, EntryTypeCommit, "", ""}
 }
