@@ -1,6 +1,7 @@
 package xna
 
 import (
+	"sort"
 	"myutil"
 )
 
@@ -25,6 +26,10 @@ func (tx *Transaction)Committed() bool {
 	return tx.status == 1
 }
 
+func (tx *Transaction)Empty() bool {
+	return len(tx.entries) == 0
+}
+
 func (tx *Transaction)MinIndex() int64 {
 	return tx.minIndex
 }
@@ -33,8 +38,17 @@ func (tx *Transaction)MaxIndex() int64 {
 	return tx.maxIndex
 }
 
-func (tx *Transaction)Entries() map[string]*Entry {
-	return tx.entries
+func (tx *Transaction)Entries() []*Entry {
+	arr := make([]*Entry, len(tx.entries))
+	n := 0
+	for _, v := range tx.entries {
+		arr[n] = v
+		n ++
+	}
+	sort.Slice(arr, func(i, j int) bool{
+		return arr[i].Index < arr[j].Index
+	})
+	return arr
 }
 
 func (tx *Transaction)BeginEntry() *Entry {

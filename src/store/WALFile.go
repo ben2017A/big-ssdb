@@ -51,6 +51,10 @@ func (wal *WALFile)SeekToFirst() {
 	wal.SeekTo(0)
 }
 
+func (wal *WALFile)SeekToEnd() {
+	wal.SeekTo(1 << 31)
+}
+
 // seek to n-th(0 based) record
 func (wal *WALFile)SeekTo(n int) bool {
 	_, err := wal.fp.Seek(0, os.SEEK_SET)
@@ -68,11 +72,11 @@ func (wal *WALFile)SeekTo(n int) bool {
 	return true
 }
 
-func (wal *WALFile)HasNext() bool {
+func (wal *WALFile)Next() bool{
 	return wal.scanner.Scan()
 }
 
-func (wal *WALFile)Next() string{
+func (wal *WALFile)Item() string {
 	return wal.scanner.Text()
 }
 

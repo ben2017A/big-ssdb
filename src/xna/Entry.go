@@ -48,13 +48,13 @@ func (e *Entry)Decode(buf string) bool{
 }
 
 func NewCheckEntry() *Entry {
-	return &Entry{0, EntryTypeCheck, "", ""}
+	return &Entry{0, EntryTypeCheck, "#", "#"}
 }
 
 func NewBeginEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeBegin, "", ""}
+	return &Entry{idx, EntryTypeBegin, "#", "#"}
 }
 
 func NewCommitEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeCommit, "", ""}
+	return &Entry{idx, EntryTypeCommit, "#", "#"}
 }

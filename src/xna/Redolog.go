@@ -15,9 +15,12 @@ func OpenRedolog(filename string) *Redolog {
 	ret.wal = store.OpenWALFile(filename)
 	ret.commitIndex = 0
 	
+	ret.wal.SeekToEnd()
+	log.Println(ret.wal.Item())
+	
 	ret.wal.SeekTo(0)
-	for ret.wal.HasNext() {
-		r := ret.wal.Next()
+	for ret.wal.Next() {
+		r := ret.wal.Item()
 		ent := DecodeEntry(r)
 		if ent.Type == EntryTypeCommit {
 			ret.commitIndex = ent.Index
@@ -25,6 +28,10 @@ func OpenRedolog(filename string) *Redolog {
 	}
 	
 	return ret
+}
+
+func (rd *Redolog)Close(){
+	rd.wal.Close()
 }
 
 func (rd *Redolog)CommitIndex() int64 {
@@ -36,8 +43,8 @@ func (rd *Redolog)SeekToLastCheckpoint() {
 	
 	num := 0
 	last_check := 0
-	for rd.wal.HasNext() {
-		r := rd.wal.Next()
+	for rd.wal.Next() {
+		r := rd.wal.Item()
 		ent := DecodeEntry(r)
 		if ent.Type == EntryTypeCheck {
 			last_check = num
@@ -50,16 +57,16 @@ func (rd *Redolog)SeekToLastCheckpoint() {
 
 // 返回下一个事务, 如果文件中的事务不完整, 则忽略
 func (rd *Redolog)NextTransaction() *Transaction {
-	tx := new(Transaction)
-	for rd.wal.HasNext() {
-		r := rd.wal.Next()
+	tx := NewTransaction()
+	for rd.wal.Next() {
+		r := rd.wal.Item()
 		ent := DecodeEntry(r)
 		tx.AddEntry(ent)
 		if ent.Type == EntryTypeCommit {
-			break
+			return tx
 		}
 	}
-	return tx
+	return nil
 }
 
 // 增加 checkpoint
