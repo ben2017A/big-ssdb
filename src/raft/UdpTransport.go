@@ -9,7 +9,7 @@ import (
 
 type UdpTransport struct{
 	addr string
-	C chan []byte
+	C chan *Message
 	conn *net.UDPConn
 	dns map[string]string
 }
@@ -22,7 +22,7 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	tp := new(UdpTransport)
 	tp.addr = fmt.Sprintf("%s:%d", ip, port)
 	tp.conn = conn
-	tp.C = make(chan []byte)
+	tp.C = make(chan *Message)
 	tp.dns = make(map[string]string)
 
 	tp.start()
@@ -38,10 +38,14 @@ func (tp *UdpTransport)start(){
 		buf := make([]byte, 64*1024)
 		for{
 			n, _, _ := tp.conn.ReadFromUDP(buf)
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			log.Printf("    receive < %s\n", strings.Trim(string(data), "\r\n"))
-			tp.C <- data
+			data := string(buf[:n])
+			log.Printf("    receive < %s\n", strings.Trim(data, "\r\n"))
+			msg := DecodeMessage(data);
+			if msg == nil {
+				log.Println("decode error:", buf)
+			} else {
+				tp.C <- msg
+			}
 		}
 	}()
 }
@@ -49,7 +53,7 @@ func (tp *UdpTransport)start(){
 func (tp *UdpTransport)Close(){
 	tp.conn.Close()
 	close(tp.C)
-} 
+}
 
 func (tp *UdpTransport)Connect(nodeId, addr string){
 	tp.dns[nodeId] = addr

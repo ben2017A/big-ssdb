@@ -13,6 +13,7 @@ import (
 	"raft"
 	"store"
 	"xna"
+	"link"
 )
 
 type Service struct{
@@ -158,25 +159,18 @@ func main(){
 	/////////////////////////////////////
 
 	log.Println("api server started at", port+1000)
-	serv_xport := raft.NewUdpTransport("127.0.0.1", port+1000)
-	serv := NewService(base_dir, node)
-
+	serv_link := link.NewTcpServer("127.0.0.1", port+1000)
+	
+	svc := NewService(base_dir, node)
 
 	for{
 		select{
 		case <-ticker.C:
 			node.Tick(TimerInterval)
-		case buf := <-xport.C:
-			msg := raft.DecodeMessage(string(buf));
-			if msg == nil {
-				log.Println("decode error:", buf)
-				continue
-			}
+		case msg := <-xport.C:
 			node.HandleRaftMessage(msg)
-		case buf := <-serv_xport.C:
-			s := string(buf)
-			s = strings.Trim(s, "\r\n")
-			ps := strings.Split(s, " ")
+		case msg := <-serv_link.C:
+			ps := strings.Split(msg.Data, " ")
 
 			if ps[0] == "JoinGroup" {
 				node.JoinGroup(ps[1], ps[2])
@@ -189,16 +183,16 @@ func main(){
 				}
 
 				if ps[0] == "set" {
-					serv.Set(ps[1], ps[2])
+					svc.Set(ps[1], ps[2])
 				}
 				if ps[0] == "incr" {
-					serv.Incr(ps[1], ps[2])
+					svc.Incr(ps[1], ps[2])
 				}
 				if ps[0] == "del" {
-					serv.Del(ps[1])
+					svc.Del(ps[1])
 				}
 				if ps[0] == "get" {
-					serv.Get(ps[1])
+					svc.Get(ps[1])
 				}
 			}
 
