@@ -7,16 +7,16 @@ import (
 // 内存中的事务
 type Transaction struct {
 	status int
-	MinIndex int64
-	MaxIndex int64
+	minIndex int64
+	maxIndex int64
 	entries map[string]*Entry
 }
 
 func NewTransaction() *Transaction {
 	ret := new(Transaction)
 	ret.status = 0
-	ret.MinIndex = 0
-	ret.MaxIndex = 0
+	ret.minIndex = 0
+	ret.maxIndex = 0
 	ret.entries = make(map[string]*Entry)
 	return ret
 }
@@ -25,8 +25,24 @@ func (tx *Transaction)Committed() bool {
 	return tx.status == 1
 }
 
+func (tx *Transaction)MinIndex() int64 {
+	return tx.minIndex
+}
+
+func (tx *Transaction)MaxIndex() int64 {
+	return tx.maxIndex
+}
+
 func (tx *Transaction)Entries() map[string]*Entry {
 	return tx.entries
+}
+
+func (tx *Transaction)BeginEntry() *Entry {
+	return NewBeginEntry(tx.minIndex)
+}
+
+func (tx *Transaction)CommitEntry() *Entry {
+	return NewCommitEntry(tx.maxIndex)
 }
 
 func (tx *Transaction)GetEntry(key string) *Entry {
@@ -34,11 +50,16 @@ func (tx *Transaction)GetEntry(key string) *Entry {
 }
 
 func (tx *Transaction)AddEntry(ent *Entry) {
-	if tx.MinIndex == 0 {
-		tx.MinIndex = ent.Index
-	} else {
-		tx.MinIndex = myutil.MinInt64(tx.MinIndex, ent.Index)
+	if ent.Index > 0 {
+		if tx.minIndex == 0 {
+			tx.minIndex = ent.Index
+		} else {
+			tx.minIndex = myutil.MinInt64(tx.minIndex, ent.Index)
+		}
 	}
-	tx.MaxIndex = myutil.MaxInt64(tx.MaxIndex, ent.Index)
-	tx.entries[ent.Key] = ent
+	tx.maxIndex = myutil.MaxInt64(tx.maxIndex, ent.Index)
+
+	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
+		tx.entries[ent.Key] = ent
+	}
 }
