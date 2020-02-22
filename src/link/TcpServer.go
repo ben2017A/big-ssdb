@@ -11,6 +11,7 @@ import (
 type TcpServer struct {
 	C chan *Message
 	conn *net.TCPListener
+	clients map[net.Addr]net.Conn
 }
 
 func NewTcpServer(ip string, port int) *TcpServer {
@@ -20,6 +21,7 @@ func NewTcpServer(ip string, port int) *TcpServer {
 	tcp := new(TcpServer)
 	tcp.conn = conn
 	tcp.C = make(chan *Message)
+	tcp.clients = make(map[net.Addr]net.Conn)
 
 	tcp.start()
 	return tcp
@@ -44,7 +46,8 @@ func (tcp *TcpServer)start() {
 }
 
 func (tcp *TcpServer)handleClient(conn net.Conn) {
-	defer conn.Close()
+	// TODO: 加锁
+	tcp.clients[conn.RemoteAddr()] = conn
 	
 	buf := new(bytes.Buffer)
 	tmp := make([]byte, 64*1024)
@@ -56,7 +59,7 @@ func (tcp *TcpServer)handleClient(conn net.Conn) {
 			}
 			line = strings.Trim(line, "\r\n")
 			log.Printf("    receive < %s\n", line)
-			tcp.C <- &Message{line}
+			tcp.C <- &Message{line, conn.RemoteAddr()}
 		}
 		
 		n, err := conn.Read(tmp)
@@ -67,7 +70,17 @@ func (tcp *TcpServer)handleClient(conn net.Conn) {
 	}
 
 	log.Println("Close connection", conn.RemoteAddr().String())
+	delete(tcp.clients, conn.RemoteAddr())
+	conn.Close()
 }
 
-func (tcp *TcpServer)Send() {
+func (tcp *TcpServer)Send(msg *Message) {
+	// TODO: lock
+	conn := tcp.clients[msg.Addr]
+	if conn == nil {
+		log.Println("connection not found:", msg.Addr)
+		return
+	}
+	
+	conn.Write([]byte(msg.Data + "\n"))
 }

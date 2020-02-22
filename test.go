@@ -23,6 +23,8 @@ type Service struct{
 	redo *xna.Redolog
 
 	node *raft.Node
+	
+	jobs map[int64]*link.Message
 }
 
 func NewService(dir string, node *raft.Node) *Service {
@@ -56,25 +58,50 @@ func NewService(dir string, node *raft.Node) *Service {
 	return svc
 }
 
-func (svc *Service)Set(key string, val string){
-	s := fmt.Sprintf("set %s %s", key, val)
-	svc.node.Write(s)
+func (svc *Service)HandleClientMessage(msg *link.Message){
+	ps := strings.Split(msg.Data, " ")
+
+	if ps[0] == "JoinGroup" {
+		svc.node.JoinGroup(ps[1], ps[2])
+		return
+	}
+
+	if svc.node.Role == "leader" {
+		if ps[0] == "AddMember" {
+			svc.node.AddMember(ps[1], ps[2])
+			return;
+		}
+
+		cmd := ps[0]
+		key := ps[1]
+		
+		if cmd == "get" {
+			s := svc.db.Get(key)
+			log.Println(s)
+			// resp := &link.Message{s, msg.Addr}
+			// serv_link.Send(resp)
+			return
+		}
+
+		var s string
+		if cmd == "set" || cmd == "incr" {
+			val := ps[2]
+			s = fmt.Sprintf("%s %s %s", cmd, key, val)
+		}
+		if cmd == "del" {
+			// svc.Del(ps[1])
+		}
+		
+		if s == "" {
+			log.Println("unknown cmd:", cmd)
+			return
+		}
+		
+		idx := svc.node.Write(s)
+		log.Println(idx)
+	}
 }
 
-// 非幂等操作, 需要引入 Redolog
-func (svc *Service)Incr(key string, val string){
-	s := fmt.Sprintf("incr %s %s", key, val)
-	svc.node.Write(s)
-}
-
-func (svc *Service)Get(key string){
-	log.Println(svc.db.Get(key))
-}
-
-func (svc *Service)Del(key string){
-	s := fmt.Sprintf("del %s", key)
-	svc.node.Write(s)
-}
 
 /* #################### raft.Service interface ######################### */
 
@@ -170,32 +197,7 @@ func main(){
 		case msg := <-xport.C:
 			node.HandleRaftMessage(msg)
 		case msg := <-serv_link.C:
-			ps := strings.Split(msg.Data, " ")
-
-			if ps[0] == "JoinGroup" {
-				node.JoinGroup(ps[1], ps[2])
-				continue
-			}
-
-			if node.Role == "leader" {
-				if ps[0] == "AddMember" {
-					node.AddMember(ps[1], ps[2])
-				}
-
-				if ps[0] == "set" {
-					svc.Set(ps[1], ps[2])
-				}
-				if ps[0] == "incr" {
-					svc.Incr(ps[1], ps[2])
-				}
-				if ps[0] == "del" {
-					svc.Del(ps[1])
-				}
-				if ps[0] == "get" {
-					svc.Get(ps[1])
-				}
-			}
-
+			svc.HandleClientMessage(msg)
 		}
 	}
 }

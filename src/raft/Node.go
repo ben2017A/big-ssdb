@@ -413,10 +413,11 @@ func (node *Node)AddService(svc Service){
 	node.store.AddService(svc)
 }
 
-func (node *Node)Write(data string){
+func (node *Node)Write(data string) int64{
 	ent := node.newEntry("Write", data)
 	node.store.AddEntry(*ent)
 	node.replicateEntries()
+	return ent.Index
 }
 
 /* #################### Service interface ######################### */
