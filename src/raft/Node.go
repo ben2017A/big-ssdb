@@ -306,7 +306,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == "Hearbeat" || ent.Type == "Commit" {
+	if ent.Type == "Heartbeat" || ent.Type == "Commit" {
 		//
 	} else {
 		old := node.store.GetEntry(ent.Index)

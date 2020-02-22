@@ -12,8 +12,8 @@ type Message struct{
 	Src string
 	Dst string
 	Term int32
-	PrevIndex int64 // LastIndex for RequestVote
 	PrevTerm  int32 // LastTerm for RequestVote
+	PrevIndex int64 // LastIndex for RequestVote
 	Data string
 }
 
@@ -28,7 +28,7 @@ func DecodeMessage(buf string) *Message{
 
 func (m *Message)Encode() string{
 	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Itoa32(m.Term),
-		myutil.Itoa64(m.PrevIndex), myutil.Itoa32(m.PrevTerm), m.Data}
+		myutil.Itoa32(m.PrevTerm), myutil.Itoa64(m.PrevIndex), m.Data}
 	return strings.Join(ps, " ")
 }
 
@@ -42,8 +42,8 @@ func (m *Message)Decode(buf string) bool{
 	m.Src = ps[1]
 	m.Dst = ps[2]
 	m.Term = myutil.Atoi32(ps[3])
-	m.PrevIndex = myutil.Atoi64(ps[4])
-	m.PrevTerm = myutil.Atoi32(ps[5])
+	m.PrevTerm = myutil.Atoi32(ps[4])
+	m.PrevIndex = myutil.Atoi64(ps[5])
 	m.Data = ps[6]
 	return true
 }

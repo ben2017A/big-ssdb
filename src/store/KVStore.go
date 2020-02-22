@@ -106,6 +106,7 @@ func (db *KVStore)Close(){
 	}
 }
 
+// 目前是无序的
 func (db *KVStore)All() map[string]string {
 	return db.mm
 }

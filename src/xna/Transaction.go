@@ -63,6 +63,14 @@ func (tx *Transaction)GetEntry(key string) *Entry {
 	return tx.entries[key]
 }
 
+func (tx *Transaction)Set(idx int64, key string, val string) {
+	tx.AddEntry(&Entry{idx, EntryTypeSet, key, val})
+}
+
+func (tx *Transaction)Del(idx int64, key string) {
+	tx.AddEntry(&Entry{idx, EntryTypeSet, key, "#"})
+}
+
 func (tx *Transaction)AddEntry(ent *Entry) {
 	if ent.Index > 0 {
 		if tx.minIndex == 0 {

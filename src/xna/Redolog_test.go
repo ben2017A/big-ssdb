@@ -17,7 +17,9 @@ func TestRedolog(t *testing.T){
 		if tx == nil {
 			break
 		}
-		fmt.Println(tx)
+		for _, ent := range tx.Entries() {
+			fmt.Println(ent)
+		}
 	}
 	
 	tx := NewTransaction()

@@ -9,8 +9,8 @@ import (
 )
 
 type Storage struct{
-	LastIndex int64
 	LastTerm int32
+	LastIndex int64
 	CommitIndex int64
 
 	node *Node
@@ -38,7 +38,7 @@ func OpenStorage(dir string) *Storage{
 	ret.loadEntries()
 
 	log.Println("open storage at:", dir)
-	log.Println("    CommitIndex:", ret.CommitIndex)
+	log.Println("    CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
 	log.Println("    State:", ret.state.Encode())
 	return ret
 }
@@ -97,22 +97,22 @@ func (st *Storage)loadEntries(){
 		} else {
 			if ent.Index > 0 && ent.Term > 0 {
 				st.entries[ent.Index] = ent
-				st.LastIndex = ent.Index
-				st.LastTerm = ent.Term
 			}
+			st.LastTerm = myutil.MaxInt32(st.LastTerm, ent.Term)
+			st.LastIndex = myutil.MaxInt64(st.LastIndex, ent.Index)
 			st.CommitIndex = myutil.MaxInt64(st.CommitIndex, ent.CommitIndex)
 		}
 	}
 }
 
 func (st *Storage)GetEntry(index int64) *Entry{
-	// TODO:
 	return st.entries[index]
 }
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 func (st *Storage)AddEntry(ent Entry){
 	if ent.Index < st.CommitIndex {
+		log.Println(ent.Index, "<", st.CommitIndex)
 		return
 	}
 
@@ -130,8 +130,8 @@ func (st *Storage)AddEntry(ent Entry){
 		st.db.Set(fmt.Sprintf("log#%d", ent.Index), ent.Encode())
 		log.Println("[RAFT] Log", ent.Encode())
 
-		st.LastIndex = ent.Index
 		st.LastTerm = ent.Term
+		st.LastIndex = ent.Index
 	}
 }
 

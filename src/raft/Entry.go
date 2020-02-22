@@ -9,8 +9,8 @@ import (
 
 // Commit: commit entry#n and prior entries
 type Entry struct{
-	Index int64
 	Term int32
+	Index int64
 	CommitIndex int64
 	Type string // AddMember, DelMember, Heartbeat, Noop, Commit, Write
 	Data string
@@ -26,7 +26,7 @@ func DecodeEntry(buf string) *Entry{
 }
 
 func (e *Entry)Encode() string{
-	return fmt.Sprintf("%d %d %d %s %s", e.Index, e.Term, e.CommitIndex, e.Type, e.Data)
+	return fmt.Sprintf("%d %d %d %s %s", e.Term, e.Index, e.CommitIndex, e.Type, e.Data)
 }
 
 func (e *Entry)Decode(buf string) bool{
@@ -36,8 +36,8 @@ func (e *Entry)Decode(buf string) bool{
 		return false
 	}
 
-	e.Index = myutil.Atoi64(ps[0])
-	e.Term = myutil.Atoi32(ps[1])
+	e.Term = myutil.Atoi32(ps[0])
+	e.Index = myutil.Atoi64(ps[1])
 	e.CommitIndex = myutil.Atoi64(ps[2])
 	e.Type = ps[3]
 	e.Data = ps[4]
@@ -47,8 +47,8 @@ func (e *Entry)Decode(buf string) bool{
 func NewHeartbeatEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
 	ent.Type = "Heartbeat"
-	ent.Index = 0
 	ent.Term = 0
+	ent.Index = 0
 	ent.CommitIndex = commitIndex
 	return ent
 }
@@ -56,8 +56,8 @@ func NewHeartbeatEntry(commitIndex int64) *Entry{
 func NewCommitEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
 	ent.Type = "Commit"
-	ent.Index = 0
 	ent.Term = 0
+	ent.Index = 0
 	ent.CommitIndex = commitIndex
 	return ent
 }
