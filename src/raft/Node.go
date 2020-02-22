@@ -130,7 +130,7 @@ func (node *Node)becomeLeader(){
 			node.resetMemberState(m)
 		}
 		ent := node.newEntry("Noop", "")
-		node.store.AppendEntry(*ent)
+		node.store.AddEntry(*ent)
 		for _, m := range node.Members {
 			node.replicateMember(m)
 		}
@@ -305,7 +305,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			log.Println("delete conflict entry, and entries that follow")
 		}
 		// 如果存在空洞, store 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-		node.store.AppendEntry(*ent)
+		node.store.AddEntry(*ent)
 		// 不用验证 ent.Index, node.send 会忽略 entry 空洞
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
@@ -384,7 +384,7 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 	}
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.newEntry("AddMember", data)
-	node.store.AppendEntry(*ent)
+	node.store.AddEntry(*ent)
 	node.replicateEntries()	
 }
 
@@ -404,7 +404,7 @@ func (node *Node)AddService(svc Service){
 
 func (node *Node)Write(data string){
 	ent := node.newEntry("Write", data)
-	node.store.AppendEntry(*ent)
+	node.store.AddEntry(*ent)
 	node.replicateEntries()
 }
 

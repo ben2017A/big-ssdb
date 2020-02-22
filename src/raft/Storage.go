@@ -121,7 +121,7 @@ func (st *Storage)GetEntry(index int64) *Entry{
 }
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-func (st *Storage)AppendEntry(ent Entry){
+func (st *Storage)AddEntry(ent Entry){
 	if ent.Index < st.CommitIndex {
 		return
 	}
