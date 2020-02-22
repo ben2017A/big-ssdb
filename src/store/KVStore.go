@@ -98,7 +98,6 @@ func (db *KVStore)loadWALFile(fn string){
 			delete(db.mm, ps[1])
 		}
 	}
-	log.Println(db.mm)
 }
 
 func (db *KVStore)Close(){

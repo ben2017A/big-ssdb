@@ -185,13 +185,17 @@ func (node *Node)replicateMember(m *Member){
 }
 
 func (node *Node)connectMember(nodeId string, nodeAddr string){
-	if nodeId != node.Id {
-		m := NewMember(nodeId, nodeAddr)
-		node.Members[m.Id] = m
-		node.resetMemberState(m)
-		log.Println("    connect member", nodeId, nodeAddr)
-		node.xport.Connect(m.Id, m.Addr)
+	if nodeId == node.Id {
+		return
 	}
+	if node.Members[nodeId] != nil {
+		return
+	}
+	m := NewMember(nodeId, nodeAddr)
+	node.Members[m.Id] = m
+	node.resetMemberState(m)
+	log.Println("    connect member", nodeId, nodeAddr)
+	node.xport.Connect(m.Id, m.Addr)
 }
 
 /* ############################################# */
