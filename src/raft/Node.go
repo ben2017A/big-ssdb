@@ -301,20 +301,16 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == "Heartbeat" {
-		node.send(NewAppendEntryAck(msg.Src, true))
-	} else {
+	if ent.Type == "Write" || ent.Type == "Noop" {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
 			// TODO:
 			log.Println("delete conflict entry, and entries that follow")
 		}
-		// 如果存在空洞, store 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 		node.store.AddEntry(*ent)
-		// 不用验证 ent.Index, node.send 会忽略 entry 空洞
-		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
+	node.send(NewAppendEntryAck(msg.Src, true))
 	node.store.CommitEntry(ent.CommitIndex)
 }
 
@@ -352,7 +348,10 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			// only commit currentTerm's log
 			if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
 				node.store.CommitEntry(commitIndex)
-				// TODO: notify followers to commit
+				// immediately notify followers to commit
+				if m.NextIndex >= node.store.LastIndex {
+					node.heartbeatMember(m)
+				}
 			}
 		}
 	}
@@ -428,8 +427,8 @@ func (node *Node)ApplyEntry(ent *Entry){
 		node.ConnectMember(ps[0], ps[1])
 		node.store.SaveState()
 	}else if ent.Type == "DelMember" {
-		//
-	}else if ent.Type == "Write"{
+		// TODO:
+	}else{
 		// log.Println("[Apply]", ent.Encode())
 	}
 }
