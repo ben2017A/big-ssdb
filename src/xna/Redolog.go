@@ -1,20 +1,28 @@
-package store
+package xna
+
+import (
+	"store"
+)
 
 // begin, commit, set, del, check
 type Redolog struct{
-	wal *WALFile
+	wal *store.WALFile
 	commitIndex int64
 }
 
-func (rd *Redolog)SeekToLastCheckpoint() {
+func (rd *Redolog)SeekToLastCheckPoint() {
 	
+}
+
+// 返回下一个事务, 如果文件中的事务不完整, 则忽略
+func (rd *Redolog)NextTransaction() *Transaction {
 }
 
 func (rd *Redolog)Fsync() {
 }
 
 // 增加 checkpoint
-func (rd *Redolog)Check() {
+func (rd *Redolog)WriteCheckPoint() {
 	
 }
 
