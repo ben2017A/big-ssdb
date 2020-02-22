@@ -32,10 +32,14 @@ func OpenStorage(dir string) *Storage{
 	ret.dir = dir
 	ret.db = store.OpenKVStore(dir)
 
+	ret.CommitIndex = myutil.Atoi64(ret.db.Get("@CommitIndex"))
+
 	ret.loadState()
 	ret.loadEntries()
 
 	log.Println("open storage at:", dir)
+	log.Println("    CommitIndex:", ret.CommitIndex)
+	log.Println("    State:", ret.state.Encode())
 	return ret
 }
 
@@ -70,12 +74,12 @@ func (st *Storage)AddService(svc Service){
 
 func (st *Storage)SaveState(){
 	st.state.LoadFromNode(st.node)
-	// st.db.Set("State", st.state.Encode())
+	st.db.Set("@State", st.state.Encode())
 	log.Println("[RAFT] State", st.state.Encode())
 }
 
 func (st *Storage)loadState(){
-	last := st.db.Get("State")
+	last := st.db.Get("@State")
 	st.state.Decode(last)
 }
 
@@ -96,9 +100,7 @@ func (st *Storage)loadEntries(){
 				st.LastIndex = ent.Index
 				st.LastTerm = ent.Term
 			}
-			if ent.CommitIndex > 0 {
-				st.CommitIndex = ent.CommitIndex
-			}
+			st.CommitIndex = myutil.MaxInt64(st.CommitIndex, ent.CommitIndex)
 		}
 	}
 }
@@ -140,7 +142,7 @@ func (st *Storage)CommitEntry(commitIndex int64){
 		return
 	}
 
-	st.db.Set("CommitIndex", fmt.Sprintf("%d", commitIndex))
+	st.db.Set("@CommitIndex", fmt.Sprintf("%d", commitIndex))
 	log.Println("[RAFT] CommitIndex", commitIndex)
 
 	st.CommitIndex = commitIndex
