@@ -36,7 +36,7 @@ func (tp *UdpTransport)Addr() string {
 	return tp.addr
 }
 
-func (tp *UdpTransport)simulate_delay(delayC chan interface{}){
+func (tp *UdpTransport)simulate_bad_network(delayC chan interface{}){
 	go func(){
 		const MaxDelay int = 200
 		const Interval int = 5
@@ -69,12 +69,12 @@ func (tp *UdpTransport)simulate_delay(delayC chan interface{}){
 
 func (tp *UdpTransport)start(){
 	// TODO: for testing
-	const SIMULATE_DELAY bool = true
+	const SIMULATE_BAD_NETWORK bool = false
 	var delayC chan interface{}
 
-	if SIMULATE_DELAY {
+	if SIMULATE_BAD_NETWORK {
 		delayC = make(chan interface{})
-		tp.simulate_delay(delayC)
+		tp.simulate_bad_network(delayC)
 	}
 	
 	go func(){
@@ -87,7 +87,7 @@ func (tp *UdpTransport)start(){
 			if msg == nil {
 				log.Println("decode error:", data)
 			} else {
-				if SIMULATE_DELAY {
+				if SIMULATE_BAD_NETWORK {
 					delayC <- msg
 				}else{
 					log.Printf("    receive < %s\n", msg.Encode())
