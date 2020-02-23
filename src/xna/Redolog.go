@@ -68,7 +68,7 @@ func (rd *Redolog)NextTransaction() *Transaction {
 
 // 增加 checkpoint
 func (rd *Redolog)WriteCheckpoint() {
-	rd.wal.Append(NewCheckEntry().Encode())
+	rd.wal.Append(NewCheckEntry(rd.commitIndex).Encode())
 }
 
 // 如果出错, 可能无法将完整的 transaction 完全写入

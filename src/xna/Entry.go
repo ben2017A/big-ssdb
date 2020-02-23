@@ -47,8 +47,8 @@ func (e *Entry)Decode(buf string) bool{
 	return true
 }
 
-func NewCheckEntry() *Entry {
-	return &Entry{0, EntryTypeCheck, "#", "#"}
+func NewCheckEntry(idx int64) *Entry {
+	return &Entry{idx, EntryTypeCheck, "#", "#"}
 }
 
 func NewBeginEntry(idx int64) *Entry {
