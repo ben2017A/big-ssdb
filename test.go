@@ -9,18 +9,15 @@ import (
 	"strconv"
 	"strings"
 
-	"util"
 	"raft"
-	"store"
-	"xna"
+	"ssdb"
 	"link"
 )
 
 type Service struct{
 	lastApplied int64
 	
-	db *store.KVStore
-	redo *xna.Redolog
+	db *ssdb.Db
 
 	node *raft.Node
 	xport *link.TcpServer
@@ -31,11 +28,8 @@ type Service struct{
 func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc := new(Service)
 	
-	svc.db = store.OpenKVStore(dir + "/data")
-	svc.redo = xna.OpenRedolog(dir + "/data/redo.log")
-	svc.lastApplied = svc.redo.CommitIndex()
-
-	svc.replayRedolog()
+	svc.db = ssdb.OpenDb(dir + "/data")
+	svc.lastApplied = svc.db.CommitIndex()
 
 	svc.node = node
 	svc.node.AddService(svc)
@@ -45,32 +39,6 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc.jobs = make(map[int64]*link.Message)
 
 	return svc
-}
-
-func (svc *Service)replayRedolog() {
-	svc.redo.SeekToLastCheckpoint()
-	count := 0
-	for {
-		tx := svc.redo.NextTransaction()
-		if tx == nil {
-			break
-		}
-		count ++
-		for _, ent := range tx.Entries() {
-			log.Println("    Redo", ent)
-			switch ent.Type {
-			case "set":
-				svc.db.Set(ent.Key, ent.Val)
-			case "del":
-				svc.db.Del(ent.Key)
-			}
-		}
-	}
-	if count > 0 {
-		svc.redo.WriteCheckpoint()
-	} else {
-		log.Println("nothing to redo")
-	}
 }
 
 func (svc *Service)HandleClientMessage(req *link.Message) {
@@ -167,33 +135,12 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 		key := ps[1]
 		if cmd == "set" {
 			val := ps[2]
-
-			idx := ent.Index
-			tx := xna.NewTransaction()
-			tx.Set(idx, key, val)
-			svc.redo.WriteTransaction(tx)
-
-			svc.db.Set(key, val)
-		} else if cmd == "incr" {
-			delta := util.Atoi64(ps[2])
-			old := svc.db.Get(key)
-			num := util.Atoi64(old) + delta
-			val := fmt.Sprintf("%d", num)
-			
-			idx := ent.Index
-			tx := xna.NewTransaction()
-			tx.Set(idx, key, val)
-			svc.redo.WriteTransaction(tx)
-			
-			svc.db.Set(key, val)
-			ret = val
+			svc.db.Set(ent.Index, key, val)
 		} else if cmd == "del" {
-			idx := ent.Index
-			tx := xna.NewTransaction()
-			tx.Del(idx, key)
-			svc.redo.WriteTransaction(tx)
-
-			svc.db.Del(key)
+			svc.db.Del(ent.Index, key)
+		} else if cmd == "incr" {
+			val := ps[2]
+			ret = svc.db.Incr(ent.Index, key, val)
 		}
 	}
 	
