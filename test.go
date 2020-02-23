@@ -111,10 +111,14 @@ func (svc *Service)HandleClientMessage(req *link.Message) {
 	}
 
 	var s string
-	if cmd == "set" || cmd == "incr" {
+	if cmd == "set" {
 		s = fmt.Sprintf("%s %s %s", cmd, key, val)
-	}
-	if cmd == "del" {
+	}else if cmd == "incr" {
+		if val == "" {
+			val = "1"
+		}
+		s = fmt.Sprintf("%s %s %s", cmd, key, val)
+	}else if cmd == "del" {
 		s = fmt.Sprintf("%s %s", cmd, key)
 	}
 	
@@ -129,14 +133,17 @@ func (svc *Service)HandleClientMessage(req *link.Message) {
 	svc.jobs[idx] = req
 }
 
-func (svc *Service)raftApplyCallback(ent *raft.Entry) {
+func (svc *Service)raftApplyCallback(ent *raft.Entry, ret string) {
 	req := svc.jobs[ent.Index]
 	if req == nil {
 		return
 	}
 	delete(svc.jobs, ent.Index)
 	
-	resp := &link.Message{req.Src, "ok"}
+	if ret == "" {
+		ret = "ok"
+	}
+	resp := &link.Message{req.Src, ret}
 	svc.xport.Send(resp)
 }
 
@@ -150,6 +157,7 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 	// 不需要持久化, 从 Redolog 中获取
 	svc.lastApplied = ent.Index
 
+	var ret string
 	if ent.Type == "Write"{
 		log.Println("[Apply]", ent.Data)
 		ps := strings.SplitN(ent.Data, " ", 3)
@@ -176,6 +184,7 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 			svc.redo.WriteTransaction(tx)
 			
 			svc.db.Set(key, val)
+			ret = val
 		} else if cmd == "del" {
 			idx := ent.Index
 			tx := xna.NewTransaction()
@@ -186,7 +195,7 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 		}
 	}
 	
-	svc.raftApplyCallback(ent)
+	svc.raftApplyCallback(ent, ret)
 }
 
 /* ############################################# */
