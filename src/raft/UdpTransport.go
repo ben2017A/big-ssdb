@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"net"
 	"log"
+	"time"
 	"strings"
+	"math/rand"
+	"myutil"
 )
 
 type UdpTransport struct{
@@ -33,18 +36,63 @@ func (tp *UdpTransport)Addr() string {
 	return tp.addr
 }
 
+func (tp *UdpTransport)simulate_delay(delayC chan interface{}){
+	go func(){
+		const MaxDelay int = 200
+		const Interval int = 1
+		timer := time.NewTicker(time.Duration(Interval) * time.Millisecond)
+		heap := myutil.NewIntPriorityQueue()
+		
+		g_time := 0
+		for {
+			select {
+			case <- timer.C:
+				g_time += Interval
+				for heap.Size() > 0 {
+					w, msg := heap.Top()
+					if w > g_time {
+						break;
+					}
+					heap.Pop()
+					
+					log.Printf("    receive < %s\n", msg.(*Message).Encode())
+					tp.C <- msg.(*Message)
+				}
+			case msg := <- delayC:
+				delay := rand.Intn(MaxDelay)
+				heap.Push(g_time + delay, msg)
+				log.Println("delay", delay, "ms")
+			}
+		}
+	}()
+}
+
 func (tp *UdpTransport)start(){
+	// TODO: for testing
+	const SIMULATE_DELAY bool = true
+	var delayC chan interface{}
+
+	if SIMULATE_DELAY {
+		delayC = make(chan interface{})
+		tp.simulate_delay(delayC)
+	}
+	
 	go func(){
 		buf := make([]byte, 64*1024)
 		for{
 			n, _, _ := tp.conn.ReadFromUDP(buf)
 			data := string(buf[:n])
-			log.Printf("    receive < %s\n", strings.Trim(data, "\r\n"))
+			// log.Printf("    receive < %s\n", strings.Trim(data, "\r\n"))
 			msg := DecodeMessage(data);
 			if msg == nil {
-				log.Println("decode error:", buf)
+				log.Println("decode error:", data)
 			} else {
-				tp.C <- msg
+				if SIMULATE_DELAY {
+					delayC <- msg
+				}else{
+					log.Printf("    receive < %s\n", msg.Encode())
+					tp.C <- msg
+				}
 			}
 		}
 	}()

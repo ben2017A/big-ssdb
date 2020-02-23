@@ -49,11 +49,13 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 
 func (svc *Service)replayRedolog() {
 	svc.redo.SeekToLastCheckpoint()
+	count := 0
 	for {
 		tx := svc.redo.NextTransaction()
 		if tx == nil {
 			break
 		}
+		count ++
 		for _, ent := range tx.Entries() {
 			log.Println("    Redo", ent)
 			switch ent.Type {
@@ -63,6 +65,11 @@ func (svc *Service)replayRedolog() {
 				svc.db.Del(ent.Key)
 			}
 		}
+	}
+	if count > 0 {
+		svc.redo.WriteCheckpoint()
+	} else {
+		log.Println("nothing to redo")
 	}
 }
 
