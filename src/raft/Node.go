@@ -48,8 +48,8 @@ func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 }
 
 func (node *Node)Start(){
-	node.store.SetNode(node)
 	node.lastApplied = node.store.CommitIndex
+	node.store.SetNode(node)
 	
 	s := node.store.State()
 	for nodeId, nodeAddr := range s.Members {
