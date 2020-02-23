@@ -134,6 +134,8 @@ func (svc *Service)raftApplyCallback(ent *raft.Entry) {
 	if req == nil {
 		return
 	}
+	delete(svc.jobs, ent.Index)
+	
 	resp := &link.Message{req.Src, "ok"}
 	svc.xport.Send(resp)
 }

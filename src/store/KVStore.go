@@ -64,6 +64,11 @@ func (db *KVStore)compactWAL(){
 		arr := make([][2]string, len(db.mm))
 		n := 0
 		for k, v := range db.mm {
+			// testing
+			// if strings.HasPrefix(k, "log#") {
+			// 	idx := myutil.Atoi(k[4:]);
+			// 	k = fmt.Sprintf("log#%03d", idx)
+			// }
 			arr[n] = [2]string{k, v}
 			n ++
 		}

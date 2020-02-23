@@ -128,7 +128,7 @@ func (st *Storage)AddEntry(ent Entry){
 		}
 		ent.CommitIndex = st.CommitIndex
 
-		st.db.Set(fmt.Sprintf("log#%d", ent.Index), ent.Encode())
+		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
 		log.Println("[RAFT] Log", ent.Encode())
 
 		st.LastTerm = ent.Term
