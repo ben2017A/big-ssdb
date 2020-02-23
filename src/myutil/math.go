@@ -5,6 +5,11 @@ import (
 	"strconv"
 )
 
+func Atoi(s string) int{
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
 func Atoi32(s string) int32{
 	n, _ := strconv.ParseInt(s, 10, 32)
 	return int32(n)
