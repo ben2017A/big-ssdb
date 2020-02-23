@@ -90,6 +90,13 @@ func (svc *Service)HandleClientMessage(req *link.Message) {
 		svc.node.JoinGroup(ps[1], ps[2])
 		return
 	}
+	if cmd == "AddMember" {
+		if svc.node.Role == "leader" {
+			svc.node.AddMember(ps[1], ps[2])
+			return
+		}
+	}
+	
 	if svc.node.Role != "leader" {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
@@ -97,11 +104,6 @@ func (svc *Service)HandleClientMessage(req *link.Message) {
 		return
 	}
 	
-	
-	if cmd == "AddMember" {
-		svc.node.AddMember(ps[1], ps[2])
-		return;
-	}
 	if cmd == "get" {
 		s := svc.db.Get(key)
 		log.Println(key, "=", s)

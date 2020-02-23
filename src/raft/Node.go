@@ -114,7 +114,13 @@ func (node *Node)startElection(){
 	node.votesReceived = make(map[string]string)
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
 
-	node.broadcast(NewRequestVoteMsg())
+	msg := NewRequestVoteMsg()
+	for _, m := range node.Members {
+		msg.Dst = m.Id
+		node.send(msg)
+	}
+
+	// 单节点运行
 	if len(node.Members) == 0 {
 		node.checkVoteResult()
 	}
@@ -456,11 +462,4 @@ func (node *Node)send(msg *Message){
 		msg.PrevTerm = node.store.LastTerm
 	}
 	node.xport.Send(msg)
-}
-
-func (node *Node)broadcast(msg *Message){
-	for _, m := range node.Members {
-		msg.Dst = m.Id
-		node.send(msg)
-	}
 }
