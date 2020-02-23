@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"myutil"
+	"util"
 )
 
 const ElectionTimeout = 5 * 1000
@@ -183,7 +183,7 @@ func (node *Node)replicateMember(m *Member){
 
 	if ent.Index <= m.LastSendIndex {
 		m.ResendCount ++
-		m.ReplicationTimeout = myutil.MinInt(m.ResendCount * ReplicationTimeout, HeartbeatTimeout * 2)
+		m.ReplicationTimeout = util.MinInt(m.ResendCount * ReplicationTimeout, HeartbeatTimeout * 2)
 		log.Println("retransmission", m.ResendCount)
 	}else{
 		m.ResendCount = 0
@@ -337,13 +337,13 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 	if msg.Data == "false" {
 		if msg.PrevIndex < node.store.LastIndex {
-			m.NextIndex = myutil.MaxInt64(1, msg.PrevIndex + 1)
+			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 		}
 	}else{
 		oldMatchIndex := m.MatchIndex
-		m.NextIndex = myutil.MaxInt64(m.NextIndex, msg.PrevIndex + 1)
-		m.MatchIndex = myutil.MaxInt64(m.MatchIndex, msg.PrevIndex)
+		m.NextIndex = util.MaxInt64(m.NextIndex, msg.PrevIndex + 1)
+		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		if m.MatchIndex > oldMatchIndex {
 			// sort matchIndex[] in descend order
 			matchIndex := make([]int64, 0, len(node.Members) + 1)

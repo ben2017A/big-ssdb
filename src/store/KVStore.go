@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 	"path/filepath"
-	"myutil"
+	"util"
 )
 
 // kvdb
@@ -24,10 +24,10 @@ type KVStore struct{
 
 func OpenKVStore(dir string) *KVStore{
 	dir, _ = filepath.Abs(dir)
-	if !myutil.IsDir(dir) {
+	if !util.IsDir(dir) {
 		os.MkdirAll(dir, 0755)
 	}
-	if !myutil.IsDir(dir) {
+	if !util.IsDir(dir) {
 		return nil
 	}
 
@@ -40,10 +40,10 @@ func OpenKVStore(dir string) *KVStore{
 	db.wal_old = dir + "/log.wal" + ".OLD"
 	db.wal_tmp = dir + "/log.wal" + ".TMP"
 
-	if myutil.FileExists(db.wal_old) {
+	if util.FileExists(db.wal_old) {
 		db.loadWALFile(db.wal_old)
 	}
-	if myutil.FileExists(db.wal_cur) {
+	if util.FileExists(db.wal_cur) {
 		db.loadWALFile(db.wal_cur)
 	}
 	db.compactWAL()
@@ -66,7 +66,7 @@ func (db *KVStore)compactWAL(){
 		for k, v := range db.mm {
 			// testing
 			// if strings.HasPrefix(k, "log#") {
-			// 	idx := myutil.Atoi(k[4:]);
+			// 	idx := util.Atoi(k[4:]);
 			// 	k = fmt.Sprintf("log#%03d", idx)
 			// }
 			arr[n] = [2]string{k, v}

@@ -1,4 +1,4 @@
-package myutil
+package util
 
 import (
 	"container/heap"

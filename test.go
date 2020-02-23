@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"myutil"
+	"util"
 	"raft"
 	"store"
 	"xna"
@@ -165,9 +165,9 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 
 			svc.db.Set(key, val)
 		} else if cmd == "incr" {
-			delta := myutil.Atoi64(ps[2])
+			delta := util.Atoi64(ps[2])
 			old := svc.db.Get(key)
-			num := myutil.Atoi64(old) + delta
+			num := util.Atoi64(old) + delta
 			val := fmt.Sprintf("%d", num)
 			
 			idx := ent.Index

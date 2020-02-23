@@ -7,7 +7,7 @@ import (
 	"time"
 	"strings"
 	"math/rand"
-	"myutil"
+	"util"
 )
 
 type UdpTransport struct{
@@ -41,7 +41,7 @@ func (tp *UdpTransport)simulate_bad_network(delayC chan interface{}){
 		const MaxDelay int = 200
 		const Interval int = 5
 		timer := time.NewTicker(time.Duration(Interval) * time.Millisecond)
-		heap := myutil.NewIntPriorityQueue()
+		heap := util.NewIntPriorityQueue()
 		
 		g_time := 0
 		for {

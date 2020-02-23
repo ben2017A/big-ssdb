@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"myutil"
+	"util"
 )
 
 // Commit: commit entry#n and prior entries
@@ -36,9 +36,9 @@ func (e *Entry)Decode(buf string) bool{
 		return false
 	}
 
-	e.Term = myutil.Atoi32(ps[0])
-	e.Index = myutil.Atoi64(ps[1])
-	e.CommitIndex = myutil.Atoi64(ps[2])
+	e.Term = util.Atoi32(ps[0])
+	e.Index = util.Atoi64(ps[1])
+	e.CommitIndex = util.Atoi64(ps[2])
 	e.Type = ps[3]
 	e.Data = ps[4]
 	return true

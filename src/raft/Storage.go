@@ -6,7 +6,7 @@ import (
 	"strings"
 	"path/filepath"
 	"store"
-	"myutil"
+	"util"
 )
 
 type Storage struct{
@@ -33,7 +33,7 @@ func OpenStorage(dir string) *Storage{
 	ret.dir, _ = filepath.Abs(dir)
 	ret.db = store.OpenKVStore(dir)
 
-	ret.CommitIndex = myutil.Atoi64(ret.db.Get("@CommitIndex"))
+	ret.CommitIndex = util.Atoi64(ret.db.Get("@CommitIndex"))
 
 	ret.loadState()
 	ret.loadEntries()
@@ -99,9 +99,9 @@ func (st *Storage)loadEntries(){
 			if ent.Index > 0 && ent.Term > 0 {
 				st.entries[ent.Index] = ent
 			}
-			st.LastTerm = myutil.MaxInt32(st.LastTerm, ent.Term)
-			st.LastIndex = myutil.MaxInt64(st.LastIndex, ent.Index)
-			st.CommitIndex = myutil.MaxInt64(st.CommitIndex, ent.CommitIndex)
+			st.LastTerm = util.MaxInt32(st.LastTerm, ent.Term)
+			st.LastIndex = util.MaxInt64(st.LastIndex, ent.Index)
+			st.CommitIndex = util.MaxInt64(st.CommitIndex, ent.CommitIndex)
 		}
 	}
 }
@@ -138,7 +138,7 @@ func (st *Storage)AddEntry(ent Entry){
 
 // 如果存在空洞, 不会跳过空洞 commit
 func (st *Storage)CommitEntry(commitIndex int64){
-	commitIndex = myutil.MinInt64(commitIndex, st.LastIndex)
+	commitIndex = util.MinInt64(commitIndex, st.LastIndex)
 	if commitIndex <= st.CommitIndex {
 		// log.Printf("msg.CommitIndex: %d <= CommitIndex: %d\n", commitIndex, st.CommitIndex)
 		return

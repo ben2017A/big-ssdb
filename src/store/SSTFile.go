@@ -5,7 +5,7 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"myutil"
+	"util"
 )
 
 type SSTFile struct{
@@ -19,7 +19,7 @@ type SSTFile struct{
 func OpenSSTFile(filename string) *SSTFile{
 	sst := new(SSTFile)
 	sst.valid = false
-	if myutil.FileExists(filename) {
+	if util.FileExists(filename) {
 		sst.readonly = true
 	}else{
 		sst.readonly = false

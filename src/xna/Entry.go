@@ -3,7 +3,7 @@ package xna
 import (
 	"fmt"
 	"strings"
-	"myutil"
+	"util"
 )
 
 type EntryType string
@@ -40,7 +40,7 @@ func (e *Entry)Encode() string{
 
 func (e *Entry)Decode(buf string) bool{
 	ps := strings.Split(buf, " ")
-	e.Index = myutil.Atoi64(ps[0])
+	e.Index = util.Atoi64(ps[0])
 	e.Type = EntryType(ps[1])
 	e.Key = ps[2]
 	e.Val = ps[3]

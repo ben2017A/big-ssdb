@@ -2,7 +2,7 @@ package xna
 
 import (
 	"sort"
-	"myutil"
+	"util"
 )
 
 // 内存中的事务
@@ -77,10 +77,10 @@ func (tx *Transaction)AddEntry(ent Entry) {
 		if tx.minIndex == 0 {
 			tx.minIndex = ent.Index
 		} else {
-			tx.minIndex = myutil.MinInt64(tx.minIndex, ent.Index)
+			tx.minIndex = util.MinInt64(tx.minIndex, ent.Index)
 		}
 	}
-	tx.maxIndex = myutil.MaxInt64(tx.maxIndex, ent.Index)
+	tx.maxIndex = util.MaxInt64(tx.maxIndex, ent.Index)
 
 	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
 		tx.entries[ent.Key] = &ent

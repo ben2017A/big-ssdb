@@ -4,7 +4,7 @@ import (
 	// "fmt"
 	"strings"
 
-	"myutil"
+	"util"
 )
 
 type Message struct{
@@ -27,8 +27,8 @@ func DecodeMessage(buf string) *Message{
 }
 
 func (m *Message)Encode() string{
-	ps := []string{m.Cmd, m.Src, m.Dst, myutil.Itoa32(m.Term),
-		myutil.Itoa32(m.PrevTerm), myutil.Itoa64(m.PrevIndex), m.Data}
+	ps := []string{m.Cmd, m.Src, m.Dst, util.Itoa32(m.Term),
+		util.Itoa32(m.PrevTerm), util.Itoa64(m.PrevIndex), m.Data}
 	return strings.Join(ps, " ")
 }
 
@@ -41,9 +41,9 @@ func (m *Message)Decode(buf string) bool{
 	m.Cmd = ps[0]
 	m.Src = ps[1]
 	m.Dst = ps[2]
-	m.Term = myutil.Atoi32(ps[3])
-	m.PrevTerm = myutil.Atoi32(ps[4])
-	m.PrevIndex = myutil.Atoi64(ps[5])
+	m.Term = util.Atoi32(ps[3])
+	m.PrevTerm = util.Atoi32(ps[4])
+	m.PrevIndex = util.Atoi64(ps[5])
 	m.Data = ps[6]
 	return true
 }

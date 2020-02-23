@@ -6,7 +6,7 @@ import (
 	"path"
 	"bufio"
 
-	"myutil"
+	"util"
 )
 
 type WALFile struct{
@@ -18,10 +18,10 @@ type WALFile struct{
 // create if not exists
 func OpenWALFile(filename string) *WALFile{
 	dirname := path.Dir(filename)
-	if !myutil.IsDir(dirname) {
+	if !util.IsDir(dirname) {
 		os.MkdirAll(dirname, 0755)
 	}
-	if !myutil.IsDir(dirname) {
+	if !util.IsDir(dirname) {
 		return nil
 	}
 
