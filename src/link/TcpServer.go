@@ -10,8 +10,10 @@ import (
 
 type TcpServer struct {
 	C chan *Message
+	
+	lastClientId int
 	conn *net.TCPListener
-	clients map[net.Addr]net.Conn
+	clients map[int]net.Conn
 }
 
 func NewTcpServer(ip string, port int) *TcpServer {
@@ -19,9 +21,10 @@ func NewTcpServer(ip string, port int) *TcpServer {
 	conn, _ := net.ListenTCP("tcp", addr)
 
 	tcp := new(TcpServer)
-	tcp.conn = conn
 	tcp.C = make(chan *Message)
-	tcp.clients = make(map[net.Addr]net.Conn)
+	tcp.lastClientId = 0
+	tcp.conn = conn
+	tcp.clients = make(map[int]net.Conn)
 
 	tcp.start()
 	return tcp
@@ -39,15 +42,16 @@ func (tcp *TcpServer)start() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			log.Println("Accept connection", conn.RemoteAddr().String())
-			go tcp.handleClient(conn)
+			tcp.lastClientId ++
+			log.Println("Accept connection", tcp.lastClientId, conn.RemoteAddr().String())
+			go tcp.handleClient(tcp.lastClientId, conn)
 		}
 	}()
 }
 
-func (tcp *TcpServer)handleClient(conn net.Conn) {
+func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 	// TODO: 加锁
-	tcp.clients[conn.RemoteAddr()] = conn
+	tcp.clients[clientId] = conn
 	
 	buf := new(bytes.Buffer)
 	tmp := make([]byte, 64*1024)
@@ -59,7 +63,7 @@ func (tcp *TcpServer)handleClient(conn net.Conn) {
 			}
 			line = strings.Trim(line, "\r\n")
 			log.Printf("    receive < %s\n", line)
-			tcp.C <- &Message{line, conn.RemoteAddr()}
+			tcp.C <- &Message{clientId, line}
 		}
 		
 		n, err := conn.Read(tmp)
@@ -69,18 +73,19 @@ func (tcp *TcpServer)handleClient(conn net.Conn) {
 		buf.Write(tmp[0:n])
 	}
 
-	log.Println("Close connection", conn.RemoteAddr().String())
-	delete(tcp.clients, conn.RemoteAddr())
+	log.Println("Close connection", clientId, conn.RemoteAddr().String())
+	delete(tcp.clients, clientId)
 	conn.Close()
 }
 
 func (tcp *TcpServer)Send(msg *Message) {
 	// TODO: lock
-	conn := tcp.clients[msg.Addr]
+	conn := tcp.clients[msg.Src]
 	if conn == nil {
-		log.Println("connection not found:", msg.Addr)
+		log.Println("connection not found:", msg.Src)
 		return
 	}
 	
 	conn.Write([]byte(msg.Data + "\n"))
+	log.Printf("    send > %s\n", msg.Data)
 }

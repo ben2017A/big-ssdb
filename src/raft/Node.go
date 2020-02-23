@@ -94,7 +94,8 @@ func (node *Node)becomeFollower(){
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
-
+	node.electionTimeout = ElectionTimeout // debug TODO:
+	
 	for _, m := range node.Members {
 		// discover leader by receiving valid AppendEntry
 		m.Role = "follower"

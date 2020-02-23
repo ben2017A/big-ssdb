@@ -1,10 +1,6 @@
 package link
 
-import (
-	"net"
-)
-
 type Message struct {
+	Src int
 	Data string
-	Addr net.Addr
 }

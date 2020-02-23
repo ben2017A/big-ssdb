@@ -68,7 +68,7 @@ func (tx *Transaction)Set(idx int64, key string, val string) {
 }
 
 func (tx *Transaction)Del(idx int64, key string) {
-	tx.AddEntry(Entry{idx, EntryTypeSet, key, "#"})
+	tx.AddEntry(Entry{idx, EntryTypeDel, key, "#"})
 }
 
 // 传值
