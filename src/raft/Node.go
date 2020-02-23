@@ -17,7 +17,6 @@ const ReplicationTimeout = 1 * 1000
 
 type Node struct{
 	Id string
-	Addr string
 	Role string
 
 	Term int32
@@ -37,7 +36,6 @@ type Node struct{
 func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
-	node.Addr = xport.Addr()
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
@@ -51,6 +49,7 @@ func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 
 func (node *Node)Start(){
 	node.store.SetNode(node)
+	node.lastApplied = node.store.CommitIndex
 	
 	s := node.store.State()
 	for nodeId, nodeAddr := range s.Members {

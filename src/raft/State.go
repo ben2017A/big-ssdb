@@ -6,7 +6,6 @@ import (
 
 type State struct{
 	Id string
-	Addr string
 	Term int32
 	VoteFor string
 	Members map[string]string
@@ -23,7 +22,6 @@ func DecodeState(buf string) *State {
 
 func (s *State)LoadFromNode(node *Node) {
 	s.Id = node.Id
-	s.Addr = node.Addr
 	s.Term = node.Term
 	s.VoteFor = node.VoteFor
 	s.Members = make(map[string]string)
