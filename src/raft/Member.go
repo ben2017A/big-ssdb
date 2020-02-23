@@ -9,7 +9,7 @@ type Member struct{
 	NextIndex int64
 	MatchIndex int64
 
-	ResendIndex int64
+	LastSendIndex int64
 	ResendCount int
 
 	HeartbeatTimeout int

@@ -140,6 +140,7 @@ func (st *Storage)AddEntry(ent Entry){
 func (st *Storage)CommitEntry(commitIndex int64){
 	commitIndex = myutil.MinInt64(commitIndex, st.LastIndex)
 	if commitIndex <= st.CommitIndex {
+		// log.Printf("msg.CommitIndex: %d <= CommitIndex: %d\n", commitIndex, st.CommitIndex)
 		return
 	}
 

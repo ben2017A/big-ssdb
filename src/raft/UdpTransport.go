@@ -39,7 +39,7 @@ func (tp *UdpTransport)Addr() string {
 func (tp *UdpTransport)simulate_delay(delayC chan interface{}){
 	go func(){
 		const MaxDelay int = 200
-		const Interval int = 1
+		const Interval int = 5
 		timer := time.NewTicker(time.Duration(Interval) * time.Millisecond)
 		heap := myutil.NewIntPriorityQueue()
 		
@@ -59,7 +59,7 @@ func (tp *UdpTransport)simulate_delay(delayC chan interface{}){
 					tp.C <- msg.(*Message)
 				}
 			case msg := <- delayC:
-				delay := rand.Intn(MaxDelay)
+				delay := rand.Intn(MaxDelay) // 模拟延迟和乱序
 				heap.Push(g_time + delay, msg)
 				log.Println("delay", delay, "ms")
 			}

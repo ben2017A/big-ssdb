@@ -75,6 +75,7 @@ func (node *Node)Tick(timeElapse int){
 		for _, m := range node.Members {
 			m.ReplicationTimeout -= timeElapse
 			if m.ReplicationTimeout <= 0 {
+				m.ResendCount = 0
 				node.replicateMember(m)
 			}
 
@@ -164,6 +165,12 @@ func (node *Node)heartbeatMember(m *Member){
 }
 
 func (node *Node)replicateMember(m *Member){
+	// 在收到 Ack 后, 或者超时后, 重置 ResendCount
+	if m.ResendCount > 0 {
+		log.Println("waiting for retransmission to complete")
+		return
+	}
+	
 	m.ReplicationTimeout = ReplicationTimeout
 
 	ent := node.store.GetEntry(m.NextIndex)
@@ -174,14 +181,17 @@ func (node *Node)replicateMember(m *Member){
 	prev := node.store.GetEntry(m.NextIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
-	if m.ResendIndex == ent.Index {
+	if ent.Index <= m.LastSendIndex {
 		m.ResendCount ++
 		m.ReplicationTimeout = myutil.MinInt(m.ResendCount * ReplicationTimeout, HeartbeatTimeout * 2)
-		// log.Println("retransmission", m.ResendCount)
+		log.Println("retransmission", m.ResendCount)
 	}else{
 		m.ResendCount = 0
+		// 如果不是重传, 应尽快发送下一个
+		m.NextIndex += 1
 	}
-	m.ResendIndex = ent.Index
+	
+	m.LastSendIndex = ent.Index
 	m.HeartbeatTimeout = HeartbeatTimeout
 }
 
@@ -326,15 +336,10 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
 
 	if msg.Data == "false" {
-		if msg.PrevIndex + 5 < node.store.LastIndex {
-			// fast recover
+		if msg.PrevIndex < node.store.LastIndex {
 			m.NextIndex = myutil.MaxInt64(1, msg.PrevIndex + 1)
-			log.Println("fast recover NextIndex for node", m.Id, "to", m.NextIndex)
-		} else {
-			m.NextIndex = myutil.MaxInt64(1, m.NextIndex - 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
 		}
-		m.MatchIndex = 0
 	}else{
 		oldMatchIndex := m.MatchIndex
 		m.NextIndex = myutil.MaxInt64(m.NextIndex, msg.PrevIndex + 1)
@@ -364,6 +369,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		}
 	}
 
+	m.ResendCount = 0
 	node.replicateMember(m)
 }
 
