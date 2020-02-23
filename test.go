@@ -127,9 +127,10 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 	// 不需要持久化, 从 Redolog 中获取
 	svc.lastApplied = ent.Index
 
-	var ret string
 	if ent.Type == "Write"{
 		log.Println("[Apply]", ent.Data)
+		var ret string
+
 		ps := strings.SplitN(ent.Data, " ", 3)
 		cmd := ps[0]
 		key := ps[1]
@@ -142,14 +143,12 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 			val := ps[2]
 			ret = svc.db.Incr(ent.Index, key, val)
 		}
-	}
 	
-	svc.raftApplyCallback(ent, ret)
+		svc.raftApplyCallback(ent, ret)
+	}
 }
 
 /* ############################################# */
-
-///////////////////////////////////////////
 
 const TimerInterval = 100
 
