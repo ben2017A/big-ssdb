@@ -39,7 +39,10 @@ func (e *Entry)Encode() string{
 }
 
 func (e *Entry)Decode(buf string) bool{
-	ps := strings.Split(buf, " ")
+	ps := strings.SplitN(buf, " ", 4)
+	if len(ps) != 4 {
+		return false
+	}
 	e.Index = util.Atoi64(ps[0])
 	e.Type = EntryType(ps[1])
 	e.Key = ps[2]

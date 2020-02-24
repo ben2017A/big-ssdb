@@ -7,12 +7,13 @@ import (
 	// "math/rand"
 	"os"
 	"strconv"
-	"strings"
 
 	"raft"
 	"ssdb"
 	"link"
 )
+
+/////////////////////////////////////////
 
 type Service struct{
 	lastApplied int64
@@ -22,7 +23,7 @@ type Service struct{
 	node *raft.Node
 	xport *link.TcpServer
 	
-	jobs map[int64]*link.Message // raft.Index => msg
+	jobs map[int64]*link.Request // raft.Index => Request
 }
 
 func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
@@ -36,31 +37,28 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	
 	svc.xport = xport
 
-	svc.jobs = make(map[int64]*link.Message)
+	svc.jobs = make(map[int64]*link.Request)
 
 	return svc
 }
 
-func (svc *Service)HandleClientMessage(req *link.Message) {
-	ps := strings.Split(req.Data, " ")
-
-	cmd := ps[0]
-	var key string
-	var val string
-	if len(ps) > 1 {
-		key = ps[1]
+func (svc *Service)HandleClientMessage(msg *link.Message) {
+	req := new(link.Request)
+	if !req.Decode(msg.Data) {
+		log.Println("bad msg:", msg.Data)
+		return
 	}
-	if len(ps) > 2 {
-		val = ps[2]
-	}
+	req.Src = msg.Src
+	
+	cmd := req.Cmd()
 
 	if cmd == "JoinGroup" {
-		svc.node.JoinGroup(ps[1], ps[2])
+		svc.node.JoinGroup(req.Arg(0), req.Arg(1))
 		return
 	}
 	if cmd == "AddMember" {
 		if svc.node.Role == "leader" {
-			svc.node.AddMember(ps[1], ps[2])
+			svc.node.AddMember(req.Arg(0), req.Arg(1))
 			return
 		}
 	}
@@ -73,25 +71,14 @@ func (svc *Service)HandleClientMessage(req *link.Message) {
 	}
 	
 	if cmd == "get" {
-		s := svc.db.Get(key)
-		log.Println(key, "=", s)
+		s := svc.db.Get(req.Key())
+		log.Println(req.Key(), "=", s)
 		resp := &link.Message{req.Src, s}
 		svc.xport.Send(resp)
 		return
 	}
 
-	var s string
-	if cmd == "set" {
-		s = fmt.Sprintf("%s %s %s", cmd, key, val)
-	}else if cmd == "incr" {
-		if val == "" {
-			val = "1"
-		}
-		s = fmt.Sprintf("%s %s %s", cmd, key, val)
-	}else if cmd == "del" {
-		s = fmt.Sprintf("%s %s", cmd, key)
-	}
-	
+	s := req.Encode()
 	if s == "" {
 		log.Println("error: unknown cmd: " + cmd)
 		resp := &link.Message{req.Src, "error: unkown cmd " + cmd}
@@ -129,18 +116,24 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 
 	if ent.Type == "Write"{
 		log.Println("[Apply]", ent.Data)
+
+		req := new(link.Request)
+		if !req.Decode(ent.Data) {
+			log.Println("unknow entry:", ent.Data)
+			return
+		}
+
+		key := req.Key()
+		val := req.Val()
+		
 		var ret string
 
-		ps := strings.SplitN(ent.Data, " ", 3)
-		cmd := ps[0]
-		key := ps[1]
-		if cmd == "set" {
-			val := ps[2]
+		switch req.Cmd() {
+		case "set":
 			svc.db.Set(ent.Index, key, val)
-		} else if cmd == "del" {
+		case "del":
 			svc.db.Del(ent.Index, key)
-		} else if cmd == "incr" {
-			val := ps[2]
+		case "incr":
 			ret = svc.db.Incr(ent.Index, key, val)
 		}
 	

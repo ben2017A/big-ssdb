@@ -49,3 +49,9 @@ Leader 选举的是多数派里日志最多的一个节点, 并非绝对意义�
 * 必须通过 Leader 读.
 * Leader 在返回响应前, 需要向多数节点确认它确实是 Leader.
 * Leader 租约(租约过期前, 其它节点不发起新投票或响应投票), 可以减少这种确认.
+
+### 相关链接
+
+* [PDF: Raft - In Search of an Understandable Consensus Algorithm](https://raft.github.io/raft.pdf)
+* [PDF: Designing for Understandability: the Raft Consensus Algorithm](https://raft.github.io/slides/uiuc2016.pdf)
+* [PDF: Raft: A Consensus Algorithm for Replicated Logs](https://raft.github.io/slides/raftuserstudy2013.pdf)

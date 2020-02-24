@@ -5,7 +5,6 @@ import (
 	"log"
 	"fmt"
 	"sort"
-	"strings"
 	"path/filepath"
 	"util"
 )
@@ -92,15 +91,20 @@ func (db *KVStore)loadWALFile(fn string){
 	wal := OpenWALFile(fn)
 	defer wal.Close()
 
+	ent := new(KVEntry)
+	
 	wal.SeekTo(0)
 	for wal.Next() {
 		r := wal.Item()
-		ps := strings.SplitN(r, " ", 3)
-		switch ps[0] {
+		if !ent.Decode(r) {
+			log.Println("bad record:", r)
+			continue
+		}
+		switch ent.Cmd {
 		case "set":
-			db.mm[ps[1]] = ps[2]
+			db.mm[ent.Key] = ent.Val
 		case "del":
-			delete(db.mm, ps[1])
+			delete(db.mm, ent.Key)
 		}
 	}
 }
