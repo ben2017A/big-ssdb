@@ -36,13 +36,13 @@ Service 对 log 的 Apply 操作是幂等的, 因为, Apply 操作并不一定�
 
 ### 讨论
 
-日志同步和业务处理是异步的, Apply 提供了两者同步的可能性. 同时, 如果 Service 能在 Apply 里 Commit log, 那么, Raft 就不需要持久化了(为了就对重传需求,最好还是持久化).
+日志同步和业务处理是异步的, Apply 提供了两者同步的可能性. 同时, 如果 Service 能在 Apply 里 Commit log, 那么, Raft 就不需要持久化了(为了应对重传需求,还是要持久化).
 
 Raft 和 Service 完全独立的设计, 可能导致数据存在两个副本的情况: 一个副本由Raft 存储成 Raft log 的形式, 另一个副本是业务数据本身. 好处是解耦本身, 坏处也是显而易见的.
 
-Snapshot 不应该属于 Raft 的职责范围.
+Snapshot 不应该属于 Raft 的职责范围, 除非侵入 Service, 否则 Raft 不可能对 Raft log 做 compaction. 不同于 Paxos 知道 instance id, Raft 不知道业务的任何信息, 所知道的只有 log 的 term 和 index, 只有这两项信息根本不可能做 compaction. Raft 针对 log 唯一能做的只有淘汰太过久远的 log.
 
-Leader 选举的是多数派里日志最多的一个节点, 并非绝对意义上的日志最多最全的. 因为这样的节点即使投反对票, 也无济于事, 等待它的是在新 Leader 上台后最终被覆盖.
+Leader 选举的是多数派里日志最多的一个节点, 而非绝对意义上的日志最多最全的. 因为这样的节点即使投反对票, 也无济于事, 等待它的是在新 Leader 上台后最终被覆盖.
 
 ### 一致性读
 
