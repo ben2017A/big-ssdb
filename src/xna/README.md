@@ -32,6 +32,14 @@ http://www.mathcs.emory.edu/~cheung/Courses/377/Syllabus/10-Transactions/redo-lo
 > (Transaction execution use in-place update/write operation) and (Transaction implementation uses an UNDO log )
 > (Transaction execution use deferred update/write operation) and (Transaction implementation uses a REDO log )
 
+## 关于 LevelDB 的 WriteBatch 原子性
+
+LevelDB 承诺, WriteBatch 是原子性操作(Atomic), 也就是 all or nothing. 我原以为是通过 write() 系统调用的"原子性"来保证, 事实上, write() 对于普通文件, 在极端情况并不是原子性的, 它可能会返回比你期望的少的 size. 也就是说, write() 只写了一部分数据到硬盘上.
+
+这样的极端情况包括: 硬盘空间满, RLIMIT_FSIZE 限制. 见: http://man7.org/linux/man-pages/man2/write.2.html
+
+所以, LevelDB 会做 crc checksum, 能发现这种数据损坏的情况, 这样保证写入的数据的完整性(Atomic).
+
 ## Service
 
 levels:
