@@ -152,12 +152,11 @@ func (st *Storage)CommitEntry(commitIndex int64){
 }
 
 func (st *Storage)applyEntries(){
-	idx := st.CommitIndex // Node 可能会改变 CommitIndex
 	for _, svc := range st.services {
-		for svc.LastApplied() < idx {
-			ent := st.GetEntry(svc.LastApplied() + 1)
+		for idx := svc.LastApplied() + 1; idx < st.CommitIndex; idx ++ {
+			ent := st.GetEntry(idx)
 			if ent == nil {
-				log.Fatal("lost entry#", svc.LastApplied() + 1)
+				log.Fatal("lost entry#", idx)
 				break;
 			}
 			svc.ApplyEntry(ent)

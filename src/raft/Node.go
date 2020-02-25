@@ -441,10 +441,13 @@ func (node *Node)LastApplied() int64{
 func (node *Node)ApplyEntry(ent *Entry){
 	node.lastApplied = ent.Index
 
+	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
 	if ent.Type == "AddMember" {
 		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
-		node.connectMember(ps[0], ps[1])
+		if len(ps) == 2 {
+			node.connectMember(ps[0], ps[1])
+		}
 	}else if ent.Type == "DelMember" {
 		// TODO:
 	}else{
