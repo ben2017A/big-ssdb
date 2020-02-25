@@ -117,7 +117,7 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 	var ret string
 
 	if ent.Type == "Write"{
-		log.Println("[Apply]", ent.Data)
+		log.Println("[Apply]", ent.Index, ent.Data)
 
 		req := new(link.Request)
 		if !req.Decode(ent.Data) {

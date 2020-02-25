@@ -153,7 +153,7 @@ func (st *Storage)CommitEntry(commitIndex int64){
 
 func (st *Storage)applyEntries(){
 	for _, svc := range st.services {
-		for idx := svc.LastApplied() + 1; idx < st.CommitIndex; idx ++ {
+		for idx := svc.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
 			if ent == nil {
 				log.Fatal("lost entry#", idx)
