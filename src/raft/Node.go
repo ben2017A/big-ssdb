@@ -39,7 +39,7 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node.Role = "follower"
 	node.Term = 0
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = ElectionTimeout
+	node.electionTimeout = 3 * 1000
 
 	node.xport = xport
 	node.store = NewHelper(node, db)

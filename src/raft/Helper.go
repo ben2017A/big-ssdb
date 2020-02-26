@@ -24,6 +24,7 @@ type Helper struct{
 
 func NewHelper(node *Node, db Storage) *Helper{
 	ret := new(Helper)
+	ret.state = State{"", 0, "", make(map[string]string)}
 	ret.entries = make(map[int64]*Entry)
 	ret.services = make([]Service, 0)
 	

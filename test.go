@@ -165,10 +165,10 @@ func main(){
 	/////////////////////////////////////
 
 	log.Println("Raft server started at", port)
-	raftdb := store.OpenKVStore(base_dir + "/raft")
+	store := store.OpenKVStore(base_dir + "/raft")
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
 
-	node := raft.NewNode(nodeId, raftdb, raft_xport)
+	node := raft.NewNode(nodeId, store, raft_xport)
 	node.Start()
 
 	log.Println("Service server started at", port+1000)
