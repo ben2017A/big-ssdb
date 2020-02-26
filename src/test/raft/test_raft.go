@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 	"log"
+	"fmt"
 	
 	"raft"
 )
@@ -28,9 +29,25 @@ func main(){
 	log.Println("started")
 	
 	go func(){
-		time.Sleep(6000 * time.Millisecond)
+		time.Sleep(4000 * time.Millisecond)
 		n1.AddMember("n1", "addr1")
 		n1.AddMember("n2", "addr2")
+		
+		n2.JoinGroup("n1", "addr1")
+		
+		i := 0
+		for ; i<2; i++ {
+			s := fmt.Sprintf("%d", i)
+			log.Println("client request:", s)
+			n1.Write(s)
+		}
+		
+		time.Sleep(4200 * time.Millisecond)
+		for ; i<9; i++ {
+			s := fmt.Sprintf("%d", i)
+			log.Println("client request:", s)
+			n1.Write(s)
+		}
 	}()
 
 	for{
@@ -39,8 +56,13 @@ func main(){
 			n1.Tick(TimerInterval)
 			n2.Tick(TimerInterval)
 		case msg := <-xport.C:
-			log.Println(msg)
-			n1.HandleRaftMessage(msg)
+			log.Println("   receive < ", msg.Encode())
+			if msg.Dst == "n1" {
+				n1.HandleRaftMessage(msg)
+			}
+			if msg.Dst == "n2" {
+				n2.HandleRaftMessage(msg)
+			}
 		}
 	}
 }

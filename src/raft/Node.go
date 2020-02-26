@@ -77,7 +77,6 @@ func (node *Node)Tick(timeElapse int){
 		for _, m := range node.Members {
 			m.ReplicationTimeout -= timeElapse
 			if m.ReplicationTimeout <= 0 {
-				m.ResendCount = 0
 				node.replicateMember(m)
 			}
 
@@ -148,9 +147,7 @@ func (node *Node)becomeLeader(){
 		}
 		ent := node.newEntry("Noop", "")
 		node.store.AddEntry(*ent)
-		for _, m := range node.Members {
-			node.replicateMember(m)
-		}
+		node.replicateAllMembers()
 	}
 }
 
@@ -173,13 +170,11 @@ func (node *Node)heartbeatMember(m *Member){
 }
 
 func (node *Node)replicateMember(m *Member){
-	// 在收到 Ack 后, 或者超时后, 重置 ResendCount
-	if m.ResendCount > 0 {
-		log.Println("waiting for retransmission to complete")
+	m.ReplicationTimeout = ReplicationTimeout
+	if m.NextIndex - m.MatchIndex >= m.SendWindow {
+		log.Println("stop and wait")
 		return
 	}
-	
-	m.ReplicationTimeout = ReplicationTimeout
 
 	ent := node.store.GetEntry(m.NextIndex)
 	if ent == nil {
@@ -189,18 +184,18 @@ func (node *Node)replicateMember(m *Member){
 	prev := node.store.GetEntry(m.NextIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
-	if ent.Index <= m.LastSendIndex {
-		m.ResendCount ++
-		m.ReplicationTimeout = util.MinInt(m.ResendCount * ReplicationTimeout, HeartbeatTimeout * 2)
-		log.Println("retransmission", m.ResendCount)
-	}else{
-		m.ResendCount = 0
-		// 如果不是重传, 应尽快发送下一个
-		m.NextIndex += 1
-	}
-	
-	m.LastSendIndex = ent.Index
+	m.NextIndex += 1
 	m.HeartbeatTimeout = HeartbeatTimeout
+}
+
+func (node *Node)replicateAllMembers(){
+	for _, m := range node.Members {
+		node.replicateMember(m)
+	}
+	// allow single node mode, commit every entry immediately
+	if node.Role == "leader" && len(node.Members) == 0 {
+		node.store.CommitEntry(node.store.LastIndex)
+	}
 }
 
 func (node *Node)connectMember(nodeId string, nodeAddr string){
@@ -221,8 +216,7 @@ func (node *Node)connectMember(nodeId string, nodeAddr string){
 
 func (node *Node)HandleRaftMessage(msg *Message){
 	if msg.Dst != node.Id || node.Members[msg.Src] == nil {
-		log.Println(node.Id)
-		log.Println("drop message src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
+		log.Println(node.Id, "drop message src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
 		return
 	}
 
@@ -347,6 +341,8 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		if msg.PrevIndex < node.store.LastIndex {
 			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
+			
+			node.replicateMember(m)
 		}
 	}else{
 		oldMatchIndex := m.MatchIndex
@@ -369,16 +365,16 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			// only commit currentTerm's log
 			if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
 				node.store.CommitEntry(commitIndex)
+				
 				// immediately notify followers to commit
 				if m.NextIndex >= node.store.LastIndex {
 					node.heartbeatMember(m)
+				} else{
+					node.replicateMember(m)
 				}
 			}
 		}
 	}
-
-	m.ResendCount = 0
-	node.replicateMember(m)
 }
 
 /* ############################################# */
@@ -411,28 +407,18 @@ func (node *Node)AddMember(nodeId string, nodeAddr string){
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.newEntry("AddMember", data)
 	node.store.AddEntry(*ent)
-	node.replicateEntries()	
-}
-
-func (node *Node)replicateEntries(){
-	for _, m := range node.Members {
-		node.replicateMember(m)
-	}
-	// allow single node mode, commit every entry immediately
-	if node.Role == "leader" && len(node.Members) == 0 {
-		node.store.CommitEntry(node.store.LastIndex)
-	}
-}
-
-func (node *Node)AddService(svc Service){
-	node.store.AddService(svc)
+	node.replicateAllMembers()	
 }
 
 func (node *Node)Write(data string) int64{
 	ent := node.newEntry("Write", data)
 	node.store.AddEntry(*ent)
-	node.replicateEntries()
+	node.replicateAllMembers()
 	return ent.Index
+}
+
+func (node *Node)AddService(svc Service){
+	node.store.AddService(svc)
 }
 
 /* #################### Service interface ######################### */
