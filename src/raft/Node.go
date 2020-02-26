@@ -29,11 +29,11 @@ type Node struct{
 
 	electionTimeout int
 
-	store *Storage
+	store *Helper
 	xport Transport
 }
 
-func NewNode(nodeId string, store *Storage, xport Transport) *Node{
+func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
 	node.Role = "follower"
@@ -41,20 +41,23 @@ func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node.Members = make(map[string]*Member)
 	node.electionTimeout = ElectionTimeout
 
-	node.store = store
 	node.xport = xport
+	node.store = NewHelper(node, db)
+	node.lastApplied = node.store.CommitIndex
+
+	if node.store.State().Id != "" {
+		node.Term = node.store.State().Term
+		node.VoteFor = node.store.State().VoteFor
+	}
 
 	return node
 }
 
 func (node *Node)Start(){
-	node.lastApplied = node.store.CommitIndex
-	node.store.SetNode(node)
-	
-	s := node.store.State()
-	for nodeId, nodeAddr := range s.Members {
+	for nodeId, nodeAddr := range node.store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
+	node.store.ApplyEntries()
 }
 
 func (node *Node)Stop(){

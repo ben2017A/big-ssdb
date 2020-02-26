@@ -29,6 +29,7 @@ func OpenKVStore(dir string) *KVStore{
 	if !util.IsDir(dir) {
 		return nil
 	}
+	log.Println("Open KVStore", dir)
 
 	db := new(KVStore)
 	db.dir = dir
@@ -87,7 +88,7 @@ func (db *KVStore)compactWAL(){
 }
 
 func (db *KVStore)loadWALFile(fn string){
-	log.Println("load", fn)
+	log.Println("    load", fn)
 	wal := OpenWALFile(fn)
 	defer wal.Close()
 

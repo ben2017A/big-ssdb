@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"time"
 	"log"
-	// "math/rand"
+	"path/filepath"
 	"os"
 	"strconv"
 
 	"raft"
 	"ssdb"
+	"store"
 	"link"
 )
 
@@ -154,7 +155,7 @@ func main(){
 	}
 	nodeId := fmt.Sprintf("%d", port)
 
-	base_dir := fmt.Sprintf("./tmp/%s", nodeId);
+	base_dir, _ := filepath.Abs(fmt.Sprintf("./tmp/%s", nodeId))
 
 	/////////////////////////////////////
 
@@ -164,10 +165,10 @@ func main(){
 	/////////////////////////////////////
 
 	log.Println("Raft server started at", port)
-	store := raft.OpenStorage(base_dir + "/raft")
+	raftdb := store.OpenKVStore(base_dir + "/raft")
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
 
-	node := raft.NewNode(nodeId, store, raft_xport)
+	node := raft.NewNode(nodeId, raftdb, raft_xport)
 	node.Start()
 
 	log.Println("Service server started at", port+1000)
