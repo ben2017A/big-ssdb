@@ -178,16 +178,24 @@ func (node *Node)replicateMember(m *Member){
 		return
 	}
 
-	ent := node.store.GetEntry(m.NextIndex)
-	if ent == nil {
-		return;
-	}
-	ent.CommitIndex = node.store.CommitIndex
-	prev := node.store.GetEntry(m.NextIndex - 1)
-	node.send(NewAppendEntryMsg(m.Id, ent, prev))
+	count := 0
+	maxIndex := m.MatchIndex + m.SendWindow
+	for m.NextIndex <= maxIndex {
+		ent := node.store.GetEntry(m.NextIndex)
+		if ent == nil {
+			break
+		}
+		
+		ent.CommitIndex = node.store.CommitIndex
+		prev := node.store.GetEntry(m.NextIndex - 1)
+		node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
-	m.NextIndex += 1
-	m.HeartbeatTimeout = HeartbeatTimeout
+		count ++
+		m.NextIndex += 1
+	}
+	if count > 0 {
+		m.HeartbeatTimeout = HeartbeatTimeout
+	}
 }
 
 func (node *Node)replicateAllMembers(){
