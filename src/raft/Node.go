@@ -171,15 +171,18 @@ func (node *Node)heartbeatMember(m *Member){
 
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimeout = ReplicationTimeout
-	if m.NextIndex - m.MatchIndex >= m.SendWindow {
-		if m.MatchIndex != 0 {
-			log.Println("stop and wait")
-		}
+	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
+		log.Println("stop and wait")
 		return
 	}
 
 	count := 0
-	maxIndex := m.MatchIndex + m.SendWindow
+	var maxIndex int64;
+	if m.MatchIndex == 0 {
+		maxIndex = m.NextIndex
+	} else {
+		maxIndex = m.MatchIndex + m.SendWindow
+	}
 	for m.NextIndex <= maxIndex {
 		ent := node.store.GetEntry(m.NextIndex)
 		if ent == nil {
