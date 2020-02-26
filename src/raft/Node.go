@@ -172,7 +172,9 @@ func (node *Node)heartbeatMember(m *Member){
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimeout = ReplicationTimeout
 	if m.NextIndex - m.MatchIndex >= m.SendWindow {
-		log.Println("stop and wait")
+		if m.MatchIndex != 0 {
+			log.Println("stop and wait")
+		}
 		return
 	}
 

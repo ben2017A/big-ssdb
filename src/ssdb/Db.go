@@ -32,19 +32,30 @@ func (db *Db)replayRedolog() {
 		count ++
 		for _, ent := range tx.Entries() {
 			log.Println("    Redo", ent)
-			switch ent.Type {
-			case "set":
-				db.kv.Set(ent.Key, ent.Val)
-			case "del":
-				db.kv.Del(ent.Key)
-			}
 		}
+		db.applyTransaction(tx)
 	}
 	if count > 0 {
 		db.redo.WriteCheckpoint()
 	} else {
 		log.Println("nothing to redo")
 	}
+}
+
+func (db *Db)applyTransaction(tx *xna.Transaction) {
+	for _, ent := range tx.Entries() {
+		switch ent.Type {
+		case "set":
+			db.kv.Set(ent.Key, ent.Val)
+		case "del":
+			db.kv.Del(ent.Key)
+		}
+	}
+}
+
+func (db *Db)commitTransaction(tx *xna.Transaction) {
+	db.redo.WriteTransaction(tx)
+	db.applyTransaction(tx)
 }
 
 func (db *Db)CommitIndex() int64 {
@@ -59,16 +70,14 @@ func (db *Db)Set(idx int64, key string, val string) {
 	tx := xna.NewTransaction()
 	tx.Set(idx, key, val)
 
-	db.redo.WriteTransaction(tx)
-	db.kv.Set(key, val)
+	db.commitTransaction(tx)
 }
 
 func (db *Db)Del(idx int64, key string) {
 	tx := xna.NewTransaction()
 	tx.Del(idx, key)
 	
-	db.redo.WriteTransaction(tx)
-	db.kv.Del(key)
+	db.commitTransaction(tx)
 }
 
 func (db *Db)Incr(idx int64, key string, delta string) string {
@@ -79,8 +88,6 @@ func (db *Db)Incr(idx int64, key string, delta string) string {
 	tx := xna.NewTransaction()
 	tx.Set(idx, key, val)
 	
-	db.redo.WriteTransaction(tx)
-	db.kv.Set(key, val)
-	
+	db.commitTransaction(tx)
 	return val
 }

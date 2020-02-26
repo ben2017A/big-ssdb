@@ -10,7 +10,7 @@ type Transaction struct {
 	status int
 	minIndex int64
 	maxIndex int64
-	entries map[string]*Entry
+	mm map[string]*Entry
 }
 
 func NewTransaction() *Transaction {
@@ -18,7 +18,7 @@ func NewTransaction() *Transaction {
 	ret.status = 0
 	ret.minIndex = 0
 	ret.maxIndex = 0
-	ret.entries = make(map[string]*Entry)
+	ret.mm = make(map[string]*Entry)
 	return ret
 }
 
@@ -27,7 +27,7 @@ func (tx *Transaction)Committed() bool {
 }
 
 func (tx *Transaction)Empty() bool {
-	return len(tx.entries) == 0
+	return len(tx.mm) == 0
 }
 
 func (tx *Transaction)MinIndex() int64 {
@@ -39,9 +39,9 @@ func (tx *Transaction)MaxIndex() int64 {
 }
 
 func (tx *Transaction)Entries() []*Entry {
-	arr := make([]*Entry, len(tx.entries))
+	arr := make([]*Entry, len(tx.mm))
 	n := 0
-	for _, v := range tx.entries {
+	for _, v := range tx.mm {
 		arr[n] = v
 		n ++
 	}
@@ -60,7 +60,7 @@ func (tx *Transaction)CommitEntry() *Entry {
 }
 
 func (tx *Transaction)GetEntry(key string) *Entry {
-	return tx.entries[key]
+	return tx.mm[key]
 }
 
 func (tx *Transaction)Set(idx int64, key string, val string) {
@@ -83,6 +83,6 @@ func (tx *Transaction)AddEntry(ent Entry) {
 	tx.maxIndex = util.MaxInt64(tx.maxIndex, ent.Index)
 
 	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
-		tx.entries[ent.Key] = &ent
+		tx.mm[ent.Key] = &ent
 	}
 }
