@@ -94,7 +94,7 @@ func (tp *UdpTransport)start(){
 				if SIMULATE_BAD_NETWORK {
 					delayC <- msg
 				}else{
-					log.Printf("    receive < %s\n", msg.Encode())
+					log.Printf("  receive < %s\n", msg.Encode())
 					tp.c <- msg
 				}
 			}

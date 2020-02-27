@@ -34,11 +34,8 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc.db = ssdb.OpenDb(dir + "/data")
 	svc.lastApplied = svc.db.CommitIndex()
 
-	svc.node = node
-	svc.node.AddService(svc)
-	
+	svc.node = node	
 	svc.xport = xport
-
 	svc.jobs = make(map[int64]*link.Request)
 
 	return svc
@@ -63,12 +60,11 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	if cmd == "AddMember" {
-		if svc.node.Role == "leader" {
-			svc.node.AddMember(req.Arg(0), req.Arg(1))
-			return
-		}
+		svc.node.AddMember(req.Arg(0), req.Arg(1))
+		return
 	}
 	
+	// TODO: svc.node.Role must be atomic
 	if svc.node.Role != "leader" {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
@@ -167,19 +163,17 @@ func main(){
 
 	/////////////////////////////////////
 
-	/////////////////////////////////////
-
 	log.Println("Raft server started at", port)
 	store := store.OpenKVStore(base_dir + "/raft")
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
-
 	node := raft.NewNode(nodeId, store, raft_xport)
-	node.Start()
 
 	log.Println("Service server started at", port+1000)
 	svc_xport := link.NewTcpServer("127.0.0.1", port+1000)
-	
 	svc := NewService(base_dir, node, svc_xport)
+
+	node.AddService(svc)
+	node.Start()
 
 	for{
 		select{

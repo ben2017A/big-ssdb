@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 	"strings"
+	"sync"
 
 	"util"
 )
@@ -34,6 +35,8 @@ type Node struct{
 
 	store *Helper
 	xport Transport
+	
+	mux sync.Mutex
 }
 
 func NewNode(nodeId string, db Storage, xport Transport) *Node{
@@ -56,6 +59,10 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	return node
 }
 
+func (node *Node)AddService(svc Service){
+	node.store.AddService(svc)
+}
+
 func (node *Node)Start(){
 	for nodeId, nodeAddr := range node.store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
@@ -70,14 +77,20 @@ func (node *Node)Start(){
 		for{
 			select{
 			case <-ticker.C:
-				node.Tick(TimerInterval)
+				node.mux.Lock()
+				node.tick(TimerInterval)
+				node.mux.Unlock()
 			case <-node.store.C:
 				for len(node.store.C) > 0 {
 					<-node.store.C
 				}
+				node.mux.Lock()
 				node.replicateAllMembers()
+				node.mux.Unlock()
 			case msg := <-node.xport.C():
-				node.HandleRaftMessage(msg)
+				node.mux.Lock()
+				node.handleRaftMessage(msg)
+				node.mux.Unlock()
 			}
 		}
 	}()
@@ -88,7 +101,7 @@ func (node *Node)Stop(){
 	node.xport.Close()
 }
 
-func (node *Node)Tick(timeElapse int){
+func (node *Node)tick(timeElapse int){
 	if node.Role == "follower" || node.Role == "candidate" {
 		node.electionTimeout -= timeElapse
 		if node.electionTimeout <= 0 {
@@ -248,7 +261,7 @@ func (node *Node)connectMember(nodeId string, nodeAddr string){
 
 /* ############################################# */
 
-func (node *Node)HandleRaftMessage(msg *Message){
+func (node *Node)handleRaftMessage(msg *Message){
 	if msg.Dst != node.Id || node.Members[msg.Src] == nil {
 		log.Println(node.Id, "drop message src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
 		return
@@ -415,6 +428,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 // TODO:
 func (node *Node)JoinGroup(nodeId string, nodeAddr string){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
 	log.Println("JoinGroup", nodeId, nodeAddr)
 	if nodeId == node.Id {
 		log.Println("could not join self:", nodeId)
@@ -426,18 +442,30 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 }
 
 func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+
+	if node.Role != "leader" {
+		log.Println("error: not leader")
+		return -1
+	}
+	
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.store.AddNewEntry("AddMember", data)
 	return ent.Index
 }
 
 func (node *Node)Write(data string) int64 {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	if node.Role != "leader" {
+		log.Println("error: not leader")
+		return -1
+	}
+	
 	ent := node.store.AddNewEntry("Write", data)
 	return ent.Index
-}
-
-func (node *Node)AddService(svc Service){
-	node.store.AddService(svc)
 }
 
 /* #################### Service interface ######################### */
