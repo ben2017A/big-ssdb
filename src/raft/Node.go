@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"math/rand"
+	"time"
 	"strings"
 
 	"util"
@@ -19,12 +20,14 @@ type Node struct{
 	Id string
 	Role string
 
+	// Raft persistent state
 	Term int32
-	lastApplied int64
-
+	VoteFor string
 	Members map[string]*Member
 
-	VoteFor string
+	// Specified for every raft.Service, init with CommitIndex on startup
+	lastApplied int64
+	
 	votesReceived map[string]string
 
 	electionTimeout int
@@ -58,6 +61,26 @@ func (node *Node)Start(){
 		node.connectMember(nodeId, nodeAddr)
 	}
 	node.store.ApplyEntries()
+	
+	go func() {
+		const TimerInterval = 100
+		ticker := time.NewTicker(TimerInterval * time.Millisecond)
+		defer ticker.Stop()
+
+		for{
+			select{
+			case <-ticker.C:
+				node.Tick(TimerInterval)
+			case <-node.store.C:
+				for len(node.store.C) > 0 {
+					<-node.store.C
+				}
+				node.replicateAllMembers()
+			case msg := <-node.xport.C():
+				node.HandleRaftMessage(msg)
+			}
+		}
+	}()
 }
 
 func (node *Node)Stop(){
@@ -145,9 +168,7 @@ func (node *Node)becomeLeader(){
 		for _, m := range node.Members {
 			node.resetMemberState(m)
 		}
-		ent := node.newEntry("Noop", "")
-		node.store.AddEntry(*ent)
-		node.replicateAllMembers()
+		node.store.AddNewEntry("Noop", "")
 	}
 }
 
@@ -167,6 +188,16 @@ func (node *Node)heartbeatMember(m *Member){
 	ent := NewHeartbeatEntry(node.store.CommitIndex)
 	prev := node.store.GetEntry(m.NextIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
+}
+
+func (node *Node)replicateAllMembers(){
+	for _, m := range node.Members {
+		node.replicateMember(m)
+	}
+	// allow single node mode, commit every entry immediately
+	if node.Role == "leader" && len(node.Members) == 0 {
+		node.store.CommitEntry(node.store.LastIndex)
+	}
 }
 
 func (node *Node)replicateMember(m *Member){
@@ -198,16 +229,6 @@ func (node *Node)replicateMember(m *Member){
 	}
 	if count > 0 {
 		m.HeartbeatTimeout = HeartbeatTimeout
-	}
-}
-
-func (node *Node)replicateAllMembers(){
-	for _, m := range node.Members {
-		node.replicateMember(m)
-	}
-	// allow single node mode, commit every entry immediately
-	if node.Role == "leader" && len(node.Members) == 0 {
-		node.store.CommitEntry(node.store.LastIndex)
 	}
 }
 
@@ -332,7 +353,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == "Heartbeat" || ent.Type == "Commit" {
+	if ent.Type == "Heartbeat" {
 		//
 	} else {
 		old := node.store.GetEntry(ent.Index)
@@ -340,7 +361,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			// TODO:
 			log.Println("delete conflict entry, and entries that follow")
 		}
-		node.store.AddEntry(*ent)
+		node.store.AppendEntry(*ent)
 	}
 
 	node.send(NewAppendEntryAck(msg.Src, true))
@@ -392,15 +413,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 /* ############################################# */
 
-func (node *Node)newEntry(type_, data string) *Entry{
-	ent := new(Entry)
-	ent.Type = type_
-	ent.Index = node.store.LastIndex + 1
-	ent.Term = node.Term
-	ent.Data = data
-	return ent
-}
-
+// TODO:
 func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	log.Println("JoinGroup", nodeId, nodeAddr)
 	if nodeId == node.Id {
@@ -412,21 +425,14 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	node.becomeFollower()
 }
 
-func (node *Node)AddMember(nodeId string, nodeAddr string){
-	if node.Members[nodeId] != nil {
-		log.Println("member already exists:", nodeId)
-		return
-	}
+func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
-	ent := node.newEntry("AddMember", data)
-	node.store.AddEntry(*ent)
-	node.replicateAllMembers()	
+	ent := node.store.AddNewEntry("AddMember", data)
+	return ent.Index
 }
 
-func (node *Node)Write(data string) int64{
-	ent := node.newEntry("Write", data)
-	node.store.AddEntry(*ent)
-	node.replicateAllMembers()
+func (node *Node)Write(data string) int64 {
+	ent := node.store.AddNewEntry("Write", data)
 	return ent.Index
 }
 

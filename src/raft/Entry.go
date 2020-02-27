@@ -12,7 +12,7 @@ type Entry struct{
 	Term int32
 	Index int64
 	CommitIndex int64
-	Type string // AddMember, DelMember, Heartbeat, Noop, Commit, Write
+	Type string // AddMember, DelMember, Heartbeat, Noop, Write
 	Data string
 }
 
@@ -47,15 +47,6 @@ func (e *Entry)Decode(buf string) bool{
 func NewHeartbeatEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
 	ent.Type = "Heartbeat"
-	ent.Term = 0
-	ent.Index = 0
-	ent.CommitIndex = commitIndex
-	return ent
-}
-
-func NewCommitEntry(commitIndex int64) *Entry{
-	ent := new(Entry)
-	ent.Type = "Commit"
 	ent.Term = 0
 	ent.Index = 0
 	ent.CommitIndex = commitIndex

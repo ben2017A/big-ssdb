@@ -12,7 +12,7 @@ import (
 
 type UdpTransport struct{
 	addr string
-	C chan *Message
+	c chan *Message
 	conn *net.UDPConn
 	dns map[string]string
 }
@@ -25,11 +25,15 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	tp := new(UdpTransport)
 	tp.addr = fmt.Sprintf("%s:%d", ip, port)
 	tp.conn = conn
-	tp.C = make(chan *Message)
+	tp.c = make(chan *Message)
 	tp.dns = make(map[string]string)
 
 	tp.start()
 	return tp
+}
+
+func (tp *UdpTransport)C() chan *Message {
+	return tp.c
 }
 
 func (tp *UdpTransport)Addr() string {
@@ -56,7 +60,7 @@ func (tp *UdpTransport)simulate_bad_network(delayC chan interface{}){
 					heap.Pop()
 					
 					log.Printf("    receive < %s\n", msg.(*Message).Encode())
-					tp.C <- msg.(*Message)
+					tp.c <- msg.(*Message)
 				}
 			case msg := <- delayC:
 				delay := rand.Intn(MaxDelay) // 模拟延迟和乱序
@@ -91,7 +95,7 @@ func (tp *UdpTransport)start(){
 					delayC <- msg
 				}else{
 					log.Printf("    receive < %s\n", msg.Encode())
-					tp.C <- msg
+					tp.c <- msg
 				}
 			}
 		}
@@ -100,7 +104,7 @@ func (tp *UdpTransport)start(){
 
 func (tp *UdpTransport)Close(){
 	tp.conn.Close()
-	close(tp.C)
+	close(tp.c)
 }
 
 func (tp *UdpTransport)Connect(nodeId, addr string){
@@ -111,6 +115,7 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 	delete(tp.dns, nodeId)
 }
 
+// TODO: thread safe
 func (tp *UdpTransport)Send(msg *Message) bool{
 	addr := tp.dns[msg.Dst]
 	if addr == "" {

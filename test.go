@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"time"
 	"log"
 	"path/filepath"
 	"os"
+	"sync"
 	"strconv"
 
 	"raft"
@@ -25,6 +25,7 @@ type Service struct{
 	xport *link.TcpServer
 	
 	jobs map[int64]*link.Request // raft.Index => Request
+	mux sync.Mutex
 }
 
 func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
@@ -44,6 +45,10 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 }
 
 func (svc *Service)HandleClientMessage(msg *link.Message) {
+	// TODO
+	svc.mux.Lock()
+	defer svc.mux.Unlock()
+
 	req := new(link.Request)
 	if !req.Decode(msg.Data) {
 		log.Println("bad msg:", msg.Data)
@@ -91,29 +96,10 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	svc.jobs[idx] = req
 }
 
-func (svc *Service)raftApplyCallback(ent *raft.Entry, ret string) {
-	req := svc.jobs[ent.Index]
-	if req == nil {
-		return
-	}
-	delete(svc.jobs, ent.Index)
-	
-	if ret == "" {
-		ret = "ok"
-	}
-	resp := &link.Message{req.Src, ret}
-	svc.xport.Send(resp)
-}
-
-/* #################### raft.Service interface ######################### */
-
-func (svc *Service)LastApplied() int64{
-	return svc.lastApplied
-}
-
-func (svc *Service)ApplyEntry(ent *raft.Entry){
-	// 不需要持久化, 从 Redolog 中获取
-	svc.lastApplied = ent.Index
+func (svc *Service)handleRaftEntry(ent *raft.Entry) {
+	// TODO
+	svc.mux.Lock()
+	defer svc.mux.Unlock()
 
 	var ret string
 
@@ -138,8 +124,30 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 			ret = svc.db.Incr(ent.Index, key, val)
 		}
 	}
+
+	req := svc.jobs[ent.Index]
+	if req == nil {
+		return
+	}
+	delete(svc.jobs, ent.Index)
 	
-	svc.raftApplyCallback(ent, ret)
+	if ret == "" {
+		ret = "ok"
+	}
+	resp := &link.Message{req.Src, ret}
+	svc.xport.Send(resp)
+}
+
+/* #################### raft.Service interface ######################### */
+
+func (svc *Service)LastApplied() int64{
+	return svc.lastApplied
+}
+
+func (svc *Service)ApplyEntry(ent *raft.Entry){
+	// 不需要持久化, 从 Redolog 中获取
+	svc.lastApplied = ent.Index
+	svc.handleRaftEntry(ent)
 }
 
 /* ############################################# */
@@ -159,9 +167,6 @@ func main(){
 
 	/////////////////////////////////////
 
-	ticker := time.NewTicker(TimerInterval * time.Millisecond)
-	defer ticker.Stop()
-
 	/////////////////////////////////////
 
 	log.Println("Raft server started at", port)
@@ -178,10 +183,6 @@ func main(){
 
 	for{
 		select{
-		case <-ticker.C:
-			node.Tick(TimerInterval)
-		case msg := <-raft_xport.C:
-			node.HandleRaftMessage(msg)
 		case msg := <-svc_xport.C:
 			svc.HandleClientMessage(msg)
 		}

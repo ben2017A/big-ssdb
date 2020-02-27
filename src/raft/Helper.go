@@ -8,11 +8,15 @@ import (
 )
 
 type Helper struct{
+	// Discovered from log entries
 	LastTerm int32
 	LastIndex int64
+	// Discovered from log entries, also in state storage @CommitIndex
 	CommitIndex int64
 
 	node *Node
+	// notify channel reader there is new entry to be replicated
+	C chan int
 
 	state State
 	// entries may not be continuous(for follower)
@@ -37,6 +41,7 @@ func NewHelper(node *Node, db Storage) *Helper{
 	log.Println("    CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
 	log.Println("    State:", ret.state.Encode())
 
+	ret.C = make(chan int, 10)
 	ret.node = node
 	ret.AddService(node)
 
@@ -96,8 +101,23 @@ func (st *Helper)GetEntry(index int64) *Entry{
 	return st.entries[index]
 }
 
+// TODO: thread-safe
+// return a copy of appended entry
+func (st *Helper)AddNewEntry(type_, data string) *Entry{
+	ent := new(Entry)
+	ent.Type = type_
+	ent.Index = st.LastIndex + 1
+	ent.Term = st.node.Term
+	ent.Data = data
+	
+	st.AppendEntry(*ent)
+	st.C <- 0
+	return ent
+}
+
+// TODO: thread-safe
 // 传值. 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-func (st *Helper)AddEntry(ent Entry){
+func (st *Helper)AppendEntry(ent Entry){
 	if ent.Index < st.CommitIndex {
 		log.Println(ent.Index, "<", st.CommitIndex)
 		return
