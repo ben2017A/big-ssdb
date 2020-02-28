@@ -68,7 +68,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
-	// TODO: svc.node.Role must be atomic
+	// TODO: lock(svc.node)
 	if svc.node.Role != "leader" {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
