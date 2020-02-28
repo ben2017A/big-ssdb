@@ -11,14 +11,13 @@ type Helper struct{
 	// Discovered from log entries
 	LastTerm int32
 	LastIndex int64
-	// Discovered from log entries, also in state storage @CommitIndex
+	// Discovered from log entries, also in db @CommitIndex
 	CommitIndex int64
 
 	node *Node
 	// notify channel reader there is new entry to be replicated
 	C chan int
 
-	state State
 	// entries may not be continuous(for follower)
 	entries map[int64]*Entry
 	services []Service
@@ -28,22 +27,19 @@ type Helper struct{
 
 func NewHelper(node *Node, db Storage) *Helper{
 	ret := new(Helper)
-	ret.state = State{"", 0, "", make(map[string]string)}
 	ret.entries = make(map[int64]*Entry)
 	ret.services = make([]Service, 0)
 	
 	ret.db = db
-
-	ret.CommitIndex = util.Atoi64(ret.db.Get("@CommitIndex"))
-	ret.loadState()
-	ret.loadEntries()
-
-	log.Println("    CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
-	log.Println("    State:", ret.state.Encode())
-
 	ret.C = make(chan int, 10)
 	ret.node = node
 	ret.AddService(node)
+
+	ret.CommitIndex = util.Atoi64(ret.db.Get("@CommitIndex"))
+	ret.loadEntries()
+
+	log.Println("CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
+	log.Println("State:", ret.LoadState().Encode())
 
 	return ret
 }
@@ -54,25 +50,32 @@ func (st *Helper)Close(){
 	}
 }
 
-func (st *Helper)State() State{
-	return st.state
-}
-
 func (st *Helper)AddService(svc Service){
 	st.services = append(st.services, svc)
 }
 
 /* #################### State ###################### */
 
-func (st *Helper)SaveState(){
-	st.state.LoadFromNode(st.node)
-	st.db.Set("@State", st.state.Encode())
-	log.Println("[RAFT] State", st.state.Encode())
+func (st *Helper)LoadState() *State{
+	var s State
+	data := st.db.Get("@State")
+	s.Decode(data)
+	return &s
 }
 
-func (st *Helper)loadState(){
-	last := st.db.Get("@State")
-	st.state.Decode(last)
+func (st *Helper)SaveState(){
+	s := new(State)
+	s.Id = st.node.Id
+	s.Term = st.node.Term
+	s.VoteFor = st.node.VoteFor
+	s.Members = make(map[string]string)
+	
+	for _, m := range st.node.Members {
+		s.Members[m.Id] = m.Addr
+	}
+	
+	st.db.Set("@State", s.Encode())
+	log.Println("[RAFT] State", s.Encode())
 }
 
 /* #################### Entry ###################### */
@@ -92,7 +95,6 @@ func (st *Helper)loadEntries(){
 			}
 			st.LastTerm = util.MaxInt32(st.LastTerm, ent.Term)
 			st.LastIndex = util.MaxInt64(st.LastIndex, ent.Index)
-			st.CommitIndex = util.MaxInt64(st.CommitIndex, ent.CommitIndex)
 		}
 	}
 }
@@ -101,7 +103,6 @@ func (st *Helper)GetEntry(index int64) *Entry{
 	return st.entries[index]
 }
 
-// TODO: thread-safe
 // return a copy of appended entry
 func (st *Helper)AddNewEntry(type_, data string) *Entry{
 	ent := new(Entry)
@@ -115,7 +116,6 @@ func (st *Helper)AddNewEntry(type_, data string) *Entry{
 	return ent
 }
 
-// TODO: thread-safe
 // 传值. 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 func (st *Helper)AppendEntry(ent Entry){
 	if ent.Index < st.CommitIndex {
@@ -150,11 +150,12 @@ func (st *Helper)CommitEntry(commitIndex int64){
 		return
 	}
 
-	st.db.Set("@CommitIndex", fmt.Sprintf("%d", commitIndex))
-	log.Println("[RAFT] CommitIndex", commitIndex)
-
 	st.CommitIndex = commitIndex
 	st.ApplyEntries()
+
+	// save after applied
+	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
+	log.Printf("[RAFT] CommitIndex: %d", st.CommitIndex)
 }
 
 func (st *Helper)ApplyEntries(){

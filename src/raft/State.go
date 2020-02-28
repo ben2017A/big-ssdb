@@ -20,16 +20,6 @@ func DecodeState(buf string) *State {
 	}
 }
 
-func (s *State)LoadFromNode(node *Node) {
-	s.Id = node.Id
-	s.Term = node.Term
-	s.VoteFor = node.VoteFor
-	s.Members = make(map[string]string)
-	for _, m := range node.Members {
-		s.Members[m.Id] = m.Addr
-	}
-}
-
 func (s *State)Encode() string{
 	b, err := json.Marshal(s)
 	if err != nil {

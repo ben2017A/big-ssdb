@@ -26,7 +26,7 @@ type Node struct{
 	VoteFor string
 	Members map[string]*Member
 
-	// Specified for every raft.Service, init with CommitIndex on startup
+	// volatile value
 	lastApplied int64
 	
 	votesReceived map[string]string
@@ -49,11 +49,15 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 
 	node.xport = xport
 	node.store = NewHelper(node, db)
+
+	if node.store.LoadState().Id != "" {
+		node.Term = node.store.LoadState().Term
+		node.VoteFor = node.store.LoadState().VoteFor
+	}
 	node.lastApplied = node.store.CommitIndex
 
-	if node.store.State().Id != "" {
-		node.Term = node.store.State().Term
-		node.VoteFor = node.store.State().VoteFor
+	for nodeId, nodeAddr := range node.store.LoadState().Members {
+		node.connectMember(nodeId, nodeAddr)
 	}
 
 	return node
@@ -64,9 +68,6 @@ func (node *Node)AddService(svc Service){
 }
 
 func (node *Node)Start(){
-	for nodeId, nodeAddr := range node.store.State().Members {
-		node.connectMember(nodeId, nodeAddr)
-	}
 	node.store.ApplyEntries()
 	
 	go func() {
@@ -132,7 +133,7 @@ func (node *Node)becomeFollower(){
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
-	node.electionTimeout = ElectionTimeout // debug TODO:
+	node.electionTimeout = ElectionTimeout + rand.Intn(100) // debug TODO:
 	
 	for _, m := range node.Members {
 		// discover leader by receiving valid AppendEntry
@@ -253,10 +254,23 @@ func (node *Node)connectMember(nodeId string, nodeAddr string){
 		return
 	}
 	m := NewMember(nodeId, nodeAddr)
-	node.Members[m.Id] = m
 	node.resetMemberState(m)
-	log.Println("    connect member", nodeId, nodeAddr)
+	node.Members[m.Id] = m
 	node.xport.Connect(m.Id, m.Addr)
+	log.Println("    connect member", m.Id, m.Addr)
+}
+
+func (node *Node)disconnectMember(nodeId string){
+	if nodeId == node.Id {
+		return
+	}
+	if node.Members[nodeId] == nil {
+		return
+	}
+	m := node.Members[nodeId]
+	delete(node.Members, nodeId)
+	node.xport.Disconnect(m.Id)
+	log.Println("    disconnect member", m.Id, m.Addr)
 }
 
 /* ############################################# */
@@ -437,7 +451,6 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 		return
 	}
 	node.connectMember(nodeId, nodeAddr)
-	node.store.SaveState()
 	node.becomeFollower()
 }
 
@@ -452,6 +465,20 @@ func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.store.AddNewEntry("AddMember", data)
+	return ent.Index
+}
+
+func (node *Node)DelMember(nodeId string) int64 {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+
+	if node.Role != "leader" {
+		log.Println("error: not leader")
+		return -1
+	}
+	
+	data := nodeId
+	ent := node.store.AddNewEntry("DelMember", data)
 	return ent.Index
 }
 
@@ -483,11 +510,13 @@ func (node *Node)ApplyEntry(ent *Entry){
 		ps := strings.Split(ent.Data, " ")
 		if len(ps) == 2 {
 			node.connectMember(ps[0], ps[1])
+			node.store.SaveState()
 		}
 	}else if ent.Type == "DelMember" {
-		// TODO:
-	}else{
-		// log.Println("[Apply]", ent.Encode())
+		log.Println("[Apply]", ent.Encode())
+		nodeId := ent.Data
+		node.disconnectMember(nodeId)
+		node.store.SaveState()
 	}
 }
 

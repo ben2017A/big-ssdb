@@ -7,6 +7,8 @@ import (
 	"time"
 	"strings"
 	"math/rand"
+	"sync"
+
 	"util"
 )
 
@@ -15,6 +17,7 @@ type UdpTransport struct{
 	c chan *Message
 	conn *net.UDPConn
 	dns map[string]string
+	mux sync.Mutex
 }
 
 func NewUdpTransport(ip string, port int) (*UdpTransport){
@@ -94,7 +97,7 @@ func (tp *UdpTransport)start(){
 				if SIMULATE_BAD_NETWORK {
 					delayC <- msg
 				}else{
-					log.Printf("  receive < %s\n", msg.Encode())
+					log.Printf(" receive < %s\n", msg.Encode())
 					tp.c <- msg
 				}
 			}
@@ -108,15 +111,24 @@ func (tp *UdpTransport)Close(){
 }
 
 func (tp *UdpTransport)Connect(nodeId, addr string){
+	tp.mux.Lock()
+	defer tp.mux.Unlock()
+
 	tp.dns[nodeId] = addr
 }
 
 func (tp *UdpTransport)Disconnect(nodeId string){
+	tp.mux.Lock()
+	defer tp.mux.Unlock()
+
 	delete(tp.dns, nodeId)
 }
 
 // TODO: thread safe
 func (tp *UdpTransport)Send(msg *Message) bool{
+	tp.mux.Lock()
+	defer tp.mux.Unlock()
+
 	addr := tp.dns[msg.Dst]
 	if addr == "" {
 		log.Printf("dst: %s not connected", msg.Dst)

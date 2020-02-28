@@ -15,7 +15,7 @@ Redolog 记录的是 set 和 del 操作, 是幂等的. Redolog 先缓冲在内�
 	del b
 	commit
 
-Fsync(), 接着刷新 db, 最后往 redolog 写入 checkpoint:
+持久化, 接着刷新 db, 最后往 redolog 写入 checkpoint:
 
 	check
 

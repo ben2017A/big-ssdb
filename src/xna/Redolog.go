@@ -39,17 +39,17 @@ func (rd *Redolog)SeekToLastCheckpoint() {
 	rd.wal.SeekTo(0)
 	
 	num := 0
-	last_check := 0
+	lineno := 0
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
 		if ent.Type == EntryTypeCheck {
-			last_check = num
+			lineno = num
 		}
 		num += 1
 	}
 	
-	rd.wal.SeekTo(last_check)
+	rd.wal.SeekTo(lineno)
 }
 
 // 返回下一个事务, 如果文件中的事务不完整, 则忽略
@@ -58,6 +58,10 @@ func (rd *Redolog)NextTransaction() *Transaction {
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
+		if ent.Type == EntryTypeCheck {
+			continue
+		}
+		
 		tx.AddEntry(*ent)
 		if ent.Type == EntryTypeCommit {
 			return tx

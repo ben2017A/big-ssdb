@@ -63,6 +63,10 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		svc.node.AddMember(req.Arg(0), req.Arg(1))
 		return
 	}
+	if cmd == "DelMember" {
+		svc.node.DelMember(req.Arg(0))
+		return
+	}
 	
 	// TODO: svc.node.Role must be atomic
 	if svc.node.Role != "leader" {
