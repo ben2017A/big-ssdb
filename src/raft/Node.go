@@ -515,6 +515,7 @@ func (node *Node)ApplyEntry(ent *Entry){
 	}else if ent.Type == "DelMember" {
 		log.Println("[Apply]", ent.Encode())
 		nodeId := ent.Data
+		// the deleted node would not receive a commit msg that it had been deleted
 		node.disconnectMember(nodeId)
 		node.store.SaveState()
 	}
