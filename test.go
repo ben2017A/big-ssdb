@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"path/filepath"
 	"os"
 	"sync"
 	"strconv"
+	"io/ioutil"
+	"path/filepath"
 
 	"raft"
 	"ssdb"
@@ -18,6 +19,7 @@ import (
 
 type Service struct{
 	lastApplied int64
+	dir string
 	
 	db *ssdb.Db
 
@@ -31,6 +33,7 @@ type Service struct{
 func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc := new(Service)
 	
+	svc.dir = dir
 	svc.db = ssdb.OpenDb(dir + "/data")
 	svc.lastApplied = svc.db.LastIndex()
 
@@ -77,6 +80,18 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
+	if cmd == "dump" {
+		fn := svc.dir + "/snapshot.db"
+		svc.db.MakeFileSnapshot(fn)
+		data, _ := ioutil.ReadFile(fn)
+		s := string(data)
+
+		log.Println(req.Key(), "=", s)
+		resp := &link.Message{req.Src, s}
+		svc.xport.Send(resp)
+		return
+	}
+
 	// TODO: lock(svc.node)
 	if svc.node.Role != "leader" {
 		log.Println("error: not leader")
