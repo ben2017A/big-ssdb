@@ -80,6 +80,14 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
+	if cmd == "get" {
+		s := svc.db.Get(req.Key())
+		log.Println(req.Key(), "=", s)
+		resp := &link.Message{req.Src, s}
+		svc.xport.Send(resp)
+		return
+	}
+
 	if cmd == "dump" {
 		fn := svc.dir + "/snapshot.db"
 		svc.db.MakeFileSnapshot(fn)
@@ -100,14 +108,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
-	if cmd == "get" {
-		s := svc.db.Get(req.Key())
-		log.Println(req.Key(), "=", s)
-		resp := &link.Message{req.Src, s}
-		svc.xport.Send(resp)
-		return
-	}
-
 	s := req.Encode()
 	if s == "" {
 		log.Println("error: unknown cmd: " + cmd)

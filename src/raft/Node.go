@@ -43,17 +43,14 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
 	node.Role = "follower"
-	node.Term = 0
 	node.Members = make(map[string]*Member)
 	node.electionTimeout = 3 * 1000
 
 	node.xport = xport
 	node.store = NewHelper(node, db)
 
-	if node.store.LoadState().Id != "" {
-		node.Term = node.store.LoadState().Term
-		node.VoteFor = node.store.LoadState().VoteFor
-	}
+	node.Term = node.store.LoadState().Term
+	node.VoteFor = node.store.LoadState().VoteFor
 	node.lastApplied = node.store.CommitIndex
 
 	for nodeId, nodeAddr := range node.store.LoadState().Members {
@@ -367,15 +364,15 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
-	// TODO: 判断是否已经存在 leader
+	for _, m := range node.Members {
+		m.Role = "follower"
+	}
 	node.Members[msg.Src].Role = "leader"
 
-	if msg.PrevIndex > 0 && msg.PrevTerm > 0 {
-		prev := node.store.GetEntry(msg.PrevIndex)
-		if prev == nil || prev.Term != msg.PrevTerm {
-			node.send(NewAppendEntryAck(msg.Src, false))
-			return
-		}
+	prev := node.store.GetEntry(msg.PrevIndex)
+	if prev == nil || prev.Term != msg.PrevTerm {
+		node.send(NewAppendEntryAck(msg.Src, false))
+		return
 	}
 
 	ent := DecodeEntry(msg.Data)
@@ -402,7 +399,6 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		if msg.PrevIndex < node.store.LastIndex {
 			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
-			
 			node.replicateMember(m)
 		}
 	}else{
@@ -450,8 +446,13 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 		log.Println("could not join self:", nodeId)
 		return
 	}
-	node.connectMember(nodeId, nodeAddr)
+	// reset Raft state
+	node.Term = 0
+	node.VoteFor = ""
+	node.Members = make(map[string]*Member)
 	node.becomeFollower()
+	node.connectMember(nodeId, nodeAddr)
+	node.store.SaveState()
 }
 
 func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {

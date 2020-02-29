@@ -65,7 +65,6 @@ func (st *Helper)LoadState() *State{
 
 func (st *Helper)SaveState(){
 	s := new(State)
-	s.Id = st.node.Id
 	s.Term = st.node.Term
 	s.VoteFor = st.node.VoteFor
 	s.Members = make(map[string]string)

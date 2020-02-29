@@ -7,6 +7,14 @@ import (
 	"util"
 )
 
+const(
+	MessageCmdRequestVote    = "RequestVote"
+	MessageCmdRequestVoteAck = "RequestVoteAck"
+	MessageCmdAppendEntry    = "AppendEntry"
+	MessageCmdAppendEntryAck = "AppendEntryAck"
+	MessageCmdInstallConfig  = "InstallConfig"
+)
+
 type Message struct{
 	Cmd string
 	Src string
@@ -50,14 +58,14 @@ func (m *Message)Decode(buf string) bool{
 
 func NewRequestVoteMsg() *Message{
 	msg := new(Message)
-	msg.Cmd = "RequestVote"
+	msg.Cmd = MessageCmdRequestVote
 	msg.Data = "please vote me"
 	return msg
 }
 
 func NewRequestVoteAck(voteFor string, success bool) *Message{
 	msg := new(Message)
-	msg.Cmd = "RequestVoteAck"
+	msg.Cmd = MessageCmdRequestVoteAck
 	msg.Dst = voteFor
 	if success {
 		msg.Data = "true"
@@ -69,7 +77,7 @@ func NewRequestVoteAck(voteFor string, success bool) *Message{
 
 func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
 	msg := new(Message)
-	msg.Cmd = "AppendEntry"
+	msg.Cmd = MessageCmdAppendEntry
 	msg.Dst = dst
 	if prev != nil {
 		msg.PrevIndex = prev.Index
@@ -81,7 +89,7 @@ func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
 
 func NewAppendEntryAck(dst string, success bool) *Message{
 	msg := new(Message)
-	msg.Cmd = "AppendEntryAck"
+	msg.Cmd = MessageCmdAppendEntryAck
 	msg.Dst = dst
 	if success {
 		msg.Data = "true"

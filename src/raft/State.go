@@ -5,7 +5,6 @@ import (
 )
 
 type State struct{
-	Id string
 	Term int32
 	VoteFor string
 	Members map[string]string
