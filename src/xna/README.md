@@ -23,14 +23,16 @@ Redolog 记录的是 set 和 del 操作, 是幂等的. Redolog 先缓冲在内�
 
 ## Transaction
 
-当 binlog 中出现 begin 时, 新建一个内存中的 Transaction.
-
-每一个 Transaction 有最小 index 和最大 index. 将 committed 的事务合并, 如果与 uncommitted 事务无 index 交集, 则可作为一个新的事务写入 redolog.
-
 http://www.mathcs.emory.edu/~cheung/Courses/377/Syllabus/10-Transactions/redo-log.html
 
 > (Transaction execution use in-place update/write operation) and (Transaction implementation uses an UNDO log )
 > (Transaction execution use deferred update/write operation) and (Transaction implementation uses a REDO log )
+
+### 事务的执行
+
+对于同样的 binlog 序列, 各节点执行的结果应该是一样的.
+
+如果 Transaction 执行成功, 则正常写入 redolog; 如果失败, 则将空事务写入 redolog, 因为需要记录 binlog 执行进度. 事务有 minIndex 和 maxIndex, 与其它事务无交集的才能写入 redolog, 因为 binlog 必须连续持久化.
 
 ## 关于 LevelDB 的 WriteBatch 原子性
 

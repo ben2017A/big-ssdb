@@ -39,6 +39,10 @@ func (rd *Redolog)recover() bool {
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
+		if ent == nil {
+			log.Fatalf("invalid entry: %s", r)
+			return false
+		}
 
 		switch ent.Type {
 		case EntryTypeCheck:
@@ -47,10 +51,14 @@ func (rd *Redolog)recover() bool {
 				return false
 			}
 		case EntryTypeBegin:
-			begin = ent.Index()
+			if begin > 0 {
+				log.Fatalf("invalid '%s' after 'begin': %s", ent.Type, r)
+				return false
+			}
+			begin = ent.Index
 		case EntryTypeCommit:
 			begin = 0
-			rd.lastIndex = ent.Index()
+			rd.lastIndex = ent.Index
 		case EntryTypeRollback:
 			begin = 0
 		default:
@@ -100,7 +108,7 @@ func (rd *Redolog)NextTransaction() *Transaction {
 		case EntryTypeCheck:
 			//
 		case EntryTypeBegin:
-			tx = NewTransaction(ent.Index())
+			tx = NewTransaction()
 		case EntryTypeCommit:
 			return tx
 		case EntryTypeRollback:
@@ -122,19 +130,19 @@ func (rd *Redolog)WriteCheckpoint() {
 }
 
 func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
-	if tx.Index() <= rd.lastIndex {
-		log.Fatalf("bad transaction, Index: %d, when lastIndex: %d", tx.Index(), rd.lastIndex)
+	if tx.MinIndex() <= rd.lastIndex {
+		log.Fatalf("bad transaction, MinIndex: %d, when lastIndex: %d", tx.MinIndex(), rd.lastIndex)
 		return false
 	}
 	
 	// 如果出错, 可能无法将完整的 transaction 完全写入, 所以 NextTransaction 会处理这种情况
-	rd.wal.Append(NewBeginEntry(tx.Index()).Encode())
+	rd.wal.Append(NewBeginEntry(tx.MinIndex()).Encode())
 	for _, ent := range tx.Entries() {
 		rd.wal.Append(ent.Encode())
 	}
-	rd.wal.Append(NewCommitEntry(tx.Index()).Encode())
+	rd.wal.Append(NewCommitEntry(tx.MaxIndex()).Encode())
 	
-	rd.lastIndex = tx.Index()
+	rd.lastIndex = tx.MaxIndex()
 	return true
 }
 

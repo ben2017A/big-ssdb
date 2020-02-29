@@ -21,20 +21,24 @@ func TestRedolog(t *testing.T){
 			break
 		}
 		for _, ent := range tx.Entries() {
-			log.Println(ent)
+			log.Println("redo", ent.Encode())
 		}
 	}
 	
-	idx := rd.LastIndex() + 3
-	tx := NewTransaction(idx)
+	return
+	
+	idx := rd.LastIndex() + 1
+	tx := NewTransaction()
 	for i :=0; i < 3; i++ {
 		key := fmt.Sprintf("k-%d", i)
 		val := fmt.Sprintf("%d", i+1)
-		tx.AddEntry(&Entry{EntryTypeSet, key, val})
+		tx.AddEntry(NewSetEntry(idx+int64(i), key, val))
 	}
+	tx.AddEntry(NewDelEntry(idx+int64(4), "a"))
+
 	
 	rd.WriteTransaction(tx)
 	rd.WriteCheckpoint()
 	
-	log.Println(rd.LastIndex())
+	log.Println("last index", rd.LastIndex())
 }
