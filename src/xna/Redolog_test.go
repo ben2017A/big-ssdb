@@ -36,9 +36,7 @@ func TestRedolog(t *testing.T){
 	}
 	tx.AddEntry(NewDelEntry(idx+int64(4), "a"))
 
-	
 	rd.WriteTransaction(tx)
-	rd.WriteCheckpoint()
 	
 	log.Println("last index", rd.LastIndex())
 }

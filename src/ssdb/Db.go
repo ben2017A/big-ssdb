@@ -61,15 +61,8 @@ func (db *Db)recover() bool {
 	return true
 }
 
-func (db *Db)applyTransaction(tx *xna.Transaction) {
-	for _, ent := range tx.Entries() {
-		switch ent.Type {
-		case xna.EntryTypeSet:
-			db.kv.Set(ent.Key, ent.Val)
-		case xna.EntryTypeDel:
-			db.kv.Del(ent.Key)
-		}
-	}
+func (db *Db)LastIndex() int64 {
+	return db.redo.LastIndex()
 }
 
 // TODO: isolation
@@ -85,9 +78,18 @@ func (db *Db)CommitTransaction(tx *xna.Transaction) {
 	db.applyTransaction(tx)
 }
 
-func (db *Db)LastIndex() int64 {
-	return db.redo.LastIndex()
+func (db *Db)applyTransaction(tx *xna.Transaction) {
+	for _, ent := range tx.Entries() {
+		switch ent.Type {
+		case xna.EntryTypeSet:
+			db.kv.Set(ent.Key, ent.Val)
+		case xna.EntryTypeDel:
+			db.kv.Del(ent.Key)
+		}
+	}
 }
+
+/////////////////////////////////////////////////////////////////////
 
 func (db *Db)Get(key string) string {
 	return db.kv.Get(key)

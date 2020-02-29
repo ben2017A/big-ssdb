@@ -15,15 +15,20 @@ func TestDb(t *testing.T){
 	
 	idx := db.LastIndex()
 
-	// idx ++
+	idx ++
 	db.Set(idx, "a", "1")
-	db.Set(idx, "b", "2")
-	db.Set(idx, "c", "3")
-	db.Set(idx, "d", "4")
+	// idx ++
+	// db.Set(idx, "b", "2")
+	// idx ++
+	// db.Set(idx, "c", "3")
+	// idx ++
+	// db.Set(idx, "d", "4")
 
-	log.Println(db.Get("b"))
-	db.Del(0, "b")
-	log.Println(db.Get("b"))
-	db.Del(0, "x")
+	// log.Println(db.Get("b"))
+	// idx ++
+	// db.Del(idx, "b")
+	// log.Println(db.Get("b"))
+	// idx ++
+	// db.Del(idx, "x")
 
 }

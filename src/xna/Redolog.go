@@ -7,13 +7,15 @@ import (
 
 type Redolog struct{
 	wal *store.WalFile
-	lastIndex int64
 	path string
+	lastIndex int64
+	checkpoint int64
 }
 
 func OpenRedolog(path string) *Redolog {
 	ret := new(Redolog)
 	ret.path = path
+	ret.checkpoint = 0
 	
 	if !ret.recover() {
 		return nil
@@ -23,6 +25,9 @@ func OpenRedolog(path string) *Redolog {
 }
 
 func (rd *Redolog)Close() {
+	if 	rd.checkpoint != rd.lastIndex {
+		rd.WriteCheckpoint()
+	}
 	rd.wal.Close()
 }
 
@@ -50,6 +55,7 @@ func (rd *Redolog)recover() bool {
 				log.Fatalf("invalid '%s' after 'begin': %s", ent.Type, r)
 				return false
 			}
+			rd.checkpoint = ent.Index
 		case EntryTypeBegin:
 			if begin > 0 {
 				log.Fatalf("invalid '%s' after 'begin': %s", ent.Type, r)
@@ -127,6 +133,7 @@ func (rd *Redolog)NextTransaction() *Transaction {
 // 增加 checkpoint
 func (rd *Redolog)WriteCheckpoint() {
 	rd.wal.Append(NewCheckEntry(rd.lastIndex).Encode())
+	rd.checkpoint = rd.lastIndex
 }
 
 func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
