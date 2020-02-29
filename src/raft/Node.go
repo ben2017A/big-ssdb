@@ -97,7 +97,7 @@ func (node *Node)Start(){
 	}()
 }
 
-func (node *Node)Stop(){
+func (node *Node)Close(){
 	node.store.Close()
 	node.xport.Close()
 }

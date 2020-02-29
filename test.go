@@ -38,7 +38,16 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc.xport = xport
 	svc.jobs = make(map[int64]*link.Request)
 
+	node.AddService(svc)
+	node.Start()
+
 	return svc
+}
+
+func (svc *Service)Close() {
+	svc.xport.Close()
+	svc.node.Close()
+	svc.db.Close()
 }
 
 func (svc *Service)HandleClientMessage(msg *link.Message) {
@@ -48,7 +57,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 
 	req := new(link.Request)
 	if !req.Decode(msg.Data) {
-		log.Println("bad msg:", msg.Data)
+		log.Println("bad request:", msg.Data)
 		return
 	}
 	req.Src = msg.Src
@@ -175,9 +184,7 @@ func main(){
 	log.Println("Service server started at", port+1000)
 	svc_xport := link.NewTcpServer("127.0.0.1", port+1000)
 	svc := NewService(base_dir, node, svc_xport)
-
-	node.AddService(svc)
-	node.Start()
+	defer svc.Close()
 
 	for{
 		select{

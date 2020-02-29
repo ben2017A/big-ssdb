@@ -13,9 +13,6 @@ type Request struct{
 
 func (req *Request)Decode(buf string) bool {
 	ps := strings.Split(buf, " ")
-	if len(ps) < 2 { // TODO
-		return false
-	}
 	req.cmd = ps[0]
 	req.args = ps[1:]
 	return true
