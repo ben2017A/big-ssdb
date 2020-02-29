@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"bytes"
+	"sync"
 )
 
 type TcpServer struct {
@@ -14,6 +15,7 @@ type TcpServer struct {
 	lastClientId int
 	conn *net.TCPListener
 	clients map[int]net.Conn
+	mux sync.Mutex
 }
 
 func NewTcpServer(ip string, port int) *TcpServer {
@@ -50,8 +52,9 @@ func (tcp *TcpServer)start() {
 }
 
 func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
-	// TODO: 加锁
+	tcp.mux.Lock()
 	tcp.clients[clientId] = conn
+	tcp.mux.Unlock()
 	
 	buf := new(bytes.Buffer)
 	tmp := make([]byte, 64*1024)
@@ -74,13 +77,17 @@ func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 	}
 
 	log.Println("Close connection", clientId, conn.RemoteAddr().String())
+	tcp.mux.Lock()
 	delete(tcp.clients, clientId)
+	tcp.mux.Unlock()
 	conn.Close()
 }
 
 func (tcp *TcpServer)Send(msg *Message) {
-	// TODO: lock
+	tcp.mux.Lock()
 	conn := tcp.clients[msg.Src]
+	tcp.mux.Unlock()
+
 	if conn == nil {
 		log.Println("connection not found:", msg.Src)
 		return

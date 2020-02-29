@@ -8,6 +8,7 @@ import (
 	"time"
 	"strings"
 	"sync"
+	"encoding/json"
 
 	"util"
 )
@@ -19,6 +20,7 @@ const ReplicationTimeout = 1 * 1000
 
 type Node struct{
 	Id string
+	Addr string
 	Role string
 
 	// Raft persistent state
@@ -42,6 +44,7 @@ type Node struct{
 func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
+	node.Addr = xport.Addr()
 	node.Role = "follower"
 	node.Members = make(map[string]*Member)
 	node.electionTimeout = 3 * 1000
@@ -197,7 +200,7 @@ func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimeout = HeartbeatTimeout
 	
 	ent := NewHeartbeatEntry(node.store.CommitIndex)
-	prev := node.store.GetEntry(m.NextIndex - 1)
+	prev := node.store.GetEntry(node.store.CommitIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -218,25 +221,19 @@ func (node *Node)replicateMember(m *Member){
 		return
 	}
 
+	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + m.SendWindow)
 	count := 0
-	var maxIndex int64;
-	if m.MatchIndex == 0 {
-		maxIndex = m.NextIndex
-	} else {
-		maxIndex = m.MatchIndex + m.SendWindow
-	}
-	for m.NextIndex <= maxIndex {
+	for /**/; m.NextIndex <= maxIndex; m.NextIndex++ {
 		ent := node.store.GetEntry(m.NextIndex)
 		if ent == nil {
 			break
 		}
-		
 		ent.CommitIndex = node.store.CommitIndex
+		
 		prev := node.store.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
 
 		count ++
-		m.NextIndex += 1
 	}
 	if count > 0 {
 		m.HeartbeatTimeout = HeartbeatTimeout
@@ -318,6 +315,8 @@ func (node *Node)handleRaftMessage(msg *Message){
 			node.handleRequestVote(msg)
 		} else if msg.Cmd == MessageCmdAppendEntry {
 			node.handleAppendEntry(msg)
+		} else if msg.Cmd == MessageCmdInstallSnapshot {
+			node.handleInstallSnapshot(msg)
 		}
 		return
 	}
@@ -369,13 +368,15 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 	node.Members[msg.Src].Role = "leader"
 
-	prev := node.store.GetEntry(msg.PrevIndex)
-	if prev == nil || prev.Term != msg.PrevTerm {
-		node.send(NewAppendEntryAck(msg.Src, false))
-		return
-	}
-
 	ent := DecodeEntry(msg.Data)
+
+	if ent.Index != 1 { // if not very first entry
+		prev := node.store.GetEntry(msg.PrevIndex)
+		if prev == nil || prev.Term != msg.PrevTerm {
+			node.send(NewAppendEntryAck(msg.Src, false))
+			return
+		}
+	}
 
 	if ent.Type == "Heartbeat" {
 		//
@@ -390,11 +391,6 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	node.send(NewAppendEntryAck(msg.Src, true))
 	node.store.CommitEntry(ent.CommitIndex)
-}
-
-func (node *Node)sendInstallSnapshot(m *Member){
-	// state := node.store.State().Encode()
-	// lastEntry := node.store.GetEntry(node.store.LastIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -445,9 +441,70 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	}
 }
 
+func (node *Node)sendInstallSnapshot(m *Member){
+	var arr []string
+
+	state := node.store.State().Encode()
+	arr = append(arr, state)
+
+	if node.store.CommitIndex != 1 {
+		ent := node.store.GetEntry(node.store.CommitIndex - 1)
+		if ent == nil {
+			log.Fatal("last entry#", node.store.CommitIndex - 1)
+			return
+		}
+		arr = append(arr, ent.Encode())
+	}
+	ent := node.store.GetEntry(node.store.CommitIndex)
+	if ent == nil {
+		log.Fatal("last entry#", node.store.CommitIndex)
+		return
+	}
+	arr = append(arr, ent.Encode())
+	
+	bs, _ := json.Marshal(arr)
+	data := string(bs)
+	msg := NewInstallSnapshotMsg(m.Id, data)
+	node.send(msg)
+}
+
+func (node *Node)handleInstallSnapshot(msg *Message){
+	var arr []string
+	json.Unmarshal([]byte(msg.Data), &arr)
+	var state State
+	state.Decode(arr[0])
+	
+	log.Println("install raft state snapshot")
+	node.Term = state.Term
+	node.VoteFor = state.VoteFor
+	for _, m := range node.Members {
+		// it's ok to delete item while iterating
+		node.disconnectMember(m.Id)
+	}
+	for nodeId, nodeAddr := range state.Members {
+		node.connectMember(nodeId, nodeAddr)
+	}
+	
+	for _, s := range arr[1:] {
+		var entry Entry
+		entry.Decode(s)
+	
+		node.lastApplied = entry.Index
+		node.store.LastTerm = entry.Term
+		node.store.LastIndex = entry.Index
+		node.store.CommitIndex = entry.CommitIndex
+
+		node.store.SaveEntry(&entry)
+	}
+	
+	// TODO: add "installing" status
+	node.store.SaveState()
+	
+	// TODO: copy service snapshot
+}
+
 /* ############################################# */
 
-// TODO:
 func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	node.mux.Lock()
 	defer node.mux.Unlock()
@@ -461,9 +518,12 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	node.Term = 0
 	node.VoteFor = ""
 	node.Members = make(map[string]*Member)
+	node.store.CommitIndex = 0
 	node.becomeFollower()
 	node.connectMember(nodeId, nodeAddr)
 	node.store.SaveState()
+	
+	// TODO: delete raft log entries
 }
 
 func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {

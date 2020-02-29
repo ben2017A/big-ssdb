@@ -23,7 +23,6 @@ type Helper struct{
 	entries map[int64]*Entry
 	services []Service
 	
-	// must store at least one log entry after first term
 	db Storage
 }
 
@@ -76,6 +75,7 @@ func (st *Helper)SaveState(){
 	st.state.Term = st.node.Term
 	st.state.VoteFor = st.node.VoteFor
 	st.state.Members = make(map[string]string)
+	st.state.Members[st.node.Id] = st.node.Addr
 	for _, m := range st.node.Members {
 		st.state.Members[m.Id] = m.Addr
 	}
@@ -121,13 +121,20 @@ func (st *Helper)AddNewEntry(type_, data string) *Entry{
 	ent.Data = data
 	
 	st.AppendEntry(ent)
+	// notify xport to send
 	st.C <- 0
 	return ent
 }
 
+// called when install snapshot
+func (st *Helper)SaveEntry(ent *Entry){
+	st.entries[ent.Index] = ent
+	st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
+}
+
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 func (st *Helper)AppendEntry(ent *Entry){
-	if ent.Index < st.CommitIndex {
+	if ent.Index <= st.CommitIndex {
 		log.Println(ent.Index, "<", st.CommitIndex)
 		return
 	}
@@ -140,7 +147,6 @@ func (st *Helper)AppendEntry(ent *Entry){
 		if ent == nil {
 			break;
 		}
-		ent.CommitIndex = st.CommitIndex
 
 		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
 		log.Println("[RAFT] Log", ent.Encode())
@@ -171,7 +177,7 @@ func (st *Helper)ApplyEntries(){
 		for idx := svc.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
 			if ent == nil {
-				log.Fatal("lost entry#", idx)
+				// log.Fatalf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
 				break;
 			}
 			svc.ApplyEntry(ent)

@@ -54,7 +54,6 @@ func (svc *Service)Close() {
 }
 
 func (svc *Service)HandleClientMessage(msg *link.Message) {
-	// TODO
 	svc.mux.Lock()
 	defer svc.mux.Unlock()
 
@@ -100,7 +99,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 
-	// TODO: lock(svc.node)
 	if svc.node.Role != "leader" {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
@@ -121,7 +119,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 }
 
 func (svc *Service)handleRaftEntry(ent *raft.Entry) {
-	// TODO
 	svc.mux.Lock()
 	defer svc.mux.Unlock()
 

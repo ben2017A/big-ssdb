@@ -124,12 +124,12 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 	delete(tp.dns, nodeId)
 }
 
-// TODO: thread safe
+// thread safe
 func (tp *UdpTransport)Send(msg *Message) bool{
 	tp.mux.Lock()
-	defer tp.mux.Unlock()
-
 	addr := tp.dns[msg.Dst]
+	tp.mux.Unlock()
+
 	if addr == "" {
 		log.Printf("dst: %s not connected", msg.Dst)
 		return false
