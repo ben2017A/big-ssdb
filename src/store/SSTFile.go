@@ -13,7 +13,7 @@ type SSTFile struct{
 	valid bool
 	key string
 	val string
-	wal *WALFile
+	wal *WalFile
 }
 
 func OpenSSTFile(filename string) *SSTFile{
@@ -24,7 +24,7 @@ func OpenSSTFile(filename string) *SSTFile{
 	}else{
 		sst.readonly = false
 	}
-	sst.wal = OpenWALFile(filename) // TODO: 不使用 WALFile
+	sst.wal = OpenWalFile(filename) // TODO: 不使用 WalFile
 	if sst.wal == nil {
 		return nil
 	}

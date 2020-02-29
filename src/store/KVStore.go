@@ -13,7 +13,7 @@ import (
 type KVStore struct{
 	dir string
 	mm map[string]string
-	wal *WALFile
+	wal *WalFile
 
 	wal_new string
 	wal_cur string
@@ -41,10 +41,10 @@ func OpenKVStore(dir string) *KVStore{
 	db.wal_tmp = dir + "/log.wal" + ".TMP"
 
 	if util.FileExists(db.wal_old) {
-		db.loadWALFile(db.wal_old)
+		db.loadWalFile(db.wal_old)
 	}
 	if util.FileExists(db.wal_cur) {
-		db.loadWALFile(db.wal_cur)
+		db.loadWalFile(db.wal_cur)
 	}
 	db.compactWAL()
 
@@ -56,10 +56,10 @@ func (db *KVStore)compactWAL(){
 		db.wal.Close()
 	}
 
-	db.wal = OpenWALFile(db.wal_new)
+	db.wal = OpenWalFile(db.wal_new)
 
 	os.Remove(db.wal_tmp)
-	wal := OpenWALFile(db.wal_tmp)
+	wal := OpenWalFile(db.wal_tmp)
 	{
 		arr := make([][2]string, len(db.mm))
 		n := 0
@@ -87,9 +87,9 @@ func (db *KVStore)compactWAL(){
 	os.Rename(db.wal_new, db.wal_cur)
 }
 
-func (db *KVStore)loadWALFile(fn string){
+func (db *KVStore)loadWalFile(fn string){
 	log.Println("    load", fn)
-	wal := OpenWALFile(fn)
+	wal := OpenWalFile(fn)
 	defer wal.Close()
 
 	ent := new(KVEntry)

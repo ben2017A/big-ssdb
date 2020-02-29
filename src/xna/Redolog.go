@@ -6,13 +6,13 @@ import (
 )
 
 type Redolog struct{
-	wal *store.WALFile
+	wal *store.WalFile
 	commitIndex int64
 }
 
 func OpenRedolog(filename string) *Redolog {
 	ret := new(Redolog)
-	ret.wal = store.OpenWALFile(filename)
+	ret.wal = store.OpenWalFile(filename)
 	ret.commitIndex = 0
 	
 	ret.wal.SeekTo(0)
