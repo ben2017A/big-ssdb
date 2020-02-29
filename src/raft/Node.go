@@ -441,6 +441,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	}
 }
 
+// 也许 leader 只需要发送 InstallSnapshot 指令, 新节点收到后主动拉取
+// Raft Snapshot 和 Service Snapshot, 而不是由 leader 推送.
+// 未来可以从配置中心拉取.
 func (node *Node)sendInstallSnapshot(m *Member){
 	var arr []string
 
@@ -484,7 +487,9 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 	for nodeId, nodeAddr := range state.Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
-	
+
+	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
+
 	for _, s := range arr[1:] {
 		var entry Entry
 		entry.Decode(s)

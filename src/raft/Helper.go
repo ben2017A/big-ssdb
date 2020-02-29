@@ -177,6 +177,7 @@ func (st *Helper)ApplyEntries(){
 		for idx := svc.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
 			if ent == nil {
+				// TODO:
 				// log.Fatalf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
 				break;
 			}

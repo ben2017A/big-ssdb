@@ -57,8 +57,20 @@ Leader 选举的是多数派里日志最多的一个节点, 而非绝对意义�
 * 新节点还不能对外服务, 也不 Apply log, 因为它还没有复制 Service Snapshot
 * 新节点复制完 Service Snapshot 之后, 根据 LastIndex 来 Apply 之前的 log
 
-增加 installing 状态. 复制 Raft Snapshot 并持久化之后, 进入 installing 状态. 该状态只能当 follower.
+状态说明:
 
+* 新节点启动后, 进入 install-raft 状态
+* Raft 配置安装完后, 进入 install-service 状态
+* 完成后, 进行 active 状态
+
+非 active 状态只能当 follower.
+
+log-learner: 参与投票, 只同步日志, 不 Apply, 占用资源极少.
+service-learner: 参与投票, 同步日志, 并 Apply, 但不当 leader.
+
+## 注意持久化的原子性
+
+任何需要保存数据(即持久化)的地方, 都需要注意保存操作的原子性. 一般通过最后保存"完成"状态来实现, 如果最后的状态没有保存成功, 则需要重试整个流程.
 
 ### 相关链接
 
