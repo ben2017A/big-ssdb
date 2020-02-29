@@ -280,10 +280,10 @@ func (node *Node)handleRaftMessage(msg *Message){
 
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
-		if msg.Cmd == "RequestVote" {
+		if msg.Cmd == MessageCmdRequestVote {
 			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
 			node.send(NewRequestVoteAck(msg.Src, false))
-		} else if msg.Cmd == "AppendEntry" {
+		} else if msg.Cmd == MessageCmdAppendEntry {
 			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
 			node.send(NewAppendEntryAck(msg.Src, false))
 		} else {
@@ -302,21 +302,21 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 
 	if node.Role == "leader" {
-		if msg.Cmd == "AppendEntryAck" {
+		if msg.Cmd == MessageCmdAppendEntryAck {
 			node.handleAppendEntryAck(msg)
 		}
 		return
 	}
 	if node.Role == "candidate" {
-		if msg.Cmd == "RequestVoteAck" {
+		if msg.Cmd == MessageCmdRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		}
 		return
 	}
 	if node.Role == "follower" {
-		if msg.Cmd == "RequestVote" {
+		if msg.Cmd == MessageCmdRequestVote {
 			node.handleRequestVote(msg)
-		} else if msg.Cmd == "AppendEntry" {
+		} else if msg.Cmd == MessageCmdAppendEntry {
 			node.handleAppendEntry(msg)
 		}
 		return
@@ -527,7 +527,7 @@ func (node *Node)ApplyEntry(ent *Entry){
 func (node *Node)send(msg *Message){
 	msg.Src = node.Id
 	msg.Term = node.Term
-	if msg.Cmd != "AppendEntry" {
+	if msg.Cmd != MessageCmdAppendEntry {
 		msg.PrevIndex = node.store.LastIndex
 		msg.PrevTerm = node.store.LastTerm
 	}
