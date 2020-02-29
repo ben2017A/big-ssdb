@@ -125,10 +125,15 @@ func (db *Db)Incr(idx int64, key string, delta string) string {
 
 func (db *Db)MakeFileSnapshot(path string) bool {
 	sn := NewSnapshotWriter(db.LastIndex(), path)
+	if sn == nil {
+		return false
+	}
+	defer sn.Close()
+	
 	for k, v := range db.kv.All() {
 		ent := &store.KVEntry{"set", k, v}
 		sn.Append(ent.Encode())
 	}
-	sn.Close()
+
 	return true
 }

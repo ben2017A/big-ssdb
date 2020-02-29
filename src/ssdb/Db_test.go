@@ -13,10 +13,10 @@ func TestDb(t *testing.T){
 	db := OpenDb("./tmp")
 	defer db.Close()
 	
-	idx := db.LastIndex()
+	// idx := db.LastIndex()
 
-	idx ++
-	db.Set(idx, "a", "1")
+	// idx ++
+	// db.Set(idx, "a", "1")
 	// idx ++
 	// db.Set(idx, "b", "2")
 	// idx ++
@@ -31,4 +31,6 @@ func TestDb(t *testing.T){
 	// idx ++
 	// db.Del(idx, "x")
 
+	
+	db.MakeFileSnapshot("./tmp/snapshot.db")
 }

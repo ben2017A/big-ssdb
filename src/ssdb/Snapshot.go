@@ -33,12 +33,12 @@ func NewSnapshotReader(path string) *Snapshot {
 	return sn
 }
 
-func (sn *Snapshot)LastIndex() int64 {
-	return sn.lastIndex
-}
-
 func (sn *Snapshot)Close() {
 	sn.wal.Close()
+}
+
+func (sn *Snapshot)LastIndex() int64 {
+	return sn.lastIndex
 }
 
 func (sn *Snapshot)Next() bool {
