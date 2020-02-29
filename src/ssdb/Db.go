@@ -2,7 +2,7 @@ package ssdb
 
 import (
 	"log"
-	"path"
+	"path/filepath"
 	"store"
 	"xna"
 	"util"
@@ -15,12 +15,15 @@ type Db struct {
 }
 
 func OpenDb(dir string) *Db {
-	dir = path.Dir(dir)
+	dir, _ = filepath.Abs(dir)
 	
 	db := new(Db)
 	db.kv = store.OpenKVStore(dir)
 	db.redo = xna.OpenRedolog(dir + "/redo.log")
 	
+	if db.kv == nil || db.redo == nil {
+		return nil
+	}
 	if !db.recover() {
 		return nil
 	}
@@ -61,16 +64,24 @@ func (db *Db)recover() bool {
 func (db *Db)applyTransaction(tx *xna.Transaction) {
 	for _, ent := range tx.Entries() {
 		switch ent.Type {
-		case "set":
+		case xna.EntryTypeSet:
 			db.kv.Set(ent.Key, ent.Val)
-		case "del":
+		case xna.EntryTypeDel:
 			db.kv.Del(ent.Key)
 		}
 	}
 }
 
-func (db *Db)commitTransaction(tx *xna.Transaction) {
-	db.redo.WriteTransaction(tx)
+// TODO: isolation
+func (db *Db)StartTransaction() *xna.Transaction {
+	return nil
+}
+
+func (db *Db)CommitTransaction(tx *xna.Transaction) {
+	if !db.redo.WriteTransaction(tx) {
+		log.Fatal("Write redolog failed.")
+		return
+	}
 	db.applyTransaction(tx)
 }
 
@@ -86,25 +97,25 @@ func (db *Db)Set(idx int64, key string, val string) {
 	tx := xna.NewTransaction()
 	tx.AddEntry(xna.NewSetEntry(idx, key, val))
 
-	db.commitTransaction(tx)
+	db.CommitTransaction(tx)
 }
 
 func (db *Db)Del(idx int64, key string) {
 	tx := xna.NewTransaction()
 	tx.AddEntry(xna.NewDelEntry(idx, key))
 	
-	db.commitTransaction(tx)
+	db.CommitTransaction(tx)
 }
 
 func (db *Db)Incr(idx int64, key string, delta string) string {
 	old := db.kv.Get(key)
 	num := util.Atoi64(old) + util.Atoi64(delta)
-	val := util.Itoa64(num)
+	val := util.I64toa(num)
 	
 	tx := xna.NewTransaction()
 	tx.AddEntry(xna.NewSetEntry(idx, key, val))
 	
-	db.commitTransaction(tx)
+	db.CommitTransaction(tx)
 	return val
 }
 

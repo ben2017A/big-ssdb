@@ -8,7 +8,7 @@ import (
 
 type EntryType string
 
-// begin, commit, set, del, check
+// begin, commit, rollbak, set, del, check
 const(
 	EntryTypeSet      = "set"
 	EntryTypeDel      = "del"
@@ -20,7 +20,6 @@ const(
 
 // Index 是指对应的 Binlog 的 Index, 所以两条 Entry 可能有相同的 Index
 type Entry struct {
-	Index int64
 	Type EntryType
 	Key string
 	Val string
@@ -35,42 +34,47 @@ func DecodeEntry(buf string) *Entry{
 	}
 }
 
+// TODO: better encoding/decoding
 func (e *Entry)Encode() string{
-	return fmt.Sprintf("%d %s %s %s", e.Index, e.Type, e.Key, e.Val)
+	return fmt.Sprintf("%s %s %s", e.Type, e.Key, e.Val)
 }
 
+// TODO: better encoding/decoding
 func (e *Entry)Decode(buf string) bool{
-	ps := strings.SplitN(buf, " ", 4)
-	if len(ps) != 4 {
+	ps := strings.SplitN(buf, " ", 3)
+	if len(ps) != 3 {
 		return false
 	}
-	e.Index = util.Atoi64(ps[0])
-	e.Type = EntryType(ps[1])
-	e.Key = ps[2]
-	e.Val = ps[3]
+	e.Type = EntryType(ps[0])
+	e.Key  = ps[1]
+	e.Val  = ps[2]
 	return true
 }
 
-func NewSetEntry(idx int64, key string, val string) *Entry {
-	return &Entry{idx, EntryTypeSet, key, val}
+func (e *Entry)Index() int64 {
+	return util.Atoi64(e.Key)
 }
 
-func NewDelEntry(idx int64, key string) *Entry {
-	return &Entry{idx, EntryTypeDel, key, "#"}
+func NewSetEntry(key string, val string) *Entry {
+	return &Entry{EntryTypeSet, key, val}
+}
+
+func NewDelEntry(key string) *Entry {
+	return &Entry{EntryTypeDel, key, "#"}
 }
 func NewCheckEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeCheck, "#", "#"}
+	return &Entry{EntryTypeCheck, util.I64toa(idx), "#"}
 }
 
 func NewBeginEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeBegin, "#", "#"}
+	return &Entry{EntryTypeBegin, util.I64toa(idx), "#"}
 }
 
 func NewCommitEntry(idx int64) *Entry {
-	return &Entry{idx, EntryTypeCommit, "#", "#"}
+	return &Entry{EntryTypeCommit, util.I64toa(idx), "#"}
 }
 
-func NewRollbackEntry() *Entry {
-	return &Entry{0, EntryTypeRollback, "#", "#"}
+func NewRollbackEntry(idx int64) *Entry {
+	return &Entry{EntryTypeRollback, util.I64toa(idx), "#"}
 }
 

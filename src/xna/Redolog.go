@@ -34,7 +34,7 @@ func (rd *Redolog)recover() bool {
 	
 	rd.lastIndex = 0
 	
-	after_begin := false
+	var begin int64 = 0
 	rd.wal.SeekTo(0)
 	for rd.wal.Next() {
 		r := rd.wal.Item()
@@ -42,27 +42,26 @@ func (rd *Redolog)recover() bool {
 
 		switch ent.Type {
 		case EntryTypeCheck:
-			if after_begin {
+			if begin > 0 {
 				log.Fatalf("invalid '%s' after 'begin': %s", ent.Type, r)
 				return false
 			}
 		case EntryTypeBegin:
-			after_begin = true
+			begin = ent.Index()
 		case EntryTypeCommit:
-			after_begin = false
-			rd.lastIndex = ent.Index
+			begin = 0
+			rd.lastIndex = ent.Index()
 		case EntryTypeRollback:
-			after_begin = false
+			begin = 0
 		default:
-			if !after_begin {
+			if begin == 0 {
 				log.Fatalf("invalid '%s' before 'begin': %s", ent.Type, r)
 				return false
 			}
 		}
 	}
-	
-	if after_begin {
-		ent := NewRollbackEntry()
+	if begin > 0 {
+		ent := NewRollbackEntry(begin)
 		rd.wal.Append(ent.Encode())
 	}
 
@@ -101,7 +100,7 @@ func (rd *Redolog)NextTransaction() *Transaction {
 		case EntryTypeCheck:
 			//
 		case EntryTypeBegin:
-			tx = NewTransaction()
+			tx = NewTransaction(ent.Index())
 		case EntryTypeCommit:
 			return tx
 		case EntryTypeRollback:
@@ -122,20 +121,20 @@ func (rd *Redolog)WriteCheckpoint() {
 	rd.wal.Append(NewCheckEntry(rd.lastIndex).Encode())
 }
 
-// 如果出错, 可能无法将完整的 transaction 完全写入
-func (rd *Redolog)WriteTransaction(tx *Transaction){
-	if tx.MinIndex() <= rd.lastIndex || tx.MaxIndex() <= rd.lastIndex {
-		log.Fatalf("bad transaction, minIndex: %d, maxIndex: %d, when lastIndex: %d\n",
-			tx.MinIndex(), tx.MaxIndex(), rd.lastIndex)
-		return
+func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
+	if tx.Index() <= rd.lastIndex {
+		log.Fatalf("bad transaction, Index: %d, when lastIndex: %d", tx.Index(), rd.lastIndex)
+		return false
 	}
 	
-	rd.wal.Append(NewBeginEntry(tx.MinIndex()).Encode())
+	// 如果出错, 可能无法将完整的 transaction 完全写入, 所以 NextTransaction 会处理这种情况
+	rd.wal.Append(NewBeginEntry(tx.Index()).Encode())
 	for _, ent := range tx.Entries() {
 		rd.wal.Append(ent.Encode())
 	}
-	rd.wal.Append(NewCommitEntry(tx.MaxIndex()).Encode())
+	rd.wal.Append(NewCommitEntry(tx.Index()).Encode())
 	
-	rd.lastIndex = tx.MaxIndex()
+	rd.lastIndex = tx.Index()
+	return true
 }
 

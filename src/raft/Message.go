@@ -28,7 +28,7 @@ func DecodeMessage(buf string) *Message{
 
 func (m *Message)Encode() string{
 	ps := []string{m.Cmd, m.Src, m.Dst, util.Itoa32(m.Term),
-		util.Itoa32(m.PrevTerm), util.Itoa64(m.PrevIndex), m.Data}
+		util.Itoa32(m.PrevTerm), util.I64toa(m.PrevIndex), m.Data}
 	return strings.Join(ps, " ")
 }
 

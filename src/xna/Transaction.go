@@ -1,29 +1,22 @@
 package xna
 
 import (
-	"sort"
-	"util"
+	"log"
 )
 
 // 内存中的事务
 type Transaction struct {
 	status int
-	minIndex int64
-	maxIndex int64
+	index int64
 	mm map[string]*Entry
 }
 
-func NewTransaction() *Transaction {
-	ret := new(Transaction)
-	ret.Reset()
-	return ret
-}
-
-func (tx *Transaction)Reset() {
+func NewTransaction(idx int64) *Transaction {
+	tx := new(Transaction)
 	tx.status = 0
-	tx.minIndex = 0
-	tx.maxIndex = 0
+	tx.index = idx
 	tx.mm = make(map[string]*Entry)
+	return tx
 }
 
 func (tx *Transaction)Committed() bool {
@@ -34,12 +27,8 @@ func (tx *Transaction)Empty() bool {
 	return len(tx.mm) == 0
 }
 
-func (tx *Transaction)MinIndex() int64 {
-	return tx.minIndex
-}
-
-func (tx *Transaction)MaxIndex() int64 {
-	return tx.maxIndex
+func (tx *Transaction)Index() int64 {
+	return tx.index
 }
 
 func (tx *Transaction)Entries() []*Entry {
@@ -49,9 +38,6 @@ func (tx *Transaction)Entries() []*Entry {
 		arr[n] = v
 		n ++
 	}
-	sort.Slice(arr, func(i, j int) bool{
-		return arr[i].Index < arr[j].Index
-	})
 	return arr
 }
 
@@ -60,16 +46,9 @@ func (tx *Transaction)GetEntry(key string) *Entry {
 }
 
 func (tx *Transaction)AddEntry(ent *Entry) {
-	if ent.Index > 0 {
-		if tx.minIndex == 0 {
-			tx.minIndex = ent.Index
-		} else {
-			tx.minIndex = util.MinInt64(tx.minIndex, ent.Index)
-		}
-	}
-	tx.maxIndex = util.MaxInt64(tx.maxIndex, ent.Index)
-
 	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
 		tx.mm[ent.Key] = ent
+	} else {
+		log.Fatalf("invalid entry: %s", ent.Encode())
 	}
 }

@@ -24,7 +24,7 @@ func Atoi64(s string) int64{
 	return n
 }
 
-func Itoa64(u int64) string{
+func I64toa(u int64) string{
 	return fmt.Sprintf("%d", u)
 }
 

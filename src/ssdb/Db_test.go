@@ -13,9 +13,9 @@ func TestDb(t *testing.T){
 	db := OpenDb("./tmp")
 	defer db.Close()
 	
-	idx := int64(0)
+	idx := db.LastIndex()
 
-	idx ++
+	// idx ++
 	db.Set(idx, "a", "1")
 	db.Set(idx, "b", "2")
 	db.Set(idx, "c", "3")

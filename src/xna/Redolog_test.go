@@ -25,14 +25,12 @@ func TestRedolog(t *testing.T){
 		}
 	}
 	
-	return
-	
-	tx := NewTransaction()
+	idx := rd.LastIndex() + 3
+	tx := NewTransaction(idx)
 	for i :=0; i < 3; i++ {
 		key := fmt.Sprintf("k-%d", i)
 		val := fmt.Sprintf("%d", i+1)
-		idx := rd.LastIndex() + 1 + int64(i)
-		tx.AddEntry(Entry{idx, EntryTypeSet, key, val})
+		tx.AddEntry(&Entry{EntryTypeSet, key, val})
 	}
 	
 	rd.WriteTransaction(tx)
