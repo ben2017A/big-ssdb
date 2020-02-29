@@ -52,21 +52,22 @@ Leader 选举的是多数派里日志最多的一个节点, 而非绝对意义�
 
 ### 新加入节点
 
-* 原集群同意新节点加入
-* 新节点加入后, 复制 Raft Snapshot(Config), 然后开始接收 log
-* 新节点还不能对外服务, 也不 Apply log, 因为它还没有复制 Service Snapshot
-* 新节点复制完 Service Snapshot 之后, 根据 LastIndex 来 Apply 之前的 log
+节点工作模式:
 
-状态说明:
+* freeze: 未初始化
+* logger: 接收 log, 但不 apply
+* follow: 接收 log, 并 apply 到 Service
+* normal: 可参与竞选
 
-* 新节点启动后, 进入 install-raft 状态
-* Raft 配置安装完后, 进入 install-service 状态
-* 完成后, 进行 active 状态
+给 leader 发 AddMember 指令后, 新节点被集群接受.
 
-非 active 状态只能当 follower.
+给新节点发送 freeze 指令, 进入 freeze 模式. 不参与投票选主, 接收到日志后不回复 Ack, 即不响应任何请求.
 
-log-learner: 参与投票, 只同步日志, 不 Apply, 占用资源极少.
-service-learner: 参与投票, 同步日志, 并 Apply, 但不当 leader.
+给新节点发送 install-raft 指令, 它将复制 Raft Snapshot, 进入 logger 状态. 参与投票选主, 接收日志后加入 Ack. 但不接受业务请求, 因为业务数据是空的.
+
+给新节点发送 intall-service 指令, 它将复制 Service Snapshot, 进入 follow 状态. 可以接受业务的非一致性读请求.
+
+节点可在 follow 和 normal 两个状态之间转换, 但不能转成其它状态.
 
 ## 注意持久化的原子性
 
