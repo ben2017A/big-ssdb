@@ -49,11 +49,11 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node.xport = xport
 	node.store = NewHelper(node, db)
 
-	node.Term = node.store.LoadState().Term
-	node.VoteFor = node.store.LoadState().VoteFor
+	s := node.store.State()
+	node.Term = s.Term
+	node.VoteFor = s.VoteFor
 	node.lastApplied = node.store.CommitIndex
-
-	for nodeId, nodeAddr := range node.store.LoadState().Members {
+	for nodeId, nodeAddr := range s.Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
 
@@ -392,6 +392,11 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.store.CommitEntry(ent.CommitIndex)
 }
 
+func (node *Node)sendInstallSnapshot(m *Member){
+	// state := node.store.State().Encode()
+	// lastEntry := node.store.GetEntry(node.store.LastIndex)
+}
+
 func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
 
@@ -399,7 +404,13 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		if msg.PrevIndex < node.store.LastIndex {
 			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
-			node.replicateMember(m)
+
+			ent := node.store.GetEntry(m.NextIndex)
+			if ent != nil {
+				node.replicateMember(m)
+			} else {
+				node.sendInstallSnapshot(m)
+			}
 		}
 	}else{
 		oldMatchIndex := m.MatchIndex

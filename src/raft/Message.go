@@ -8,11 +8,11 @@ import (
 )
 
 const(
-	MessageCmdRequestVote    = "RequestVote"
-	MessageCmdRequestVoteAck = "RequestVoteAck"
-	MessageCmdAppendEntry    = "AppendEntry"
-	MessageCmdAppendEntryAck = "AppendEntryAck"
-	MessageCmdInstallConfig  = "InstallConfig"
+	MessageCmdRequestVote     = "RequestVote"
+	MessageCmdRequestVoteAck  = "RequestVoteAck"
+	MessageCmdAppendEntry     = "AppendEntry"
+	MessageCmdAppendEntryAck  = "AppendEntryAck"
+	MessageCmdInstallSnapshot = "InstallSnapshot" // install raft state, not service state
 )
 
 type Message struct{

@@ -13,6 +13,7 @@ type Helper struct{
 	LastIndex int64
 	// Discovered from log entries, also in db @CommitIndex
 	CommitIndex int64
+	state State
 
 	node *Node
 	// notify channel reader there is new entry to be replicated
@@ -22,29 +23,31 @@ type Helper struct{
 	entries map[int64]*Entry
 	services []Service
 	
+	// must store at least one log entry after first term
 	db Storage
 }
 
 func NewHelper(node *Node, db Storage) *Helper{
-	ret := new(Helper)
-	ret.entries = make(map[int64]*Entry)
-	ret.services = make([]Service, 0)
+	st := new(Helper)
+	st.entries = make(map[int64]*Entry)
+	st.services = make([]Service, 0)
 	
-	ret.db = db
-	ret.C = make(chan int, 10)
-	ret.node = node
-	ret.AddService(node)
+	st.db = db
+	st.C = make(chan int, 10)
+	st.node = node
+	st.AddService(node)
 
-	ret.CommitIndex = util.Atoi64(ret.db.Get("@CommitIndex"))
-	ret.loadEntries()
+	st.loadState()
+	st.loadEntries()
 
-	log.Println("CommitIndex:", ret.CommitIndex, "LastTerm:", ret.LastTerm, "LastIndex:", ret.LastIndex)
-	log.Println("State:", ret.LoadState().Encode())
+	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
+	log.Println("    State:", st.state.Encode())
 
-	return ret
+	return st
 }
 
 func (st *Helper)Close(){
+	st.SaveState()
 	if st.db != nil {
 		st.db.Close()
 	}
@@ -56,25 +59,32 @@ func (st *Helper)AddService(svc Service){
 
 /* #################### State ###################### */
 
-func (st *Helper)LoadState() *State{
-	var s State
+func (st *Helper)State() *State{
+	return &st.state
+}
+
+func (st *Helper)loadState() {
 	data := st.db.Get("@State")
-	s.Decode(data)
-	return &s
+	st.state.Decode(data)
+	if st.state.Members == nil {
+		st.state.Members = make(map[string]string)
+	}
+	st.CommitIndex = util.Atoi64(st.db.Get("@CommitIndex"))
 }
 
 func (st *Helper)SaveState(){
-	s := new(State)
-	s.Term = st.node.Term
-	s.VoteFor = st.node.VoteFor
-	s.Members = make(map[string]string)
-	
+	st.state.Term = st.node.Term
+	st.state.VoteFor = st.node.VoteFor
+	st.state.Members = make(map[string]string)
 	for _, m := range st.node.Members {
-		s.Members[m.Id] = m.Addr
+		st.state.Members[m.Id] = m.Addr
 	}
 	
-	st.db.Set("@State", s.Encode())
-	log.Println("[RAFT] State", s.Encode())
+	st.db.Set("@State", st.state.Encode())
+	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
+
+	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
+	log.Println("    State:", st.state.Encode())
 }
 
 /* #################### Entry ###################### */

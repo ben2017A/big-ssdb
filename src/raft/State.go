@@ -10,15 +10,6 @@ type State struct{
 	Members map[string]string
 }
 
-func DecodeState(buf string) *State {
-	m := new(State)
-	if m.Decode(buf) {
-		return m
-	} else {
-		return nil
-	}
-}
-
 func (s *State)Encode() string{
 	b, err := json.Marshal(s)
 	if err != nil {
