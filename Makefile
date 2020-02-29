@@ -1,6 +1,7 @@
 export GOPATH=$(shell pwd)/
 
 all:
+	@echo export GOPATH=$(shell pwd)/
 	go build test.go
 
 test:

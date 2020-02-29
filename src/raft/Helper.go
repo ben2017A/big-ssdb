@@ -111,20 +111,19 @@ func (st *Helper)AddNewEntry(type_, data string) *Entry{
 	ent.Term = st.node.Term
 	ent.Data = data
 	
-	st.AppendEntry(*ent)
+	st.AppendEntry(ent)
 	st.C <- 0
 	return ent
 }
 
-// 传值. 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-func (st *Helper)AppendEntry(ent Entry){
+// 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
+func (st *Helper)AppendEntry(ent *Entry){
 	if ent.Index < st.CommitIndex {
 		log.Println(ent.Index, "<", st.CommitIndex)
 		return
 	}
 
-	// TODO:
-	st.entries[ent.Index] = &ent
+	st.entries[ent.Index] = ent
 
 	// 更新 LastTer 和 LastIndex, 忽略空洞
 	for{

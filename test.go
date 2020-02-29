@@ -32,7 +32,7 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc := new(Service)
 	
 	svc.db = ssdb.OpenDb(dir + "/data")
-	svc.lastApplied = svc.db.CommitIndex()
+	svc.lastApplied = svc.db.LastIndex()
 
 	svc.node = node	
 	svc.xport = xport

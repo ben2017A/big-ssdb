@@ -3,11 +3,19 @@ package store
 import (
 	"testing"
 	"os"
+	"path"
+	"util"
 )
 
 func TestWalFile(t *testing.T){
 	filename := "tmp/a.wal"
 	os.Remove(filename)
+
+	dir := path.Dir(filename)
+	if !util.IsDir(dir) {
+		os.MkdirAll(dir, 0755)
+	}
+
 	wal := OpenWalFile(filename)
 	defer wal.Close()
 

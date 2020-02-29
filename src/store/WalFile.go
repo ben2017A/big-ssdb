@@ -11,17 +11,14 @@ import (
 
 type WalFile struct{
 	fp *os.File
-	Filename string
+	Path string
 	scanner *bufio.Scanner
 }
 
 // create if not exists
 func OpenWalFile(filename string) *WalFile{
-	dirname := path.Dir(filename)
-	if !util.IsDir(dirname) {
-		os.MkdirAll(dirname, 0755)
-	}
-	if !util.IsDir(dirname) {
+	dir := path.Dir(filename)
+	if !util.IsDir(dir) {
 		return nil
 	}
 
@@ -38,7 +35,7 @@ func OpenWalFile(filename string) *WalFile{
 
 	ret := new(WalFile)
 	ret.fp = fp
-	ret.Filename = filename
+	ret.Path = filename
 
 	return ret
 }
@@ -51,7 +48,7 @@ func (wal *WalFile)SeekToEnd() {
 	wal.SeekTo(1 << 31)
 }
 
-// seek to n-th(0 based) record
+// seek to *BEFORE* n-th(0 based) record
 func (wal *WalFile)SeekTo(n int) bool {
 	_, err := wal.fp.Seek(0, os.SEEK_SET)
 	if err != nil {
@@ -72,6 +69,7 @@ func (wal *WalFile)Next() bool{
 	return wal.scanner.Scan()
 }
 
+// must call Next() before calling Item()
 func (wal *WalFile)Item() string {
 	return wal.scanner.Text()
 }

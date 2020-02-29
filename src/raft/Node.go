@@ -388,7 +388,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			// TODO:
 			log.Println("delete conflict entry, and entries that follow")
 		}
-		node.store.AppendEntry(*ent)
+		node.store.AppendEntry(ent)
 	}
 
 	node.send(NewAppendEntryAck(msg.Src, true))

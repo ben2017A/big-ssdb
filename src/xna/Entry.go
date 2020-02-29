@@ -10,11 +10,12 @@ type EntryType string
 
 // begin, commit, set, del, check
 const(
-	EntryTypeSet = "set"
-	EntryTypeDel = "del"
-	EntryTypeCheck = "check"
-	EntryTypeBegin = "begin"
-	EntryTypeCommit = "commit"
+	EntryTypeSet      = "set"
+	EntryTypeDel      = "del"
+	EntryTypeCheck    = "check"
+	EntryTypeBegin    = "begin"
+	EntryTypeCommit   = "commit"
+	EntryTypeRollback = "rollback"
 )
 
 // Index 是指对应的 Binlog 的 Index, 所以两条 Entry 可能有相同的 Index
@@ -50,6 +51,13 @@ func (e *Entry)Decode(buf string) bool{
 	return true
 }
 
+func NewSetEntry(idx int64, key string, val string) *Entry {
+	return &Entry{idx, EntryTypeSet, key, val}
+}
+
+func NewDelEntry(idx int64, key string) *Entry {
+	return &Entry{idx, EntryTypeDel, key, "#"}
+}
 func NewCheckEntry(idx int64) *Entry {
 	return &Entry{idx, EntryTypeCheck, "#", "#"}
 }
@@ -61,3 +69,8 @@ func NewBeginEntry(idx int64) *Entry {
 func NewCommitEntry(idx int64) *Entry {
 	return &Entry{idx, EntryTypeCommit, "#", "#"}
 }
+
+func NewRollbackEntry() *Entry {
+	return &Entry{0, EntryTypeRollback, "#", "#"}
+}
+

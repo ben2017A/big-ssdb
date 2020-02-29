@@ -7,64 +7,111 @@ import (
 
 type Redolog struct{
 	wal *store.WalFile
-	commitIndex int64
+	lastIndex int64
+	path string
 }
 
-func OpenRedolog(filename string) *Redolog {
+func OpenRedolog(path string) *Redolog {
 	ret := new(Redolog)
-	ret.wal = store.OpenWalFile(filename)
-	ret.commitIndex = 0
+	ret.path = path
 	
-	ret.wal.SeekTo(0)
-	for ret.wal.Next() {
-		r := ret.wal.Item()
-		ent := DecodeEntry(r)
-		if ent.Type == EntryTypeCommit {
-			ret.commitIndex = ent.Index
-		}
+	if !ret.recover() {
+		return nil
 	}
-	
+
 	return ret
 }
 
-func (rd *Redolog)Close(){
+func (rd *Redolog)Close() {
 	rd.wal.Close()
 }
 
-func (rd *Redolog)CommitIndex() int64 {
-	return rd.commitIndex
-}
-
-func (rd *Redolog)SeekToLastCheckpoint() {
-	rd.wal.SeekTo(0)
+func (rd *Redolog)recover() bool {
+	rd.wal = store.OpenWalFile(rd.path)
+	if rd.wal == nil {
+		return false
+	}
 	
-	num := 0
-	lineno := 0
+	rd.lastIndex = 0
+	
+	after_begin := false
+	rd.wal.SeekTo(0)
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
-		if ent.Type == EntryTypeCheck {
-			lineno = num
+
+		switch ent.Type {
+		case EntryTypeCheck:
+			if after_begin {
+				log.Fatalf("invalid '%s' after 'begin': %s", ent.Type, r)
+				return false
+			}
+		case EntryTypeBegin:
+			after_begin = true
+		case EntryTypeCommit:
+			after_begin = false
+			rd.lastIndex = ent.Index
+		case EntryTypeRollback:
+			after_begin = false
+		default:
+			if !after_begin {
+				log.Fatalf("invalid '%s' before 'begin': %s", ent.Type, r)
+				return false
+			}
 		}
-		num += 1
 	}
 	
+	if after_begin {
+		ent := NewRollbackEntry()
+		rd.wal.Append(ent.Encode())
+	}
+
+	return true
+}
+
+func (rd *Redolog)LastIndex() int64 {
+	return rd.lastIndex
+}
+
+func (rd *Redolog)SeekAfterLastCheckpoint() {
+	lineno := 0
+	rd.wal.SeekTo(0)
+	for num := 0; rd.wal.Next(); num ++ {
+		r := rd.wal.Item()
+		ent := DecodeEntry(r)
+		if ent.Type == EntryTypeCheck {
+			lineno = num + 1
+		}
+	}
 	rd.wal.SeekTo(lineno)
 }
 
 // 返回下一个事务, 如果文件中的事务不完整, 则忽略
 func (rd *Redolog)NextTransaction() *Transaction {
-	tx := NewTransaction()
+	var tx *Transaction = nil
 	for rd.wal.Next() {
 		r := rd.wal.Item()
 		ent := DecodeEntry(r)
-		if ent.Type == EntryTypeCheck {
-			continue
+		if ent == nil {
+			log.Fatalf("bad entry: %s", r)
+			break
 		}
 		
-		tx.AddEntry(*ent)
-		if ent.Type == EntryTypeCommit {
+		switch ent.Type {
+		case EntryTypeCheck:
+			//
+		case EntryTypeBegin:
+			tx = NewTransaction()
+		case EntryTypeCommit:
 			return tx
+		case EntryTypeRollback:
+			tx = nil
+		default:
+			if tx == nil {
+				log.Fatalf("bad entry before begin: %s", r)
+				return nil
+			}
+			tx.AddEntry(ent)
 		}
 	}
 	return nil
@@ -72,23 +119,23 @@ func (rd *Redolog)NextTransaction() *Transaction {
 
 // 增加 checkpoint
 func (rd *Redolog)WriteCheckpoint() {
-	rd.wal.Append(NewCheckEntry(rd.commitIndex).Encode())
+	rd.wal.Append(NewCheckEntry(rd.lastIndex).Encode())
 }
 
 // 如果出错, 可能无法将完整的 transaction 完全写入
 func (rd *Redolog)WriteTransaction(tx *Transaction){
-	if tx.MinIndex() <= rd.commitIndex || tx.MaxIndex() <= rd.commitIndex {
-		log.Fatalf("bad transaction, minIndex: %d, maxIndex: %d, when commitIndex: %d\n",
-			tx.MinIndex(), tx.MaxIndex(), rd.commitIndex)
+	if tx.MinIndex() <= rd.lastIndex || tx.MaxIndex() <= rd.lastIndex {
+		log.Fatalf("bad transaction, minIndex: %d, maxIndex: %d, when lastIndex: %d\n",
+			tx.MinIndex(), tx.MaxIndex(), rd.lastIndex)
 		return
 	}
 	
-	rd.wal.Append(tx.BeginEntry().Encode())
+	rd.wal.Append(NewBeginEntry(tx.MinIndex()).Encode())
 	for _, ent := range tx.Entries() {
 		rd.wal.Append(ent.Encode())
 	}
-	rd.wal.Append(tx.CommitEntry().Encode())
+	rd.wal.Append(NewCommitEntry(tx.MaxIndex()).Encode())
 	
-	rd.commitIndex = tx.MaxIndex()
+	rd.lastIndex = tx.MaxIndex()
 }
 

@@ -34,11 +34,25 @@ func OpenKVStore(dir string) *KVStore{
 	db := new(KVStore)
 	db.dir = dir
 	db.mm = make(map[string]string)
+	
+	if !db.recover() {
+		return nil
+	}
 
-	db.wal_new = dir + "/log.wal" + ".NEW"
-	db.wal_cur = dir + "/log.wal"
-	db.wal_old = dir + "/log.wal" + ".OLD"
-	db.wal_tmp = dir + "/log.wal" + ".TMP"
+	return db
+}
+
+func (db *KVStore)Close(){
+	if db.wal != nil {
+		db.wal.Close()
+	}
+}
+
+func (db *KVStore)recover() bool {
+	db.wal_new = db.dir + "/log.wal" + ".NEW"
+	db.wal_cur = db.dir + "/log.wal"
+	db.wal_old = db.dir + "/log.wal" + ".OLD"
+	db.wal_tmp = db.dir + "/log.wal" + ".TMP"
 
 	if util.FileExists(db.wal_old) {
 		db.loadWalFile(db.wal_old)
@@ -47,8 +61,7 @@ func OpenKVStore(dir string) *KVStore{
 		db.loadWalFile(db.wal_cur)
 	}
 	db.compactWAL()
-
-	return db
+	return true
 }
 
 func (db *KVStore)compactWAL(){
@@ -107,12 +120,6 @@ func (db *KVStore)loadWalFile(fn string){
 		case "del":
 			delete(db.mm, ent.Key)
 		}
-	}
-}
-
-func (db *KVStore)Close(){
-	if db.wal != nil {
-		db.wal.Close()
 	}
 }
 

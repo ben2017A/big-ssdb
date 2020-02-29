@@ -8,6 +8,8 @@ import (
 )
 
 func TestKVStore(t *testing.T){
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
 	db := OpenKVStore("./tmp/kvdb")
 	defer db.Close()
 
