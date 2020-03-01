@@ -145,19 +145,23 @@ func (db *KVStore)CleanAll() {
 	db.wal.Close()
 	
 	// TODO: atomic
-	var err interface{}
-	err = os.Remove(db.wal_old)
-	if err != nil {
-		log.Fatal(err)
+	if util.FileExists(db.wal_old) {
+		err := os.Remove(db.wal_old)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	err = os.Remove(db.wal_cur)
-	if err != nil {
-		log.Fatal(err)
+	if util.FileExists(db.wal_cur) {
+		err := os.Remove(db.wal_cur)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	err = os.Remove(db.wal_tmp)
-	if err != nil {
-		log.Fatal(err)
+	if util.FileExists(db.wal_tmp) {
+		err := os.Remove(db.wal_tmp)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-
 	db.wal = OpenWalFile(db.wal_cur)
 }

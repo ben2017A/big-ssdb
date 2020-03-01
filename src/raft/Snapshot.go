@@ -20,7 +20,7 @@ func newSnapshot() *Snapshot {
 }
 
 func NewSnapshotFromHelper(store *Helper) *Snapshot {
-	sn := new(Snapshot)
+	sn := newSnapshot()
 	sn.state.CopyFrom(store.State())
 	sn.entries = make([]*Entry, 0)
 	
@@ -43,7 +43,11 @@ func NewSnapshotFromHelper(store *Helper) *Snapshot {
 }
 
 func NewSnapshotFromString(data string) *Snapshot {
-	return nil
+	sn := newSnapshot()
+	if !sn.Decode(data) {
+		return nil
+	}
+	return sn
 }
 
 func (sn *Snapshot)CommitIndex() int64 {

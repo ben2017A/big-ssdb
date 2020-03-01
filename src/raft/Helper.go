@@ -184,6 +184,7 @@ func (st *Helper)ApplyEntries(){
 			ent := st.GetEntry(idx)
 			if ent == nil {
 				// TODO:
+				log.Printf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
 				// log.Fatalf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
 				break;
 			}

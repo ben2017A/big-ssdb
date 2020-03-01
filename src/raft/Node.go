@@ -442,12 +442,20 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 // 未来可以从配置中心拉取.
 func (node *Node)sendInstallSnapshot(m *Member){
 	sn := node.store.MakeMemSnapshot()
+	if sn == nil {
+		log.Println("MakeMemSnapshot() error!")
+		return
+	}
 	msg := NewInstallSnapshotMsg(m.Id, sn.Encode())
 	node.send(msg)
 }
 
 func (node *Node)handleInstallSnapshot(msg *Message){
 	sn := NewSnapshotFromString(msg.Data)
+	if sn == nil {
+		log.Println("NewSnapshotFromString() error!")
+		return
+	}
 	
 	log.Println("install Raft snapshot")
 	for _, m := range node.Members {
