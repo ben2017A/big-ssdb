@@ -8,7 +8,6 @@ import (
 	"time"
 	"strings"
 	"sync"
-	"encoding/json"
 
 	"util"
 )
@@ -445,39 +444,16 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 // Raft Snapshot 和 Service Snapshot, 而不是由 leader 推送.
 // 未来可以从配置中心拉取.
 func (node *Node)sendInstallSnapshot(m *Member){
-	var arr []string
-
-	state := node.store.State().Encode()
-	arr = append(arr, state)
-
-	if node.store.CommitIndex != 1 {
-		ent := node.store.GetEntry(node.store.CommitIndex - 1)
-		if ent == nil {
-			log.Fatal("last entry#", node.store.CommitIndex - 1)
-			return
-		}
-		arr = append(arr, ent.Encode())
-	}
-	ent := node.store.GetEntry(node.store.CommitIndex)
-	if ent == nil {
-		log.Fatal("last entry#", node.store.CommitIndex)
-		return
-	}
-	arr = append(arr, ent.Encode())
-	
-	bs, _ := json.Marshal(arr)
-	data := string(bs)
-	msg := NewInstallSnapshotMsg(m.Id, data)
+	sn := node.store.MakeMemSnapshot()
+	msg := NewInstallSnapshotMsg(m.Id, sn.Encode())
 	node.send(msg)
 }
 
 func (node *Node)handleInstallSnapshot(msg *Message){
-	var arr []string
-	json.Unmarshal([]byte(msg.Data), &arr)
-	var state State
-	state.Decode(arr[0])
+	sn := NewSnapshotFromString(msg.Data)
 	
 	log.Println("install raft state snapshot")
+	state := sn.State()
 	node.Term = state.Term
 	node.VoteFor = state.VoteFor
 	for _, m := range node.Members {
@@ -490,46 +466,21 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 
 	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
 
-	for _, s := range arr[1:] {
-		var entry Entry
-		entry.Decode(s)
-	
-		node.lastApplied = entry.Index
-		node.store.LastTerm = entry.Term
-		node.store.LastIndex = entry.Index
-		node.store.CommitIndex = entry.CommitIndex
-
-		node.store.SaveEntry(&entry)
-	}
-	
-	// TODO: add "installing" status
+	ent := sn.LastEntry()
+	node.lastApplied = ent.Index
+	node.store.CommitIndex = ent.Index
+	node.store.LastTerm = ent.Term
+	node.store.LastIndex = ent.Index
 	node.store.SaveState()
+	
+	for _, ent := range sn.Entries() {
+		node.store.SaveEntry(ent)
+	}
 	
 	// TODO: copy service snapshot
 }
 
-/* ############################################# */
-
-func (node *Node)JoinGroup(nodeId string, nodeAddr string){
-	node.mux.Lock()
-	defer node.mux.Unlock()
-	
-	log.Println("JoinGroup", nodeId, nodeAddr)
-	if nodeId == node.Id {
-		log.Println("could not join self:", nodeId)
-		return
-	}
-	// reset Raft state
-	node.Term = 0
-	node.VoteFor = ""
-	node.Members = make(map[string]*Member)
-	node.store.CommitIndex = 0
-	node.becomeFollower()
-	node.connectMember(nodeId, nodeAddr)
-	node.store.SaveState()
-	
-	// TODO: delete raft log entries
-}
+/* ###################### Quorum Methods ####################### */
 
 func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	node.mux.Lock()
@@ -572,7 +523,33 @@ func (node *Node)Write(data string) int64 {
 	return ent.Index
 }
 
-/* #################### Service interface ######################### */
+/* ###################### Operations ####################### */
+
+func (node *Node)JoinGroup(nodeId string, nodeAddr string){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	log.Println("JoinGroup", nodeId, nodeAddr)
+	if nodeId == node.Id {
+		log.Println("could not join self:", nodeId)
+		return
+	}
+	// reset Raft state
+	node.Term = 0
+	node.VoteFor = ""
+	node.Members = make(map[string]*Member)
+	node.store.CommitIndex = 0
+	node.becomeFollower()
+	node.connectMember(nodeId, nodeAddr)
+	node.store.SaveState()
+	
+	// TODO: delete raft log entries
+}
+
+func (node *Node)Chmod() {
+}
+
+/* ###################### Service interface ####################### */
 
 func (node *Node)LastApplied() int64{
 	return node.lastApplied

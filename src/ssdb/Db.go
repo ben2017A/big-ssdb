@@ -29,7 +29,7 @@ func OpenDb(dir string) *Db {
 	}
 	
 	log.Printf("Open Db %s", dir)
-	log.Printf("    LastIndex: %d", db.LastIndex())
+	log.Printf("    CommitIndex: %d", db.CommitIndex())
 	
 	return db
 }
@@ -61,8 +61,8 @@ func (db *Db)recover() bool {
 	return true
 }
 
-func (db *Db)LastIndex() int64 {
-	return db.redo.LastIndex()
+func (db *Db)CommitIndex() int64 {
+	return db.redo.CommitIndex()
 }
 
 // TODO: isolation
@@ -124,7 +124,7 @@ func (db *Db)Incr(idx int64, key string, delta string) string {
 //////////////////////////////////////////////////////////////////////
 
 func (db *Db)MakeFileSnapshot(path string) bool {
-	sn := NewSnapshotWriter(db.LastIndex(), path)
+	sn := NewSnapshotWriter(db.CommitIndex(), path)
 	if sn == nil {
 		return false
 	}

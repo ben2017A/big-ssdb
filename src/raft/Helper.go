@@ -13,7 +13,7 @@ type Helper struct{
 	LastIndex int64
 	// Discovered from log entries, also in db @CommitIndex
 	CommitIndex int64
-	state State
+	state *State
 
 	node *Node
 	// notify channel reader there is new entry to be replicated
@@ -28,6 +28,7 @@ type Helper struct{
 
 func NewHelper(node *Node, db Storage) *Helper{
 	st := new(Helper)
+	st.state = NewState()
 	st.entries = make(map[int64]*Entry)
 	st.services = make([]Service, 0)
 	
@@ -59,7 +60,7 @@ func (st *Helper)AddService(svc Service){
 /* #################### State ###################### */
 
 func (st *Helper)State() *State{
-	return &st.state
+	return st.state
 }
 
 func (st *Helper)loadState() {
@@ -75,6 +76,7 @@ func (st *Helper)SaveState(){
 	st.state.Term = st.node.Term
 	st.state.VoteFor = st.node.VoteFor
 	st.state.Members = make(map[string]string)
+	
 	st.state.Members[st.node.Id] = st.node.Addr
 	for _, m := range st.node.Members {
 		st.state.Members[m.Id] = m.Addr
@@ -184,4 +186,10 @@ func (st *Helper)ApplyEntries(){
 			svc.ApplyEntry(ent)
 		}
 	}
+}
+
+/* #################### Snapshot ###################### */
+
+func (st *Helper)MakeMemSnapshot() *Snapshot {
+	return NewSnapshotFromHelper(st)
 }

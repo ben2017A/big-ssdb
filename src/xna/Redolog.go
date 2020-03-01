@@ -8,7 +8,7 @@ import (
 type Redolog struct{
 	wal *store.WalFile
 	path string
-	lastIndex int64
+	commitIndex int64
 	checkpoint int64
 }
 
@@ -25,7 +25,7 @@ func OpenRedolog(path string) *Redolog {
 }
 
 func (rd *Redolog)Close() {
-	if 	rd.checkpoint != rd.lastIndex {
+	if 	rd.checkpoint != rd.commitIndex {
 		rd.WriteCheckpoint()
 	}
 	rd.wal.Close()
@@ -37,7 +37,7 @@ func (rd *Redolog)recover() bool {
 		return false
 	}
 	
-	rd.lastIndex = 0
+	rd.commitIndex = 0
 	
 	var begin int64 = 0
 	rd.wal.SeekTo(0)
@@ -64,7 +64,7 @@ func (rd *Redolog)recover() bool {
 			begin = ent.Index
 		case EntryTypeCommit:
 			begin = 0
-			rd.lastIndex = ent.Index
+			rd.commitIndex = ent.Index
 		case EntryTypeRollback:
 			begin = 0
 		default:
@@ -82,8 +82,8 @@ func (rd *Redolog)recover() bool {
 	return true
 }
 
-func (rd *Redolog)LastIndex() int64 {
-	return rd.lastIndex
+func (rd *Redolog)CommitIndex() int64 {
+	return rd.commitIndex
 }
 
 func (rd *Redolog)SeekAfterLastCheckpoint() {
@@ -132,13 +132,13 @@ func (rd *Redolog)NextTransaction() *Transaction {
 
 // 增加 checkpoint
 func (rd *Redolog)WriteCheckpoint() {
-	rd.wal.Append(NewCheckEntry(rd.lastIndex).Encode())
-	rd.checkpoint = rd.lastIndex
+	rd.wal.Append(NewCheckEntry(rd.commitIndex).Encode())
+	rd.checkpoint = rd.commitIndex
 }
 
 func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
-	if tx.MinIndex() <= rd.lastIndex {
-		log.Fatalf("bad transaction, MinIndex: %d, when lastIndex: %d", tx.MinIndex(), rd.lastIndex)
+	if tx.MinIndex() <= rd.commitIndex {
+		log.Fatalf("bad transaction, MinIndex: %d, when commitIndex: %d", tx.MinIndex(), rd.commitIndex)
 		return false
 	}
 	
@@ -149,7 +149,7 @@ func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
 	}
 	rd.wal.Append(NewCommitEntry(tx.MaxIndex()).Encode())
 	
-	rd.lastIndex = tx.MaxIndex()
+	rd.commitIndex = tx.MaxIndex()
 	return true
 }
 

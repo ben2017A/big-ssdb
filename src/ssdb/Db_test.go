@@ -13,7 +13,7 @@ func TestDb(t *testing.T){
 	db := OpenDb("./tmp")
 	defer db.Close()
 	
-	// idx := db.LastIndex()
+	// idx := db.CommitIndex()
 
 	// idx ++
 	// db.Set(idx, "a", "1")

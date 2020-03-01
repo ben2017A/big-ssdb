@@ -7,16 +7,16 @@ import (
 )
 
 type Snapshot struct {
-	lastIndex int64
+	commitIndex int64
 	wal *store.WalFile
 }
 
-func NewSnapshotWriter(lastIndex int64, path string) *Snapshot {
+func NewSnapshotWriter(commitIndex int64, path string) *Snapshot {
 	sn := new(Snapshot)
-	sn.lastIndex = lastIndex
+	sn.commitIndex = commitIndex
 	sn.wal = store.OpenWalFile(path)
 	
-	sn.wal.Append(fmt.Sprintf("%d", lastIndex))
+	sn.wal.Append(fmt.Sprintf("%d", commitIndex))
 	
 	return sn
 }
@@ -28,7 +28,7 @@ func NewSnapshotReader(path string) *Snapshot {
 	if !sn.Next() {
 		return nil
 	}
-	sn.lastIndex = util.Atoi64(sn.wal.Item())
+	sn.commitIndex = util.Atoi64(sn.wal.Item())
 	
 	return sn
 }
@@ -37,8 +37,8 @@ func (sn *Snapshot)Close() {
 	sn.wal.Close()
 }
 
-func (sn *Snapshot)LastIndex() int64 {
-	return sn.lastIndex
+func (sn *Snapshot)CommitIndex() int64 {
+	return sn.commitIndex
 }
 
 func (sn *Snapshot)Next() bool {

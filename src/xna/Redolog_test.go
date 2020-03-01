@@ -12,7 +12,7 @@ func TestRedolog(t *testing.T){
 	rd := OpenRedolog("tmp/redo.log")
 	defer rd.Close()
 	
-	log.Println("last index", rd.LastIndex())
+	log.Println("commit index", rd.CommitIndex())
 
 	rd.SeekAfterLastCheckpoint()
 	for {
@@ -27,7 +27,7 @@ func TestRedolog(t *testing.T){
 	
 	return
 	
-	idx := rd.LastIndex() + 1
+	idx := rd.CommitIndex() + 1
 	tx := NewTransaction()
 	for i :=0; i < 3; i++ {
 		key := fmt.Sprintf("k-%d", i)
@@ -38,5 +38,5 @@ func TestRedolog(t *testing.T){
 
 	rd.WriteTransaction(tx)
 	
-	log.Println("last index", rd.LastIndex())
+	log.Println("last index", rd.CommitIndex())
 }
