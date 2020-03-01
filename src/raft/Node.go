@@ -468,8 +468,11 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			if m.NextIndex <= node.store.LastIndex {
 				node.replicateMember(m)
 			} else {
-				// immediately notify followers to commit
-				node.heartbeatMember(m)
+				// 如果 follower 回复了最后一条 entry
+				if m.MatchIndex  == node.store.LastIndex {
+					// immediately notify followers to commit
+					node.heartbeatMember(m)
+				}
 			}
 		}
 	}

@@ -22,7 +22,7 @@ func setup() {
 	n2 = raft.NewNode("n2", s2, t2)
 
 	log.Println("init:\n" + n1.Info())
-	n1.Tick(raft.ElectionTimeout + 1)
+	n1.Tick(raft.ElectionTimeout * 2)
 	log.Println("\n" + n1.Info())
 	if n1.Role != "leader" {
 		log.Fatal("error")
@@ -50,15 +50,19 @@ func test_follow() {
 	
 	n2.Step() // recv, commit, send Ack
 	log.Println("\n" + n2.Info())
-	if n2.InfoMap()["commitIndex"] != "3" {
-		log.Fatal("error")
-	}
 	
-	n1.Step() // recv Ack
+	n1.Step() // recv Ack, send Heartbeat
 	log.Println("\n" + n1.Info())
 	if n1.Members["n2"].NextIndex != 4 || n1.Members["n2"].MatchIndex != 3 {
 		log.Fatal("error")		
 	}
+
+	if n2.InfoMap()["commitIndex"] != "3" {
+		log.Fatal("error")
+	}
+	
+	n2.Step() // recv, send ack
+	n1.Step() // recv ack
 }
 	
 func test_quorum_write() {	
@@ -91,13 +95,20 @@ func test_quorum_write() {
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	setup()
-	test_follow()
-	test_quorum_write()
+	// setup()
+	// test_follow()
+	// test_quorum_write()
+	
 	fmt.Println("\n---------------------------------------------------\n")
 	
 	setup()
+	test_follow()
+
 	fmt.Println("\n---------------------------------------------------\n")
+	
+	n2.Tick(raft.ElectionTimeout * 2)
+	log.Println("\n" + n2.Info())
+	
 
-
+	fmt.Println("\n---------------------------------------------------\n")
 }
