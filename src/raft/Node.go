@@ -112,7 +112,7 @@ func (node *Node)Step(){
 		node.replicateAllMembers()
 	}
 	// timer
-	node.tick(100000)
+	node.tick(2000)
 }
 
 func (node *Node)Close(){
