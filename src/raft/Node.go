@@ -456,20 +456,20 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			sort.Slice(matchIndex, func(i, j int) bool{
 				return matchIndex[i] > matchIndex[j]
 			})
-			log.Println(matchIndex)
+			log.Println("matchIndex[] =", matchIndex)
 			commitIndex := matchIndex[len(matchIndex)/2]
 
 			ent := node.store.GetEntry(commitIndex)
 			// only commit currentTerm's log
 			if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
 				node.store.CommitEntry(commitIndex)
-				
+			}
+			
+			if m.NextIndex <= node.store.LastIndex {
+				node.replicateMember(m)
+			} else {
 				// immediately notify followers to commit
-				if m.NextIndex >= node.store.LastIndex {
-					node.heartbeatMember(m)
-				} else{
-					node.replicateMember(m)
-				}
+				node.heartbeatMember(m)
 			}
 		}
 	}
@@ -615,6 +615,9 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
 	b, _ := json.Marshal(node.store.State().Members)
 	ret += fmt.Sprintf("members: %s\n", string(b))
+	for _, m := range node.Members {
+		ret += fmt.Sprintf("member[%s] nextIndex[%d] matchIndex[%d]", m.Id, m.NextIndex, m.MatchIndex)
+	}
 
 	return ret
 }

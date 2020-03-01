@@ -27,50 +27,77 @@ func setup() {
 	if n1.Role != "leader" {
 		log.Fatal("error")
 	}
+
 	n1.AddMember("n1", "addr1")
 	n1.AddMember("n2", "addr2")
 	n1.Step()
 	log.Println("\n" + n1.Info())
+	if n1.InfoMap()["commitIndex"] != "3" {
+		log.Fatal("error")
+	}
 }
 
-func main(){
-	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-
-	setup()
-	
+func test_follow() {
 	n1.Tick(raft.HeartbeatTimeout + 1) // send Heartbeat
 	
 	n2.JoinGroup("n1", "addr1")
-	n2.Step() // reply ApplyEntryAct[false]
+	n2.Step() // send Heartbeat Ack[false]
 	if n2.Role != "follower" {
 		log.Fatal("error")
 	}
 	
 	n1.Step() // send ApplyEntry
 	
-	n2.Step() // send ApplyEntryAck
+	n2.Step() // recv, commit, send Ack
 	log.Println("\n" + n2.Info())
-	if n2.InfoMap()["lastIndex"] != n1.InfoMap()["lastIndex"] {
+	if n2.InfoMap()["commitIndex"] != "3" {
 		log.Fatal("error")
 	}
 	
 	n1.Step() // recv Ack
-
+	log.Println("\n" + n1.Info())
+	if n1.Members["n2"].NextIndex != 4 || n1.Members["n2"].MatchIndex != 3 {
+		log.Fatal("error")		
+	}
+}
+	
+func test_quorum_write() {	
 	n1.Write("a")
 	n1.Write("b")
 	n1.Write("c")
-	n1.Step() // send ApplyEntry
+	// n1.Write("d")
+	n1.Step() // send ApplyEntry with 3(send window size) entries
+	log.Println("\n" + n1.Info())
 	
-	n2.Step() // send ApplyEntryAck
+	n2.Step() // recv, send Ack
 	log.Println("\n" + n2.Info())
 
-	n1.Step() // recv Ack, send Commit
-	n2.Step() // recv commit
-	log.Println("\n" + n2.Info())
-	if n2.InfoMap()["lastIndex"] != n1.InfoMap()["lastIndex"] {
+	n1.Step() // recv Ack, send Heartbeat
+	log.Println("\n" + n1.Info())
+	if n1.InfoMap()["commitIndex"] != "6" {
 		log.Fatal("error")
 	}
 
+	n2.Step() // recv Heartbeat, send Ack
+	log.Println("\n" + n2.Info())
+	if n2.InfoMap()["commitIndex"] != "6" {
+		log.Fatal("error")
+	}
+	
+	n1.Step() // recv Ack
+	n1.Step() // nothing	
+}
+
+func main(){
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
+	setup()
+	test_follow()
+	test_quorum_write()
 	fmt.Println("\n---------------------------------------------------\n")
+	
+	setup()
+	fmt.Println("\n---------------------------------------------------\n")
+
 
 }
