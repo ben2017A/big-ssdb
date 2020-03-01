@@ -9,7 +9,7 @@ import (
 )
 
 type FakeTransport struct {
-	C chan *raft.Message
+	c chan *raft.Message
 	dns map[string]string
 	send_queues map[string]chan *raft.Message
 }
@@ -17,7 +17,7 @@ type FakeTransport struct {
 func NewFakeTransport() *FakeTransport {
 	log.Println("New")
 	t := new(FakeTransport)
-	t.C = make(chan *raft.Message, 3)
+	t.c = make(chan *raft.Message, 3)
 	t.dns = make(map[string]string)
 	t.send_queues = make(map[string]chan *raft.Message)
 	return t
@@ -31,15 +31,20 @@ func (t *FakeTransport)Close() {
 	log.Println("Close")
 }
 
+func (t *FakeTransport)C() chan *raft.Message {
+	return t.c
+}
+
 func (t *FakeTransport)Connect(nodeId string, addr string) {
 	t.dns[nodeId] = addr
-	C := make(chan *raft.Message, 3)
-	t.send_queues[nodeId] = C
+	c := make(chan *raft.Message, 3)
+	t.send_queues[nodeId] = c
 	go func(){
 		for {
-			msg := <- C
+			msg := <- c
 			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-			t.C <- msg
+			t.c <- msg
+			log.Println("   receive < ", msg.Encode())
 		}
 	}()
 }

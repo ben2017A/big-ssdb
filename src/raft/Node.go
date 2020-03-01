@@ -8,6 +8,7 @@ import (
 	"time"
 	"strings"
 	"sync"
+	"encoding/json"
 
 	"util"
 )
@@ -110,6 +111,10 @@ func (node *Node)tick(timeElapse int){
 		for _, m := range node.Members {
 			m.ReplicationTimeout -= timeElapse
 			if m.ReplicationTimeout <= 0 {
+				if m.NextIndex != m.MatchIndex + 1 {
+					m.NextIndex = m.MatchIndex + 1
+					log.Printf("member: %s, resend: %d", m.Id, m.NextIndex)
+				}
 				node.replicateMember(m)
 			}
 
@@ -213,7 +218,7 @@ func (node *Node)replicateAllMembers(){
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimeout = ReplicationTimeout
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
-		log.Println("stop and wait")
+		log.Printf("stop and wait, next: %d, match: %d", m.NextIndex, m.MatchIndex)
 		return
 	}
 
@@ -517,6 +522,25 @@ func (node *Node)Write(data string) int64 {
 }
 
 /* ###################### Operations ####################### */
+
+func (node *Node)Info() string {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	var ret string
+	ret += fmt.Sprintf("id: %s\n", node.Id)
+	ret += fmt.Sprintf("addr: %s\n", node.Addr)
+	ret += fmt.Sprintf("role: %s\n", node.Role)
+	ret += fmt.Sprintf("term: %d\n", node.Term)
+	ret += fmt.Sprintf("lastApplied: %d\n", node.lastApplied)
+	ret += fmt.Sprintf("commitIndex: %d\n", node.store.CommitIndex)
+	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
+	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
+	b, _ := json.Marshal(node.store.State().Members)
+	ret += fmt.Sprintf("members: %s\n", string(b))
+
+	return ret
+}
 
 func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	node.mux.Lock()

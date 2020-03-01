@@ -13,9 +13,6 @@ const TimerInterval = 100
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	ticker := time.NewTicker(TimerInterval * time.Millisecond)
-	defer ticker.Stop()
-
 	s1 := NewFakeStorage()
 	s2 := NewFakeStorage()
 	xport := NewFakeTransport()
@@ -51,18 +48,6 @@ func main(){
 	}()
 
 	for{
-		select{
-		case <-ticker.C:
-			n1.Tick(TimerInterval)
-			n2.Tick(TimerInterval)
-		case msg := <-xport.C:
-			log.Println("   receive < ", msg.Encode())
-			if msg.Dst == "n1" {
-				n1.HandleRaftMessage(msg)
-			}
-			if msg.Dst == "n2" {
-				n2.HandleRaftMessage(msg)
-			}
-		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

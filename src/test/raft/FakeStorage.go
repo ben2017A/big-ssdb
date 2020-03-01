@@ -30,3 +30,7 @@ func (db *FakeStorage)Get(key string) string {
 func (db *FakeStorage)Set(key string, val string) {
 	db.mm[key] = val
 }
+
+func (db *FakeStorage)CleanAll(){
+	db.mm = make(map[string]string)
+}
