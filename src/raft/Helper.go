@@ -40,6 +40,10 @@ func NewHelper(node *Node, db Storage) *Helper{
 	st.loadState()
 	st.loadEntries()
 
+	// init Raft state from persistent storage
+	node.Term = st.state.Term
+	node.VoteFor = st.state.VoteFor
+
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 
@@ -192,4 +196,18 @@ func (st *Helper)ApplyEntries(){
 
 func (st *Helper)MakeMemSnapshot() *Snapshot {
 	return NewSnapshotFromHelper(st)
+}
+
+// install but not persistent
+func (st *Helper)InstallSnapshot(sn *Snapshot) bool {
+	state := sn.State()
+	st.node.Term = state.Term
+	st.node.VoteFor = state.VoteFor
+	
+	ent := sn.LastEntry()
+	st.node.store.CommitIndex = ent.Index
+	st.node.store.LastTerm = ent.Term
+	st.node.store.LastIndex = ent.Index
+
+	return false
 }

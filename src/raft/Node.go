@@ -51,11 +51,8 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node.xport = xport
 	node.store = NewHelper(node, db)
 
-	s := node.store.State()
-	node.Term = s.Term
-	node.VoteFor = s.VoteFor
 	node.lastApplied = node.store.CommitIndex
-	for nodeId, nodeAddr := range s.Members {
+	for nodeId, nodeAddr := range node.store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
 
@@ -452,32 +449,28 @@ func (node *Node)sendInstallSnapshot(m *Member){
 func (node *Node)handleInstallSnapshot(msg *Message){
 	sn := NewSnapshotFromString(msg.Data)
 	
-	log.Println("install raft state snapshot")
-	state := sn.State()
-	node.Term = state.Term
-	node.VoteFor = state.VoteFor
+	log.Println("install Raft snapshot")
+	// node.store.CleanAll()
+	node.store.InstallSnapshot(sn)
+
+	node.lastApplied = sn.LastEntry().Index
 	for _, m := range node.Members {
 		// it's ok to delete item while iterating
 		node.disconnectMember(m.Id)
 	}
-	for nodeId, nodeAddr := range state.Members {
+	for nodeId, nodeAddr := range node.store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
 
 	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
-
-	ent := sn.LastEntry()
-	node.lastApplied = ent.Index
-	node.store.CommitIndex = ent.Index
-	node.store.LastTerm = ent.Term
-	node.store.LastIndex = ent.Index
 	node.store.SaveState()
 	
 	for _, ent := range sn.Entries() {
 		node.store.SaveEntry(ent)
 	}
-	
+
 	// TODO: copy service snapshot
+	log.Println("TODO: install Service snapshot")
 }
 
 /* ###################### Quorum Methods ####################### */
