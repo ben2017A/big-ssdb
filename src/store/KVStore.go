@@ -15,7 +15,6 @@ type KVStore struct{
 	mm map[string]string
 	wal *WalFile
 
-	wal_new string
 	wal_cur string
 	wal_old string
 	wal_tmp string
@@ -49,7 +48,6 @@ func (db *KVStore)Close(){
 }
 
 func (db *KVStore)recover() bool {
-	db.wal_new = db.dir + "/log.wal" + ".NEW"
 	db.wal_cur = db.dir + "/log.wal"
 	db.wal_old = db.dir + "/log.wal" + ".OLD"
 	db.wal_tmp = db.dir + "/log.wal" + ".TMP"
@@ -60,28 +58,22 @@ func (db *KVStore)recover() bool {
 	if util.FileExists(db.wal_cur) {
 		db.loadWalFile(db.wal_cur)
 	}
-	db.compactWAL()
+	db.compactWalToOldFile()
+	
+	os.Remove(db.wal_cur)
+	db.wal = OpenWalFile(db.wal_cur)
+
 	return true
 }
 
-func (db *KVStore)compactWAL(){
-	if db.wal != nil {
-		db.wal.Close()
-	}
-
-	db.wal = OpenWalFile(db.wal_new)
-
+func (db *KVStore)compactWalToOldFile(){
 	os.Remove(db.wal_tmp)
+	
 	wal := OpenWalFile(db.wal_tmp)
 	{
 		arr := make([][2]string, len(db.mm))
 		n := 0
 		for k, v := range db.mm {
-			// testing
-			// if strings.HasPrefix(k, "log#") {
-			// 	idx := util.Atoi(k[4:]);
-			// 	k = fmt.Sprintf("log#%03d", idx)
-			// }
 			arr[n] = [2]string{k, v}
 			n ++
 		}
@@ -97,7 +89,6 @@ func (db *KVStore)compactWAL(){
 	wal.Close()
 
 	os.Rename(db.wal_tmp, db.wal_old)
-	os.Rename(db.wal_new, db.wal_cur)
 }
 
 func (db *KVStore)loadWalFile(fn string){
@@ -143,4 +134,30 @@ func (db *KVStore)Del(key string){
 	r := fmt.Sprintf("del %s", key);
 	db.wal.Append(r)
 	delete(db.mm, key)
+}
+
+/* ################################################ */
+
+func (db *KVStore)CleanAll() {
+	log.Println("Clean KVStore", db.dir)
+
+	db.mm = make(map[string]string)
+	db.wal.Close()
+	
+	// TODO: atomic
+	var err interface{}
+	err = os.Remove(db.wal_old)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = os.Remove(db.wal_cur)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = os.Remove(db.wal_tmp)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db.wal = OpenWalFile(db.wal_cur)
 }

@@ -10,6 +10,7 @@ import (
 
 // TODO: 线程安全
 type Db struct {
+	dir string
 	kv *store.KVStore
 	redo *xna.Redolog
 }
@@ -18,6 +19,7 @@ func OpenDb(dir string) *Db {
 	dir, _ = filepath.Abs(dir)
 	
 	db := new(Db)
+	db.dir = dir
 	db.kv = store.OpenKVStore(dir)
 	db.redo = xna.OpenRedolog(dir + "/redo.log")
 	
@@ -28,7 +30,7 @@ func OpenDb(dir string) *Db {
 		return nil
 	}
 	
-	log.Printf("Open Db %s", dir)
+	log.Printf("Open Db %s", db.dir)
 	log.Printf("    CommitIndex: %d", db.CommitIndex())
 	
 	return db
@@ -122,6 +124,12 @@ func (db *Db)Incr(idx int64, key string, delta string) string {
 }
 
 //////////////////////////////////////////////////////////////////////
+
+func (db *Db)CleanAll() {
+	log.Printf("Clean Db %s", db.dir)
+	db.redo.CleanAll()
+	db.kv.CleanAll()
+}
 
 func (db *Db)MakeFileSnapshot(path string) bool {
 	sn := NewSnapshotWriter(db.CommitIndex(), path)

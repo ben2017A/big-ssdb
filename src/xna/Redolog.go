@@ -2,6 +2,7 @@ package xna
 
 import (
 	"log"
+	"os"
 	"store"
 )
 
@@ -153,3 +154,18 @@ func (rd *Redolog)WriteTransaction(tx *Transaction) bool {
 	return true
 }
 
+func (rd *Redolog)CleanAll() {
+	rd.commitIndex = 0
+	rd.checkpoint = 0
+
+	rd.wal.Close()
+	err := os.Remove(rd.path)
+	if err != nil {
+		log.Fatalf("Remove %s error: %s", rd.path, err.Error())
+	}
+	
+	rd.wal = store.OpenWalFile(rd.path)
+	if rd.wal == nil {
+		log.Fatalf("Open %s error: %s", rd.path, err.Error())
+	}
+}

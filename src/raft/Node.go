@@ -450,10 +450,6 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 	sn := NewSnapshotFromString(msg.Data)
 	
 	log.Println("install Raft snapshot")
-	// node.store.CleanAll()
-	node.store.InstallSnapshot(sn)
-
-	node.lastApplied = sn.LastEntry().Index
 	for _, m := range node.Members {
 		// it's ok to delete item while iterating
 		node.disconnectMember(m.Id)
@@ -461,13 +457,9 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 	for nodeId, nodeAddr := range node.store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
+	node.lastApplied = sn.LastEntry().Index
 
-	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
-	node.store.SaveState()
-	
-	for _, ent := range sn.Entries() {
-		node.store.SaveEntry(ent)
-	}
+	node.store.InstallSnapshot(sn)
 
 	// TODO: copy service snapshot
 	log.Println("TODO: install Service snapshot")

@@ -198,16 +198,24 @@ func (st *Helper)MakeMemSnapshot() *Snapshot {
 	return NewSnapshotFromHelper(st)
 }
 
-// install but not persistent
+// install 之前, Node 需要配置好 Members
 func (st *Helper)InstallSnapshot(sn *Snapshot) bool {
 	state := sn.State()
 	st.node.Term = state.Term
 	st.node.VoteFor = state.VoteFor
 	
 	ent := sn.LastEntry()
-	st.node.store.CommitIndex = ent.Index
-	st.node.store.LastTerm = ent.Term
-	st.node.store.LastIndex = ent.Index
+	st.CommitIndex = ent.Index
+	st.LastTerm = ent.Term
+	st.LastIndex = ent.Index
+	
+	st.db.CleanAll()
+
+	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
+	for _, ent := range sn.Entries() {
+		st.SaveEntry(ent)
+	}
+	st.SaveState()
 
 	return false
 }
