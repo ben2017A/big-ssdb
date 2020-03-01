@@ -55,9 +55,9 @@ Leader 选举的是多数派里日志最多的一个节点, 而非绝对意义�
 节点工作模式:
 
 * freeze: 未初始化
-* logger: 接收 log, 但不 apply
-* follow: 接收 log, 并 apply 到 Service
-* normal: 可参与竞选
+* logger: 接收 log, 但不 apply, 不参加竞选
+* follow: 接收 log, 并 apply 到 Service, 不参加竞选
+* normal: 可参加竞选
 
 给 leader 发 AddMember 指令后, 新节点被集群接受.
 

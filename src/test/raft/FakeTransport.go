@@ -2,61 +2,70 @@ package main
 
 import (
 	"log"
-	"time"
-	"math/rand"
-
 	"raft"
 )
 
 type FakeTransport struct {
+	addr string
+	bus *Bus
 	c chan *raft.Message
-	dns map[string]string
-	send_queues map[string]chan *raft.Message
 }
 
-func NewFakeTransport() *FakeTransport {
-	log.Println("New")
-	t := new(FakeTransport)
-	t.c = make(chan *raft.Message, 3)
-	t.dns = make(map[string]string)
-	t.send_queues = make(map[string]chan *raft.Message)
+type Bus struct {
+	clients map[string]*FakeTransport
+}
+
+func NewBus() *Bus {
+	b := new(Bus)
+	b.clients = make(map[string]*FakeTransport)
+	return b
+}
+
+func (b *Bus)MakeTransport(id string, addr string) *FakeTransport {
+	t := newFakeTransport(b, addr)
+	b.clients[id] = t
 	return t
 }
 
-func (t *FakeTransport)Addr() string {
-	return "addr"
+func (b *Bus)Send(msg *raft.Message) {
+	log.Println(" send > ", msg.Encode())
+	t := b.clients[msg.Dst]
+	if t == nil {
+		log.Printf("client %s not found", msg.Dst)
+		return
+	}
+	t.C() <- msg
 }
-	
-func (t *FakeTransport)Close() {
-	log.Println("Close")
+
+////////////////////////////////////////
+
+func newFakeTransport(b *Bus, addr string) *FakeTransport {
+	t := new(FakeTransport)
+	t.bus = b
+	t.addr = addr
+	t.c = make(chan *raft.Message, 10)
+	return t
 }
 
 func (t *FakeTransport)C() chan *raft.Message {
 	return t.c
 }
 
+func (t *FakeTransport)Send(msg *raft.Message) bool {
+	t.bus.Send(msg)
+	return true
+}
+
+func (t *FakeTransport)Addr() string {
+	return t.addr
+}
+	
+func (t *FakeTransport)Close() {
+	log.Println("Close")
+}
+
 func (t *FakeTransport)Connect(nodeId string, addr string) {
-	t.dns[nodeId] = addr
-	c := make(chan *raft.Message, 3)
-	t.send_queues[nodeId] = c
-	go func(){
-		for {
-			msg := <- c
-			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-			t.c <- msg
-			log.Println("   receive < ", msg.Encode())
-		}
-	}()
 }
 
 func (t *FakeTransport)Disconnect(nodeId string) {
-	delete(t.dns, nodeId)
-}
-
-func (t *FakeTransport)Send(msg *raft.Message) bool {
-	log.Println("  send > ", msg.Encode())
-	go func(){
-		t.send_queues[msg.Dst] <- msg
-	}()
-	return true
 }

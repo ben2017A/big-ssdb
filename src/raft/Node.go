@@ -96,16 +96,23 @@ func (node *Node)Start(){
 
 // For testing
 func (node *Node)Step(){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+
 	fmt.Printf("\n======= Testing: Step %s =======\n\n", node.Id)
-	node.tick(100000)
+	// receive
+	for len(node.xport.C()) > 0 {
+		msg := <-node.xport.C()
+		log.Println("    receive < ", msg.Encode())
+		node.handleRaftMessage(msg)
+	}
+	// send
 	for len(node.store.C) > 0 {
 		<-node.store.C
 		node.replicateAllMembers()
 	}
-	for len(node.xport.C()) > 0 {
-		msg := <-node.xport.C()
-		node.handleRaftMessage(msg)
-	}
+	// timer
+	node.tick(100000)
 }
 
 func (node *Node)Close(){
@@ -198,8 +205,8 @@ func (node *Node)becomeLeader(){
 		for _, m := range node.Members {
 			node.resetMemberState(m)
 		}
-		node.store.AddNewEntry("Noop", "")
 	}
+	node.store.AddNewEntry("Noop", "")
 }
 
 /* ############################################# */
@@ -389,6 +396,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if ent.Index != 1 { // if not very first entry
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil || prev.Term != msg.PrevTerm {
+			log.Println("bad prev entry", msg.PrevIndex, msg.PrevTerm)
 			node.send(NewAppendEntryAck(msg.Src, false))
 			return
 		}
@@ -571,9 +579,10 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	node.VoteFor = ""
 	node.Members = make(map[string]*Member)
 	node.store.CommitIndex = 0
+	node.store.SaveState()
+
 	node.becomeFollower()
 	node.connectMember(nodeId, nodeAddr)
-	node.store.SaveState()
 	
 	// TODO: delete raft log entries
 }
