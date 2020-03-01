@@ -96,7 +96,8 @@ func (node *Node)Start(){
 
 // For testing
 func (node *Node)Step(){
-	node.tick(10000)
+	fmt.Printf("\n======= Testing: Step %s =======\n\n", node.Id)
+	node.tick(100000)
 	for len(node.store.C) > 0 {
 		<-node.store.C
 		node.replicateAllMembers()
@@ -123,15 +124,16 @@ func (node *Node)tick(timeElapse int){
 	if node.Role == "leader" {
 		for _, m := range node.Members {
 			m.ReplicationTimeout -= timeElapse
+			m.HeartbeatTimeout -= timeElapse
+
 			if m.ReplicationTimeout <= 0 {
-				if m.NextIndex != m.MatchIndex + 1 {
+				// 如果 matchIndex == 0, 则只需要发送最新的一条 log(即 NextIndex=store.LastIndex)
+				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
+					log.Printf("resend member: %s, nextIndex: %d, matchIndex: %d", m.Id, m.NextIndex, m.MatchIndex)
 					m.NextIndex = m.MatchIndex + 1
-					log.Printf("resend member: %s, nextIndex: %d", m.Id, m.NextIndex)
 				}
 				node.replicateMember(m)
 			}
-
-			m.HeartbeatTimeout -= timeElapse
 			if m.HeartbeatTimeout <= 0 {
 				// log.Println("Heartbeat timeout for node", m.Id)
 				node.heartbeatMember(m)
@@ -222,8 +224,8 @@ func (node *Node)replicateAllMembers(){
 	for _, m := range node.Members {
 		node.replicateMember(m)
 	}
-	// allow single node mode, commit every entry immediately
-	if node.Role == "leader" && len(node.Members) == 0 {
+	// 单节点运行
+	if len(node.Members) == 0 {
 		node.store.CommitEntry(node.store.LastIndex)
 	}
 }

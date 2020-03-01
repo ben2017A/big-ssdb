@@ -23,15 +23,14 @@ func main(){
 	// n2.Start()
 	// log.Println("started")
 	log.Println("\n" + n1.Info())
+	n1.Step()
+	log.Println("\n" + n1.Info())
 	
 	n1.AddMember("n1", "addr1")
 	n1.Step()
 	log.Println("\n" + n1.Info())
 	
 	n1.AddMember("n2", "addr2")
-	n1.Step()
-	log.Println("\n" + n1.Info())
-
 	n1.Step()
 	log.Println("\n" + n1.Info())
 
