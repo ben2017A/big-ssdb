@@ -76,7 +76,7 @@ func (node *Node)Start(){
 			select{
 			case <-ticker.C:
 				node.mux.Lock()
-				node.tick(TimerInterval)
+				node.Tick(TimerInterval)
 				node.mux.Unlock()
 			case <-node.store.C:
 				for len(node.store.C) > 0 {
@@ -110,8 +110,10 @@ func (node *Node)Step(){
 			n ++
 		}
 		// send
-		for len(node.store.C) > 0 {
-			<-node.store.C
+		if len(node.store.C) > 0 {
+			for len(node.store.C) > 0 {
+				<-node.store.C
+			}
 			node.replicateAllMembers()
 			n ++
 		}
@@ -120,7 +122,7 @@ func (node *Node)Step(){
 		}
 	}
 	// timer
-	node.tick(2000)
+	node.Tick(900)
 }
 
 func (node *Node)Close(){
@@ -128,7 +130,7 @@ func (node *Node)Close(){
 	node.xport.Close()
 }
 
-func (node *Node)tick(timeElapse int){
+func (node *Node)Tick(timeElapse int){
 	if node.Role == "follower" || node.Role == "candidate" {
 		node.electionTimeout -= timeElapse
 		if node.electionTimeout <= 0 {
@@ -552,9 +554,38 @@ func (node *Node)Write(data string) int64 {
 	return ent.Index
 }
 
+/* ###################### Service interface ####################### */
+
+func (node *Node)LastApplied() int64{
+	return node.lastApplied
+}
+
+func (node *Node)ApplyEntry(ent *Entry){
+	node.lastApplied = ent.Index
+
+	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
+	if ent.Type == "AddMember" {
+		log.Println("[Apply]", ent.Encode())
+		ps := strings.Split(ent.Data, " ")
+		if len(ps) == 2 {
+			node.connectMember(ps[0], ps[1])
+			node.store.SaveState()
+		}
+	}else if ent.Type == "DelMember" {
+		log.Println("[Apply]", ent.Encode())
+		nodeId := ent.Data
+		// the deleted node would not receive a commit msg that it had been deleted
+		node.disconnectMember(nodeId)
+		node.store.SaveState()
+	}
+}
+
 /* ###################### Operations ####################### */
 
 func (node *Node)InfoMap() map[string]string {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
 	m := make(map[string]string)
 	m["id"] = fmt.Sprintf("%d", node.Id)
 	m["addr"] = node.Addr
@@ -610,33 +641,11 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	// TODO: delete raft log entries
 }
 
-func (node *Node)Chmod() {
+func (node *Node)ChangeMode() {
 }
 
-/* ###################### Service interface ####################### */
-
-func (node *Node)LastApplied() int64{
-	return node.lastApplied
-}
-
-func (node *Node)ApplyEntry(ent *Entry){
-	node.lastApplied = ent.Index
-
-	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
-	if ent.Type == "AddMember" {
-		log.Println("[Apply]", ent.Encode())
-		ps := strings.Split(ent.Data, " ")
-		if len(ps) == 2 {
-			node.connectMember(ps[0], ps[1])
-			node.store.SaveState()
-		}
-	}else if ent.Type == "DelMember" {
-		log.Println("[Apply]", ent.Encode())
-		nodeId := ent.Data
-		// the deleted node would not receive a commit msg that it had been deleted
-		node.disconnectMember(nodeId)
-		node.store.SaveState()
-	}
+func (node *Node)Helper() *Helper {
+	return node.store
 }
 
 /* ############################################# */

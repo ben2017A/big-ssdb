@@ -44,6 +44,7 @@ func NewHelper(node *Node, db Storage) *Helper{
 	node.Term = st.state.Term
 	node.VoteFor = st.state.VoteFor
 
+	log.Printf("Init raft node[%s]:", st.node.Id)
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 
@@ -89,7 +90,7 @@ func (st *Helper)SaveState(){
 	st.db.Set("@State", st.state.Encode())
 	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
 
-	log.Println("SaveState:")
+	log.Printf("Save raft state[%s]:", st.node.Id)
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 }
@@ -123,10 +124,11 @@ func (st *Helper)GetEntry(index int64) *Entry{
 func (st *Helper)AddNewEntry(type_, data string) *Entry{
 	ent := new(Entry)
 	ent.Type = type_
-	ent.Index = st.LastIndex + 1
 	ent.Term = st.node.Term
+	ent.Index = st.LastIndex + 1
+	ent.CommitIndex = st.CommitIndex
 	ent.Data = data
-	
+
 	st.AppendEntry(ent)
 	// notify xport to send
 	st.C <- 0
