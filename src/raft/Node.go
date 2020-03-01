@@ -65,13 +65,13 @@ func (node *Node)AddService(svc Service){
 }
 
 func (node *Node)Start(){
-	node.store.ApplyEntries()
-	
 	go func() {
 		const TimerInterval = 100
 		ticker := time.NewTicker(TimerInterval * time.Millisecond)
 		defer ticker.Stop()
 
+		node.store.ApplyEntries()
+	
 		for{
 			select{
 			case <-ticker.C:
@@ -100,16 +100,24 @@ func (node *Node)Step(){
 	defer node.mux.Unlock()
 
 	fmt.Printf("\n======= Testing: Step %s =======\n\n", node.Id)
-	// receive
-	for len(node.xport.C()) > 0 {
-		msg := <-node.xport.C()
-		log.Println("    receive < ", msg.Encode())
-		node.handleRaftMessage(msg)
-	}
-	// send
-	for len(node.store.C) > 0 {
-		<-node.store.C
-		node.replicateAllMembers()
+	for {
+		n := 0
+		// receive
+		for len(node.xport.C()) > 0 {
+			msg := <-node.xport.C()
+			log.Println("    receive < ", msg.Encode())
+			node.handleRaftMessage(msg)
+			n ++
+		}
+		// send
+		for len(node.store.C) > 0 {
+			<-node.store.C
+			node.replicateAllMembers()
+			n ++
+		}
+		if n == 0 {
+			break
+		}
 	}
 	// timer
 	node.tick(2000)
@@ -545,6 +553,21 @@ func (node *Node)Write(data string) int64 {
 }
 
 /* ###################### Operations ####################### */
+
+func (node *Node)InfoMap() map[string]string {
+	m := make(map[string]string)
+	m["id"] = fmt.Sprintf("%d", node.Id)
+	m["addr"] = node.Addr
+	m["role"] = node.Role
+	m["term"] = fmt.Sprintf("%d", node.Term)
+	m["lastApplied"] = fmt.Sprintf("%d", node.lastApplied)
+	m["commitIndex"] = fmt.Sprintf("%d", node.store.CommitIndex)
+	m["lastTerm"] = fmt.Sprintf("%d", node.store.LastTerm)
+	m["lastIndex"] = fmt.Sprintf("%d", node.store.LastIndex)
+	b, _ := json.Marshal(node.store.State().Members)
+	m["members"] = string(b)
+	return m
+}
 
 func (node *Node)Info() string {
 	node.mux.Lock()

@@ -89,6 +89,7 @@ func (st *Helper)SaveState(){
 	st.db.Set("@State", st.state.Encode())
 	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
 
+	log.Println("SaveState:")
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 }

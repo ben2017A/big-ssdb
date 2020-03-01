@@ -9,7 +9,6 @@ type FakeStorage struct {
 }
 
 func NewFakeStorage() *FakeStorage {
-	log.Println("New")
 	db := new(FakeStorage)
 	db.mm = make(map[string]string)
 	return db
