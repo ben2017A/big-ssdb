@@ -94,6 +94,19 @@ func (node *Node)Start(){
 	}()
 }
 
+// For testing
+func (node *Node)Step(){
+	node.tick(10000)
+	for len(node.store.C) > 0 {
+		<-node.store.C
+		node.replicateAllMembers()
+	}
+	for len(node.xport.C()) > 0 {
+		msg := <-node.xport.C()
+		node.handleRaftMessage(msg)
+	}
+}
+
 func (node *Node)Close(){
 	node.store.Close()
 	node.xport.Close()
@@ -113,7 +126,7 @@ func (node *Node)tick(timeElapse int){
 			if m.ReplicationTimeout <= 0 {
 				if m.NextIndex != m.MatchIndex + 1 {
 					m.NextIndex = m.MatchIndex + 1
-					log.Printf("member: %s, resend: %d", m.Id, m.NextIndex)
+					log.Printf("resend member: %s, nextIndex: %d", m.Id, m.NextIndex)
 				}
 				node.replicateMember(m)
 			}
