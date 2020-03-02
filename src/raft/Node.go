@@ -197,7 +197,7 @@ func (node *Node)startElection(){
 func (node *Node)checkVoteResult(){
 	// checkQuorum
 	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
-		log.Println("Got majority votes")
+		log.Println("Got major votes")
 		node.becomeLeader()
 	}
 }
