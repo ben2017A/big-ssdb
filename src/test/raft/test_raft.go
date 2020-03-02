@@ -106,8 +106,10 @@ func main(){
 
 	fmt.Println("\n---------------------------------------------------\n")
 	
-	n2.Tick(raft.ElectionTimeout * 2)
+	n2.Tick(raft.ElectionTimeout * 2) // start new vote
 	log.Println("\n" + n2.Info())
+	n1.Step()
+	log.Println("\n" + n1.Info())
 	
 
 	fmt.Println("\n---------------------------------------------------\n")

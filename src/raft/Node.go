@@ -14,8 +14,7 @@ import (
 )
 
 const ElectionTimeout = 5 * 1000
-const HeartbeatTimeout   = 4 * 1000
-
+const HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
 const ReplicationTimeout = 1 * 1000
 
 type Node struct{
@@ -33,7 +32,7 @@ type Node struct{
 	
 	votesReceived map[string]string
 
-	electionTimeout int
+	electionTimer int
 
 	store *Helper
 	xport Transport
@@ -47,7 +46,7 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node.Addr = xport.Addr()
 	node.Role = "follower"
 	node.Members = make(map[string]*Member)
-	node.electionTimeout = 3 * 1000
+	node.electionTimer = 3 * 1000
 
 	node.xport = xport
 	node.store = NewHelper(node, db)
@@ -132,18 +131,18 @@ func (node *Node)Close(){
 
 func (node *Node)Tick(timeElapse int){
 	if node.Role == "follower" || node.Role == "candidate" {
-		node.electionTimeout -= timeElapse
-		if node.electionTimeout <= 0 {
+		node.electionTimer += timeElapse
+		if node.electionTimer >= ElectionTimeout {
 			log.Println("Election timeout")
 			node.startElection()
 		}
-	}
-	if node.Role == "leader" {
+	} else if node.Role == "leader" {
 		for _, m := range node.Members {
-			m.ReplicationTimeout -= timeElapse
-			m.HeartbeatTimeout -= timeElapse
+			m.ReceiveTimout += timeElapse
+			m.ReplicationTimer += timeElapse
+			m.HeartbeatTimer += timeElapse
 
-			if m.ReplicationTimeout <= 0 {
+			if m.ReplicationTimer >= ReplicationTimeout {
 				// 如果 matchIndex == 0, 则只需要发送最新的一条 log(即 NextIndex=store.LastIndex)
 				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
 					log.Printf("resend member: %s, nextIndex: %d, matchIndex: %d", m.Id, m.NextIndex, m.MatchIndex)
@@ -151,7 +150,7 @@ func (node *Node)Tick(timeElapse int){
 				}
 				node.replicateMember(m)
 			}
-			if m.HeartbeatTimeout <= 0 {
+			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// log.Println("Heartbeat timeout for node", m.Id)
 				node.heartbeatMember(m)
 			}
@@ -165,8 +164,7 @@ func (node *Node)becomeFollower(){
 	}
 	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
-	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
-	node.electionTimeout = ElectionTimeout + rand.Intn(100) // debug TODO:
+	node.electionTimer = 0
 	
 	for _, m := range node.Members {
 		// discover leader by receiving valid AppendEntry
@@ -184,10 +182,11 @@ func (node *Node)startElection(){
 	node.store.SaveState()
 
 	node.votesReceived = make(map[string]string)
-	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	node.electionTimer = rand.Intn(200)
 
 	msg := NewRequestVoteMsg()
 	for _, m := range node.Members {
+		m.Role = "follower" // no one is leader
 		msg.Dst = m.Id
 		node.send(msg)
 	}
@@ -225,12 +224,12 @@ func (node *Node)resetMemberState(m *Member){
 	m.Role = "follower"
 	m.NextIndex = node.store.LastIndex + 1
 	m.MatchIndex = 0
-	m.HeartbeatTimeout = HeartbeatTimeout
-	m.ReplicationTimeout = ReplicationTimeout
+	m.HeartbeatTimer = 0
+	m.ReplicationTimer = 0
 }
 
 func (node *Node)heartbeatMember(m *Member){
-	m.HeartbeatTimeout = HeartbeatTimeout
+	m.HeartbeatTimer = 0
 	
 	ent := NewHeartbeatEntry(node.store.CommitIndex)
 	prev := node.store.GetEntry(node.store.CommitIndex - 1)
@@ -248,7 +247,7 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
-	m.ReplicationTimeout = ReplicationTimeout
+	m.ReplicationTimer = 0
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
 		log.Printf("stop and wait, next: %d, match: %d", m.NextIndex, m.MatchIndex)
 		return
@@ -269,7 +268,7 @@ func (node *Node)replicateMember(m *Member){
 		count ++
 	}
 	if count > 0 {
-		m.HeartbeatTimeout = HeartbeatTimeout
+		m.HeartbeatTimer = 0
 	}
 }
 
@@ -324,6 +323,22 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
+		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term)
+		if node.Role == "leader" {
+			arr := make([]int, 0, len(node.Members) + 1)
+			arr = append(arr, 0) // self
+			for _, m := range node.Members {
+				arr = append(arr, m.ReceiveTimout)
+			}
+			sort.Ints(arr)
+			log.Println("    receive timeouts =", arr)
+			timer := arr[len(arr)/2]
+			if timer < ElectionTimeout {
+				log.Println("    major followers are still reachable, ignore")
+				return
+			}
+		}
+		
 		node.Term = msg.Term
 		node.VoteFor = ""
 		node.store.SaveState()
@@ -362,6 +377,15 @@ func (node *Node)handleRequestVote(msg *Message){
 		log.Println("already vote for", node.VoteFor, "ignore", msg.Src)
 		return
 	}
+	if node.electionTimer < ElectionTimeout * 2/3 {
+		for _, m := range node.Members {
+			if m.Role == "leader" {
+				log.Printf("leader %s is still active, ignore RequestVote from %s", m.Id, msg.Src)
+				return
+			}
+		}
+	}
+	
 	granted := false
 	if msg.PrevTerm > node.store.LastTerm {
 		granted = true
@@ -372,7 +396,7 @@ func (node *Node)handleRequestVote(msg *Message){
 	}
 
 	if granted {
-		node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+		node.electionTimer = 0
 		log.Println("vote for", msg.Src)
 		node.VoteFor = msg.Src
 		node.store.SaveState()
@@ -395,7 +419,7 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
-	node.electionTimeout = ElectionTimeout + rand.Intn(ElectionTimeout/2)
+	node.electionTimer = 0
 	for _, m := range node.Members {
 		m.Role = "follower"
 	}
@@ -429,6 +453,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
+	m.ReceiveTimout = 0
 
 	if msg.Data == "false" {
 		if msg.PrevIndex < node.store.LastIndex {
@@ -449,7 +474,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		if m.MatchIndex > oldMatchIndex {
 			// sort matchIndex[] in descend order
 			matchIndex := make([]int64, 0, len(node.Members) + 1)
-			matchIndex = append(matchIndex, node.store.LastIndex)
+			matchIndex = append(matchIndex, node.store.LastIndex) // self
 			for _, m := range node.Members {
 				matchIndex = append(matchIndex, m.MatchIndex)
 			}
@@ -616,11 +641,19 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("commitIndex: %d\n", node.store.CommitIndex)
 	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
-	b, _ := json.Marshal(node.store.State().Members)
-	ret += fmt.Sprintf("members: %s\n", string(b))
+	
+	ms := make([]map[string]string, 0)
 	for _, m := range node.Members {
-		ret += fmt.Sprintf("member[%s] nextIndex[%d] matchIndex[%d]", m.Id, m.NextIndex, m.MatchIndex)
+		a := make(map[string]string)
+		a["id"] = m.Id
+		a["role"] = m.Role
+		a["addr"] = m.Addr
+		a["nextIndex"] = fmt.Sprintf("%d", m.NextIndex)
+		a["MatchIndex"] = fmt.Sprintf("%d", m.MatchIndex)
+		ms = append(ms, a)
 	}
+	b, _ := json.Marshal(ms)
+	ret += fmt.Sprintf("members: %s\n", string(b))
 
 	return ret
 }

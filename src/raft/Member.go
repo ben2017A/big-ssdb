@@ -10,8 +10,10 @@ type Member struct{
 	SendWindow int64  // 
 	MatchIndex int64  // last_ack
 
-	HeartbeatTimeout int
-	ReplicationTimeout int
+	HeartbeatTimer int
+	ReplicationTimer int
+
+	ReceiveTimout int // increase on tick(), reset on ApplyEntryAck
 }
 
 func NewMember(id, addr string) *Member{
