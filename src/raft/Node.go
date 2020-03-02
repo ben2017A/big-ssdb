@@ -320,7 +320,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
-		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term)
+		log.Printf("Receive greater msg.term: %d, node.term: %d", msg.Term, node.Term)
 		if node.Role == "leader" {
 			arr := make([]int, 0, len(node.Members) + 1)
 			arr = append(arr, 0) // self
