@@ -7,8 +7,8 @@ type Member struct{
 
 	// sliding window
 	NextIndex int64   // next_send
-	SendWindow int64  // 
 	MatchIndex int64  // last_ack
+	SendWindow int64  // 
 
 	HeartbeatTimer int
 	ReplicationTimer int

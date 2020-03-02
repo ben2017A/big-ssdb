@@ -162,12 +162,9 @@ func (node *Node)becomeFollower(){
 	if node.Role == "follower" {
 		return
 	}
-	log.Println("convert", node.Role, "=> follower")
 	node.Role = "follower"
-	node.electionTimer = 0
-	
+	node.electionTimer = 0	
 	for _, m := range node.Members {
-		// discover leader by receiving valid AppendEntry
 		m.Role = "follower"
 	}
 }
@@ -342,7 +339,10 @@ func (node *Node)handleRaftMessage(msg *Message){
 		node.Term = msg.Term
 		node.VoteFor = ""
 		node.store.SaveState()
-		node.becomeFollower()
+		if node.Role != "follower" {
+			log.Println("    became follower")
+			node.becomeFollower()
+		}
 		// continue processing msg
 	}
 
@@ -642,15 +642,16 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
 	
-	ms := make([]map[string]string, 0)
+	ms := make([]*Member, 0)
 	for _, m := range node.Members {
-		a := make(map[string]string)
-		a["id"] = m.Id
-		a["role"] = m.Role
-		a["addr"] = m.Addr
-		a["nextIndex"] = fmt.Sprintf("%d", m.NextIndex)
-		a["MatchIndex"] = fmt.Sprintf("%d", m.MatchIndex)
-		ms = append(ms, a)
+		// a := make(map[string]string)
+		// a["id"] = m.Id
+		// a["role"] = m.Role
+		// a["addr"] = m.Addr
+		// a["nextIndex"] = fmt.Sprintf("%d", m.NextIndex)
+		// a["matchIndex"] = fmt.Sprintf("%d", m.MatchIndex)
+		// ms = append(ms, a)
+		ms = append(ms, m)
 	}
 	b, _ := json.Marshal(ms)
 	ret += fmt.Sprintf("members: %s\n", string(b))
