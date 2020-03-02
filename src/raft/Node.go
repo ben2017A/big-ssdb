@@ -623,7 +623,7 @@ func (node *Node)InfoMap() map[string]string {
 	m["commitIndex"] = fmt.Sprintf("%d", node.store.CommitIndex)
 	m["lastTerm"] = fmt.Sprintf("%d", node.store.LastTerm)
 	m["lastIndex"] = fmt.Sprintf("%d", node.store.LastIndex)
-	b, _ := json.Marshal(node.store.State().Members)
+	b, _ := json.Marshal(node.Members)
 	m["members"] = string(b)
 	return m
 }
@@ -642,18 +642,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
 	
-	ms := make([]*Member, 0)
-	for _, m := range node.Members {
-		// a := make(map[string]string)
-		// a["id"] = m.Id
-		// a["role"] = m.Role
-		// a["addr"] = m.Addr
-		// a["nextIndex"] = fmt.Sprintf("%d", m.NextIndex)
-		// a["matchIndex"] = fmt.Sprintf("%d", m.MatchIndex)
-		// ms = append(ms, a)
-		ms = append(ms, m)
-	}
-	b, _ := json.Marshal(ms)
+	b, _ := json.Marshal(node.Members)
 	ret += fmt.Sprintf("members: %s\n", string(b))
 
 	return ret
