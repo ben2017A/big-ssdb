@@ -133,7 +133,7 @@ func (node *Node)Tick(timeElapse int){
 	if node.Role == "follower" || node.Role == "candidate" {
 		node.electionTimer += timeElapse
 		if node.electionTimer >= ElectionTimeout {
-			log.Println("Election timeout")
+			log.Println("Election timeout, became candidate")
 			node.startElection()
 		}
 	} else if node.Role == "leader" {
@@ -165,14 +165,11 @@ func (node *Node)becomeFollower(){
 	node.Role = "follower"
 	node.electionTimer = 0	
 	for _, m := range node.Members {
-		m.Role = "follower"
+		node.resetMemberState(m)
 	}
 }
 
 func (node *Node)startElection(){
-	if node.Role != "candidate" {
-		log.Println("convert", node.Role, "=> candidate")
-	}
 	node.Role = "candidate"
 	node.Term += 1
 	node.VoteFor = node.Id
@@ -204,12 +201,10 @@ func (node *Node)checkVoteResult(){
 
 func (node *Node)becomeLeader(){
 	node.Role = "leader"
-	// write noop entry with currentTerm
-	if len(node.Members) > 0 {
-		for _, m := range node.Members {
-			node.resetMemberState(m)
-		}
+	for _, m := range node.Members {
+		node.resetMemberState(m)
 	}
+	// write noop entry with currentTerm
 	node.store.AddNewEntry("Noop", "")
 }
 
@@ -501,13 +496,10 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	}
 }
 
-// 也许 leader 只需要发送 InstallSnapshot 指令, 新节点收到后主动拉取
-// Raft Snapshot 和 Service Snapshot, 而不是由 leader 推送.
-// 未来可以从配置中心拉取.
 func (node *Node)sendInstallSnapshot(m *Member){
-	sn := node.store.MakeMemSnapshot()
+	sn := node.store.CreateSnapshot()
 	if sn == nil {
-		log.Println("MakeMemSnapshot() error!")
+		log.Println("CreateSnapshot() error!")
 		return
 	}
 	msg := NewInstallSnapshotMsg(m.Id, sn.Encode())
@@ -520,21 +512,49 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 		log.Println("NewSnapshotFromString() error!")
 		return
 	}
-	
-	log.Println("install Raft snapshot")
+	node._installSnapshot(sn)
+	// TODO: copy service snapshot
+	log.Println("TODO: install Service snapshot")
+}
+
+func (node *Node)_installSnapshot(sn *Snapshot) bool {
+	log.Println("Install Raft snapshot")
 	for _, m := range node.Members {
 		// it's ok to delete item while iterating
 		node.disconnectMember(m.Id)
 	}
-	for nodeId, nodeAddr := range node.store.State().Members {
+	for nodeId, nodeAddr := range sn.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
 	node.lastApplied = sn.LastEntry().Index
 
-	node.store.InstallSnapshot(sn)
+	return node.store.InstallSnapshot(sn)
+}
 
-	// TODO: copy service snapshot
-	log.Println("TODO: install Service snapshot")
+/* ###################### Service interface ####################### */
+
+func (node *Node)LastApplied() int64{
+	return node.lastApplied
+}
+
+func (node *Node)ApplyEntry(ent *Entry){
+	node.lastApplied = ent.Index
+
+	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
+	if ent.Type == "AddMember" {
+		log.Println("[Apply]", ent.Encode())
+		ps := strings.Split(ent.Data, " ")
+		if len(ps) == 2 {
+			node.connectMember(ps[0], ps[1])
+			node.store.SaveState()
+		}
+	}else if ent.Type == "DelMember" {
+		log.Println("[Apply]", ent.Encode())
+		nodeId := ent.Data
+		// the deleted node would not receive a commit msg that it had been deleted
+		node.disconnectMember(nodeId)
+		node.store.SaveState()
+	}
 }
 
 /* ###################### Quorum Methods ####################### */
@@ -580,32 +600,6 @@ func (node *Node)Write(data string) int64 {
 	return ent.Index
 }
 
-/* ###################### Service interface ####################### */
-
-func (node *Node)LastApplied() int64{
-	return node.lastApplied
-}
-
-func (node *Node)ApplyEntry(ent *Entry){
-	node.lastApplied = ent.Index
-
-	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
-	if ent.Type == "AddMember" {
-		log.Println("[Apply]", ent.Encode())
-		ps := strings.Split(ent.Data, " ")
-		if len(ps) == 2 {
-			node.connectMember(ps[0], ps[1])
-			node.store.SaveState()
-		}
-	}else if ent.Type == "DelMember" {
-		log.Println("[Apply]", ent.Encode())
-		nodeId := ent.Data
-		// the deleted node would not receive a commit msg that it had been deleted
-		node.disconnectMember(nodeId)
-		node.store.SaveState()
-	}
-}
-
 /* ###################### Operations ####################### */
 
 func (node *Node)InfoMap() map[string]string {
@@ -644,6 +638,20 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("members: %s\n", string(b))
 
 	return ret
+}
+
+func (node *Node)CreateSnapshot() *Snapshot {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	return node.store.CreateSnapshot()
+}
+
+func (node *Node)InstallSnapshot(sn *Snapshot) bool {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	return node._installSnapshot(sn)
 }
 
 func (node *Node)JoinGroup(nodeId string, nodeAddr string){

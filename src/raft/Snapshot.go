@@ -30,6 +30,7 @@ func NewSnapshotFromHelper(store *Helper) *Snapshot {
 			log.Fatal("lost entry#", store.CommitIndex - 1)
 			return nil
 		}
+		ent.CommitIndex = ent.Index
 		sn.entries = append(sn.entries, ent)
 	}
 	ent := store.GetEntry(store.CommitIndex)
@@ -37,6 +38,7 @@ func NewSnapshotFromHelper(store *Helper) *Snapshot {
 		log.Fatal("lost entry#", store.CommitIndex)
 		return nil
 	}
+	ent.CommitIndex = ent.Index
 	sn.entries = append(sn.entries, ent)
 
 	return sn

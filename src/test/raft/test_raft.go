@@ -110,17 +110,21 @@ func test_new_leader() {
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	setup_master()
-	setup_follower()
-	test_quorum_write()
-	fmt.Println("\n---------------------------------------------------\n")
+	// setup_master()
+	// setup_follower()
+	// test_quorum_write()
+	// fmt.Println("\n---------------------------------------------------\n")
+		
+	// setup_master()
+	// setup_follower()
+	// test_new_leader()
+	// fmt.Println("\n---------------------------------------------------\n")
 	
 	setup_master()
-	setup_follower()
-	test_new_leader()
-
+	log.Println(n1.CreateSnapshot().Encode())
 	fmt.Println("\n---------------------------------------------------\n")
-	
-
-	fmt.Println("\n---------------------------------------------------\n")
+	// setup_follower()
+	log.Println("\n" + n2.Info())
+	n2.InstallSnapshot(n1.CreateSnapshot())
+	log.Println("\n" + n2.Info())
 }

@@ -198,7 +198,7 @@ func (st *Helper)ApplyEntries(){
 
 /* #################### Snapshot ###################### */
 
-func (st *Helper)MakeMemSnapshot() *Snapshot {
+func (st *Helper)CreateSnapshot() *Snapshot {
 	return NewSnapshotFromHelper(st)
 }
 

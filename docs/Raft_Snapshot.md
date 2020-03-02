@@ -8,6 +8,8 @@ Leader 发现 follower 落后太多时, 将向其发送 InstallSnapshot 报文, 
 
 Follower 收到后, 清除 Service Database 和 Raft Database, 然后安装 Raft Snapshot.
 
+未来可以从配置中心拉取 Raft Snapshot.
+
 ## Service Snapshot
 
 Raft 在 Apply 日志时, 发送 Service 的 lastApplied 落后太多, 所以告知 Service 安装快照. Service 用自己的方式复制并安装快照, 更新 lastApplied(也即 Service Database 的 commitIndex).
