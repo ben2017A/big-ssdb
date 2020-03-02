@@ -197,15 +197,13 @@ func (node *Node)startElection(){
 func (node *Node)checkVoteResult(){
 	// checkQuorum
 	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
-		log.Println("Got major votes")
+		log.Printf("Node %s became leader", node.Id)
 		node.becomeLeader()
 	}
 }
 
 func (node *Node)becomeLeader(){
-	log.Println("convert", node.Role, "=> leader")
 	node.Role = "leader"
-
 	// write noop entry with currentTerm
 	if len(node.Members) > 0 {
 		for _, m := range node.Members {
@@ -338,11 +336,11 @@ func (node *Node)handleRaftMessage(msg *Message){
 		
 		node.Term = msg.Term
 		node.VoteFor = ""
-		node.store.SaveState()
 		if node.Role != "follower" {
-			log.Println("    became follower")
+			log.Printf("Node %s became follower", node.Id)
 			node.becomeFollower()
 		}
+		node.store.SaveState()
 		// continue processing msg
 	}
 
