@@ -221,5 +221,14 @@ func (st *Helper)InstallSnapshot(sn *Snapshot) bool {
 	}
 	st.SaveState()
 
-	return false
+	return true
+}
+
+func (st *Helper)CleanAll() bool {
+	st.CommitIndex = 0
+	st.LastTerm = 0
+	st.LastIndex = 0
+	st.db.CleanAll()
+	st.SaveState()
+	return true
 }

@@ -667,17 +667,17 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 		log.Println("could not join self:", nodeId)
 		return
 	}
-	// reset Raft state
+
 	node.Term = 0
 	node.VoteFor = ""
-	node.Members = make(map[string]*Member)
-	node.store.CommitIndex = 0
-	node.store.SaveState()
-
-	node.becomeFollower()
+	node.lastApplied = 0
+	for _, m := range node.Members {
+		// it's ok to delete item while iterating
+		node.disconnectMember(m.Id)
+	}
 	node.connectMember(nodeId, nodeAddr)
-	
-	// TODO: delete raft log entries
+	node.becomeFollower()
+	node.store.CleanAll()
 }
 
 func (node *Node)UpdateStatus() {
