@@ -449,6 +449,10 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m.ReceiveTimout = 0
 
 	if msg.Data == "false" {
+		if msg.PrevIndex == 0 {
+			node.sendInstallSnapshot(m)
+			return
+		}
 		if msg.PrevIndex < node.store.LastIndex {
 			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
 			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
@@ -676,7 +680,7 @@ func (node *Node)JoinGroup(nodeId string, nodeAddr string){
 	// TODO: delete raft log entries
 }
 
-func (node *Node)ChangeMode() {
+func (node *Node)UpdateStatus() {
 }
 
 func (node *Node)Helper() *Helper {
