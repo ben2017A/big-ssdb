@@ -44,7 +44,7 @@ func NewHelper(node *Node, db Storage) *Helper{
 	node.Term = st.state.Term
 	node.VoteFor = st.state.VoteFor
 
-	log.Printf("Init raft node[%s]:", st.node.Id)
+	log.Printf("init raft node[%s]:", st.node.Id)
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 
@@ -90,7 +90,7 @@ func (st *Helper)SaveState(){
 	st.db.Set("@State", st.state.Encode())
 	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
 
-	log.Printf("Save raft state[%s]:", st.node.Id)
+	log.Printf("save raft state[%s]:", st.node.Id)
 	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
 	log.Println("    State:", st.state.Encode())
 }
@@ -186,6 +186,8 @@ func (st *Helper)ApplyEntries(){
 		for idx := svc.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
 			if ent == nil {
+				// TODO:
+				log.Println("TODO: notify Service to install snapshot")
 				log.Fatalf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
 				break;
 			}
@@ -200,7 +202,7 @@ func (st *Helper)CreateSnapshot() *Snapshot {
 	return NewSnapshotFromHelper(st)
 }
 
-// install 之前, Node 需要配置好 Members
+// install 之前, Node 需要配置好 Members, 因为 SaveState() 会从 node.Members 获取
 func (st *Helper)InstallSnapshot(sn *Snapshot) bool {
 	state := sn.State()
 	st.node.Term = state.Term

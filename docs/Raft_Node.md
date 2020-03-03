@@ -1,11 +1,22 @@
-# Raft Add Member
+# Raft Node
 
-节点工作模式:
+## 工作模式
 
 * freeze: 未初始化
 * logger: 接收 log, 但不 apply, 参与投票但不参加竞选
 * follow: 接收 log, 并 apply 到 Service, 参与投票但不参加竞选
 * normal: 可参加竞选
+
+### 状态变更
+
+* freeze -> logger: Raft 安装完 Snapshot 后.
+* logger -> freeze: 收到 Snapshot 后, 立刻回退.
+* follow -> freeze: 收到 Snapshot 后, 立刻回退.
+* logger -> follow: Service 安装完 Snapshot 后.
+* follow -> logger: 发现 Service 的 lastApplied 落后太多, 或者 lastApplied 对应的日志不存在.
+* follow -> normal: 由外部使用者发起.
+
+## Add Member
 
 给 leader 发 AddMember 指令后, 新节点被集群接受.
 
