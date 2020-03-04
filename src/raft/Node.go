@@ -164,9 +164,7 @@ func (node *Node)becomeFollower(){
 	}
 	node.Role = "follower"
 	node.electionTimer = 0	
-	for _, m := range node.Members {
-		node.resetMemberState(m)
-	}
+	node.resetAllMember()
 }
 
 func (node *Node)startElection(){
@@ -177,10 +175,10 @@ func (node *Node)startElection(){
 
 	node.votesReceived = make(map[string]string)
 	node.electionTimer = rand.Intn(200)
+	node.resetAllMember()
 
 	msg := NewRequestVoteMsg()
 	for _, m := range node.Members {
-		m.Role = "follower" // no one is leader
 		msg.Dst = m.Id
 		node.send(msg)
 	}
@@ -201,16 +199,20 @@ func (node *Node)checkVoteResult(){
 
 func (node *Node)becomeLeader(){
 	node.Role = "leader"
-	for _, m := range node.Members {
-		node.resetMemberState(m)
-	}
+	node.resetAllMember()
 	// write noop entry with currentTerm
 	node.store.AddNewEntry("Noop", "")
 }
 
 /* ############################################# */
 
-func (node *Node)resetMemberState(m *Member){
+func (node *Node)resetAllMember(){
+	for _, m := range node.Members {
+		node.resetMember(m)
+	}
+}
+
+func (node *Node)resetMember(m *Member){
 	m.Role = "follower"
 	m.NextIndex = node.store.LastIndex + 1
 	m.MatchIndex = 0
@@ -270,10 +272,17 @@ func (node *Node)connectMember(nodeId string, nodeAddr string){
 		return
 	}
 	m := NewMember(nodeId, nodeAddr)
-	node.resetMemberState(m)
+	node.resetMember(m)
 	node.Members[m.Id] = m
 	node.xport.Connect(m.Id, m.Addr)
 	log.Println("    connect member", m.Id, m.Addr)
+}
+
+func (node *Node)disconnectAllMember(){
+	for _, m := range node.Members {
+		// it's ok to delete item while iterating
+		node.disconnectMember(m.Id)
+	}
 }
 
 func (node *Node)disconnectMember(nodeId string){
@@ -342,12 +351,16 @@ func (node *Node)handleRaftMessage(msg *Message){
 	if node.Role == "leader" {
 		if msg.Cmd == MessageCmdAppendEntryAck {
 			node.handleAppendEntryAck(msg)
+		} else {
+			log.Println("drop message")
 		}
 		return
 	}
 	if node.Role == "candidate" {
 		if msg.Cmd == MessageCmdRequestVoteAck {
 			node.handleRequestVoteAck(msg)
+		} else {
+			log.Println("drop message")
 		}
 		return
 	}
@@ -358,6 +371,8 @@ func (node *Node)handleRaftMessage(msg *Message){
 			node.handleAppendEntry(msg)
 		} else if msg.Cmd == MessageCmdInstallSnapshot {
 			node.handleInstallSnapshot(msg)
+		} else {
+			log.Println("drop message")
 		}
 		return
 	}
@@ -413,17 +428,19 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
+	m := node.Members[msg.Src]
+	m.ReceiveTimout = 0
 	for _, m := range node.Members {
 		m.Role = "follower"
 	}
-	node.Members[msg.Src].Role = "leader"
+	m.Role = "leader"
 
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Index != 1 { // if not very first entry
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil || prev.Term != msg.PrevTerm {
-			log.Println("bad prev entry", msg.PrevIndex, msg.PrevTerm)
+			log.Println("bad prev entry", msg.PrevTerm, msg.PrevIndex)
 			node.send(NewAppendEntryAck(msg.Src, false))
 			return
 		}
@@ -517,16 +534,15 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 		return
 	}
 	node._installSnapshot(sn)
+	node.send(NewAppendEntryAck(msg.Src, true))
+	
 	// TODO: copy service snapshot
 	log.Println("TODO: install Service snapshot")
 }
 
 func (node *Node)_installSnapshot(sn *Snapshot) bool {
-	log.Println("Install Raft snapshot")
-	for _, m := range node.Members {
-		// it's ok to delete item while iterating
-		node.disconnectMember(m.Id)
-	}
+	log.Println("install Raft snapshot")
+	node.disconnectAllMember()
 	for nodeId, nodeAddr := range sn.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
@@ -658,26 +674,37 @@ func (node *Node)InstallSnapshot(sn *Snapshot) bool {
 	return node._installSnapshot(sn)
 }
 
-func (node *Node)JoinGroup(nodeId string, nodeAddr string){
+func (node *Node)JoinGroup(leaderId string, leaderAddr string) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
-	log.Println("JoinGroup", nodeId, nodeAddr)
-	if nodeId == node.Id {
-		log.Println("could not join self:", nodeId)
+	if leaderId == node.Id {
+		log.Println("could not join self:", leaderId)
 		return
 	}
+	if len(node.Members) > 0 {
+		log.Println("already in group")
+		return
+	}
+	log.Println("JoinGroup", leaderId, leaderAddr)
 
 	node.Term = 0
 	node.VoteFor = ""
 	node.lastApplied = 0
-	for _, m := range node.Members {
-		// it's ok to delete item while iterating
-		node.disconnectMember(m.Id)
-	}
-	node.connectMember(nodeId, nodeAddr)
+	node.connectMember(leaderId, leaderAddr)
 	node.becomeFollower()
+	
+	log.Println("clean Raft database")
 	node.store.CleanAll()
+}
+
+func (node *Node)QuitGroup() {
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	
+	log.Println("QuitGroup")
+	node.disconnectAllMember()
+	node.store.SaveState()
 }
 
 func (node *Node)UpdateStatus() {

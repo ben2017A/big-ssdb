@@ -43,14 +43,14 @@ func setup_master() {
 
 func setup_follower() {
 	n2.JoinGroup("n1", "addr1")
-	n2.Step() // send Heartbeat Ack[false]
+	n2.Step() // recv Heartbeat, send Ack[false]
 	if n2.Role != "follower" {
 		log.Fatal("error")
 	}
 	
-	n1.Step() // send ApplyEntry
+	n1.Step() // send InstallSnapshot
 	
-	n2.Step() // recv, commit, send Ack
+	n2.Step() // InstallSnapshot
 	log.Println("\n" + n2.Info())
 	
 	n1.Step() // recv Ack, send Heartbeat
@@ -102,7 +102,14 @@ func test_new_leader() {
 	}
 
 	n2.Step() // become leader, send Noop
+	log.Println("\n" + n2.Info())
 	if n2.Role != "leader" {
+		log.Fatal("error")
+	}
+	
+	n1.Step()
+	log.Println("\n" + n1.Info())
+	if n1.Members["n2"].Role != "leader" {
 		log.Fatal("error")
 	}
 }
@@ -110,21 +117,18 @@ func test_new_leader() {
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	// setup_master()
-	// setup_follower()
-	// test_quorum_write()
-	// fmt.Println("\n---------------------------------------------------\n")
+	setup_master()
+	setup_follower()
+	test_quorum_write()
+	fmt.Println("\n---------------------------------------------------\n")
 		
-	// setup_master()
-	// setup_follower()
-	// test_new_leader()
-	// fmt.Println("\n---------------------------------------------------\n")
+	setup_master()
+	setup_follower()
+	test_new_leader()
+	fmt.Println("\n---------------------------------------------------\n")
 	
 	setup_master()
-	log.Println(n1.CreateSnapshot().Encode())
+	setup_follower()
+	log.Println("\n" + n2.Info())
 	fmt.Println("\n---------------------------------------------------\n")
-	// setup_follower()
-	log.Println("\n" + n2.Info())
-	n2.InstallSnapshot(n1.CreateSnapshot())
-	log.Println("\n" + n2.Info())
 }
