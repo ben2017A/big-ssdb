@@ -137,8 +137,8 @@ func (st *Helper)AddNewEntry(type_, data string) *Entry{
 
 // called when install snapshot
 func (st *Helper)SaveEntry(ent *Entry){
-	st.entries[ent.Index] = ent
 	st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
+	st.entries[ent.Index] = ent
 }
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
