@@ -86,7 +86,13 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		svc.xport.Send(resp)
 		return
 	}
-
+	
+	if cmd == "info" {
+		s := svc.node.Info()
+		resp := &link.Message{req.Src, s}
+		svc.xport.Send(resp)
+		return
+	}
 	if cmd == "dump" {
 		fn := svc.dir + "/snapshot.db"
 		svc.db.MakeFileSnapshot(fn)
@@ -99,7 +105,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 
-	if svc.node.Role != RoleLeader {
+	if svc.node.Role != raft.RoleLeader {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
 		svc.xport.Send(resp)

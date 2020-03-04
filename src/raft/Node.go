@@ -247,7 +247,11 @@ func (node *Node)replicateAllMembers(){
 func (node *Node)replicateMember(m *Member){
 	m.ReplicationTimer = 0
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
-		log.Printf("stop and wait, next: %d, match: %d", m.NextIndex, m.MatchIndex)
+		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+		return
+	}
+	if m.ReceiveTimout >= ReplicationTimeout * 3 {
+		log.Printf("replicate timeout %s", m.Id)
 		return
 	}
 
