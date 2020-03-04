@@ -26,7 +26,7 @@ func setup_master() {
 	log.Println("init:\n" + n1.Info())
 	n1.Tick(raft.ElectionTimeout * 2)
 	log.Println("\n" + n1.Info())
-	if n1.Role != "leader" {
+	if n1.Role != raft.RoleLeader {
 		log.Fatal("error")
 	}
 
@@ -44,7 +44,7 @@ func setup_master() {
 func setup_follower() {
 	n2.JoinGroup("n1", "addr1")
 	n2.Step() // recv Heartbeat, send Ack[false]
-	if n2.Role != "follower" {
+	if n2.Role != raft.RoleFollower {
 		log.Fatal("error")
 	}
 	
@@ -90,26 +90,26 @@ func test_quorum_write() {
 func test_new_leader() {
 	n2.Tick(raft.ElectionTimeout) // start new vote
 	log.Println("\n" + n2.Info())
-	if n2.Role != "candidate" || n2.Term != 2 {
+	if n2.Role != raft.RoleCandidate || n2.Term != 2 {
 		log.Fatal("error")
 	}
 
 	n1.Tick(raft.ElectionTimeout) // receive follower timeout
 	n1.Step() // become follower. recv RequestVote, send ack
 	log.Println("\n" + n1.Info())
-	if n1.Role != "follower" || n1.Term != 2 {
+	if n1.Role != raft.RoleFollower || n1.Term != 2 {
 		log.Fatal("error")
 	}
 
 	n2.Step() // become leader, send Noop
 	log.Println("\n" + n2.Info())
-	if n2.Role != "leader" {
+	if n2.Role != raft.RoleLeader {
 		log.Fatal("error")
 	}
 	
 	n1.Step()
 	log.Println("\n" + n1.Info())
-	if n1.Members["n2"].Role != "leader" {
+	if n1.Members["n2"].Role != raft.RoleLeader {
 		log.Fatal("error")
 	}
 }

@@ -18,7 +18,7 @@ type Member struct{
 
 func NewMember(id, addr string) *Member{
 	ret := new(Member)
-	ret.Role = "follower"
+	ret.Role = RoleFollower
 	ret.Id = id
 	ret.Addr = addr
 	ret.SendWindow = 3

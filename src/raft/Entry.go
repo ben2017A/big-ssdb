@@ -7,12 +7,19 @@ import (
 	"util"
 )
 
-// Commit: commit entry#n and prior entries
+const(
+	EntryTypeNoop      = "Noop"
+	EntryTypeData      = "Data"
+	EntryTypePing      = "Ping"
+	EntryTypeAddMember = "AddMember"
+	EntryTypeDelMember = "DelMember"
+)
+
 type Entry struct{
 	Term int32
 	Index int64
 	CommitIndex int64
-	Type string // AddMember, DelMember, Heartbeat, Noop, Write
+	Type string
 	Data string
 }
 
@@ -44,9 +51,9 @@ func (e *Entry)Decode(buf string) bool{
 	return true
 }
 
-func NewHeartbeatEntry(commitIndex int64) *Entry{
+func NewPingEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
-	ent.Type = "Heartbeat"
+	ent.Type = EntryTypePing
 	ent.Term = 0
 	ent.Index = 0
 	ent.CommitIndex = commitIndex

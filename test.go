@@ -99,7 +99,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 
-	if svc.node.Role != "leader" {
+	if svc.node.Role != RoleLeader {
 		log.Println("error: not leader")
 		resp := &link.Message{req.Src, "error: not leader"}
 		svc.xport.Send(resp)
@@ -124,7 +124,7 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 
 	var ret string
 
-	if ent.Type == "Write"{
+	if ent.Type == raft.EntryTypeData{
 		log.Println("[Apply]", ent.Index, ent.Data)
 
 		req := new(link.Request)

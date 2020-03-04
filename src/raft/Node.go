@@ -13,6 +13,12 @@ import (
 	"util"
 )
 
+const(
+	RoleLeader      = "leader"
+	RoleFollower    = "follower"
+	RoleCandidate   = "candidate"
+)
+
 const ElectionTimeout = 5 * 1000
 const HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
 const ReplicationTimeout = 1 * 1000
@@ -44,7 +50,7 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
 	node.Addr = xport.Addr()
-	node.Role = "follower"
+	node.Role = RoleFollower
 	node.Members = make(map[string]*Member)
 	node.electionTimer = 3 * 1000
 
@@ -130,13 +136,13 @@ func (node *Node)Close(){
 }
 
 func (node *Node)Tick(timeElapse int){
-	if node.Role == "follower" || node.Role == "candidate" {
+	if node.Role == RoleFollower || node.Role == RoleCandidate {
 		node.electionTimer += timeElapse
 		if node.electionTimer >= ElectionTimeout {
 			log.Println("Election timeout, became candidate")
 			node.startElection()
 		}
-	} else if node.Role == "leader" {
+	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
 			m.ReceiveTimout += timeElapse
 			m.ReplicationTimer += timeElapse
@@ -152,23 +158,23 @@ func (node *Node)Tick(timeElapse int){
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// log.Println("Heartbeat timeout for node", m.Id)
-				node.heartbeatMember(m)
+				node.pingMember(m)
 			}
 		}
 	}
 }
 
 func (node *Node)becomeFollower(){
-	if node.Role == "follower" {
+	if node.Role == RoleFollower {
 		return
 	}
-	node.Role = "follower"
+	node.Role = RoleFollower
 	node.electionTimer = 0	
 	node.resetAllMember()
 }
 
 func (node *Node)startElection(){
-	node.Role = "candidate"
+	node.Role = RoleCandidate
 	node.Term += 1
 	node.VoteFor = node.Id
 	node.store.SaveState()
@@ -198,10 +204,10 @@ func (node *Node)checkVoteResult(){
 }
 
 func (node *Node)becomeLeader(){
-	node.Role = "leader"
+	node.Role = RoleLeader
 	node.resetAllMember()
 	// write noop entry with currentTerm
-	node.store.AddNewEntry("Noop", "")
+	node.store.AddNewEntry(EntryTypeNoop, "")
 }
 
 /* ############################################# */
@@ -213,17 +219,17 @@ func (node *Node)resetAllMember(){
 }
 
 func (node *Node)resetMember(m *Member){
-	m.Role = "follower"
+	m.Role = RoleFollower
 	m.NextIndex = node.store.LastIndex + 1
 	m.MatchIndex = 0
 	m.HeartbeatTimer = 0
 	m.ReplicationTimer = 0
 }
 
-func (node *Node)heartbeatMember(m *Member){
+func (node *Node)pingMember(m *Member){
 	m.HeartbeatTimer = 0
 	
-	ent := NewHeartbeatEntry(node.store.CommitIndex)
+	ent := NewPingEntry(node.store.CommitIndex)
 	prev := node.store.GetEntry(node.store.CommitIndex - 1)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
@@ -323,7 +329,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term)
-		if node.Role == "leader" {
+		if node.Role == RoleLeader {
 			arr := make([]int, 0, len(node.Members) + 1)
 			arr = append(arr, 0) // self
 			for _, m := range node.Members {
@@ -340,7 +346,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		
 		node.Term = msg.Term
 		node.VoteFor = ""
-		if node.Role != "follower" {
+		if node.Role != RoleFollower {
 			log.Printf("Node %s became follower", node.Id)
 			node.becomeFollower()
 		}
@@ -348,7 +354,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		// continue processing msg
 	}
 
-	if node.Role == "leader" {
+	if node.Role == RoleLeader {
 		if msg.Cmd == MessageCmdAppendEntryAck {
 			node.handleAppendEntryAck(msg)
 		} else {
@@ -356,7 +362,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		return
 	}
-	if node.Role == "candidate" {
+	if node.Role == RoleCandidate {
 		if msg.Cmd == MessageCmdRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		} else {
@@ -364,7 +370,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		return
 	}
-	if node.Role == "follower" {
+	if node.Role == RoleFollower {
 		if msg.Cmd == MessageCmdRequestVote {
 			node.handleRequestVote(msg)
 		} else if msg.Cmd == MessageCmdAppendEntry {
@@ -387,7 +393,7 @@ func (node *Node)handleRequestVote(msg *Message){
 	}
 	if node.electionTimer < ElectionTimeout * 2/3 {
 		for _, m := range node.Members {
-			if m.Role == "leader" {
+			if m.Role == RoleLeader {
 				log.Printf("leader %s is still active, ignore RequestVote from %s", m.Id, msg.Src)
 				return
 			}
@@ -431,9 +437,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 	m := node.Members[msg.Src]
 	m.ReceiveTimout = 0
 	for _, m := range node.Members {
-		m.Role = "follower"
+		m.Role = RoleFollower
 	}
-	m.Role = "leader"
+	m.Role = RoleLeader
 
 	ent := DecodeEntry(msg.Data)
 
@@ -446,7 +452,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 	}
 
-	if ent.Type == "Heartbeat" {
+	if ent.Type == EntryTypePing {
 		//
 	} else {
 		old := node.store.GetEntry(ent.Index)
@@ -510,7 +516,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 				// 如果 follower 回复了最后一条 entry
 				if m.MatchIndex  == node.store.LastIndex {
 					// immediately notify followers to commit
-					node.heartbeatMember(m)
+					node.pingMember(m)
 				}
 			}
 		}
@@ -561,14 +567,14 @@ func (node *Node)ApplyEntry(ent *Entry){
 	node.lastApplied = ent.Index
 
 	// 注意, 不能在 ApplyEntry 里修改 CommitIndex
-	if ent.Type == "AddMember" {
+	if ent.Type == EntryTypeAddMember {
 		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
 		if len(ps) == 2 {
 			node.connectMember(ps[0], ps[1])
 			node.store.SaveState()
 		}
-	}else if ent.Type == "DelMember" {
+	}else if ent.Type == EntryTypeDelMember {
 		log.Println("[Apply]", ent.Encode())
 		nodeId := ent.Data
 		// the deleted node would not receive a commit msg that it had been deleted
@@ -583,13 +589,13 @@ func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 
-	if node.Role != "leader" {
+	if node.Role != RoleLeader {
 		log.Println("error: not leader")
 		return -1
 	}
 	
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
-	ent := node.store.AddNewEntry("AddMember", data)
+	ent := node.store.AddNewEntry(EntryTypeAddMember, data)
 	return ent.Index
 }
 
@@ -597,13 +603,13 @@ func (node *Node)DelMember(nodeId string) int64 {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 
-	if node.Role != "leader" {
+	if node.Role != RoleLeader {
 		log.Println("error: not leader")
 		return -1
 	}
 	
 	data := nodeId
-	ent := node.store.AddNewEntry("DelMember", data)
+	ent := node.store.AddNewEntry(EntryTypeDelMember, data)
 	return ent.Index
 }
 
@@ -611,12 +617,12 @@ func (node *Node)Write(data string) int64 {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
-	if node.Role != "leader" {
+	if node.Role != RoleLeader {
 		log.Println("error: not leader")
 		return -1
 	}
 	
-	ent := node.store.AddNewEntry("Write", data)
+	ent := node.store.AddNewEntry(EntryTypeData, data)
 	return ent.Index
 }
 
