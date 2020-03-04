@@ -40,5 +40,5 @@ TODO: Service Database.
 
 ### QuitGroup
 
-删除 Raft Database, 但不删除 Service Database. 进入 freeze 状态.
+不删除数据, 进入 freeze 状态.
 

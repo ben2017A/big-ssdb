@@ -119,7 +119,6 @@ func main(){
 
 	setup_master()
 	setup_follower()
-	test_quorum_write()
 	fmt.Println("\n---------------------------------------------------\n")
 		
 	setup_master()
@@ -129,6 +128,6 @@ func main(){
 	
 	setup_master()
 	setup_follower()
-	log.Println("\n" + n2.Info())
+	test_quorum_write()
 	fmt.Println("\n---------------------------------------------------\n")
 }
