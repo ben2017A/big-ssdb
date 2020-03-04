@@ -216,10 +216,10 @@ func (st *Helper)InstallSnapshot(sn *Snapshot) bool {
 	st.db.CleanAll()
 
 	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
+	st.SaveState()
 	for _, ent := range sn.Entries() {
 		st.SaveEntry(ent)
 	}
-	st.SaveState()
 
 	return true
 }
