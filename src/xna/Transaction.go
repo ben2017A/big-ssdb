@@ -53,7 +53,7 @@ func (tx *Transaction)AddEntry(ent *Entry) {
 
 	if ent.Type == EntryTypeSet || ent.Type == EntryTypeDel {
 		tx.mm[ent.Key] = ent
-	} else if ent.Type == EntryTypeRollback {
+	} else if ent.Type == EntryTypeCancel {
 		tx.mm = make(map[string]*Entry)
 	}
 }

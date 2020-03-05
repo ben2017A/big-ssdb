@@ -2,6 +2,8 @@ package ssdb
 
 import (
 	"fmt"
+	"os"
+	"log"
 	"store"
 	"util"
 )
@@ -12,6 +14,13 @@ type Snapshot struct {
 }
 
 func NewSnapshotWriter(commitIndex int64, path string) *Snapshot {
+	if util.FileExists(path) {
+		err := os.Remove(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	sn := new(Snapshot)
 	sn.commitIndex = commitIndex
 	sn.wal = store.OpenWalFile(path)

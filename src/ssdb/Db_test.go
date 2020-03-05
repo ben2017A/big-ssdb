@@ -10,10 +10,11 @@ import (
 func TestDb(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	db := OpenDb("./tmp")
+	db := OpenDb("./tmp/db")
 	defer db.Close()
 	
-	// idx := db.CommitIndex()
+	idx := db.CommitIndex()
+	log.Println("commit index", idx)
 
 	// idx ++
 	// db.Set(idx, "a", "1")

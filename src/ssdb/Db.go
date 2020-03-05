@@ -4,15 +4,14 @@ import (
 	"log"
 	"path/filepath"
 	"store"
-	"xna"
 	"util"
 )
 
-// TODO: 线程安全
+// 非线程安全
 type Db struct {
 	dir string
 	kv *store.KVStore
-	redo *xna.Redolog
+	redo *RedoManager
 }
 
 func OpenDb(dir string) *Db {
@@ -21,7 +20,7 @@ func OpenDb(dir string) *Db {
 	db := new(Db)
 	db.dir = dir
 	db.kv = store.OpenKVStore(dir)
-	db.redo = xna.OpenRedolog(dir + "/redo.log")
+	db.redo = OpenRedoManager(dir + "/redo.log")
 	
 	if db.kv == nil || db.redo == nil {
 		return nil
@@ -42,21 +41,20 @@ func (db *Db)Close() {
 }
 
 func (db *Db)recover() bool {
-	db.redo.SeekAfterLastCheckpoint()
+	ents := db.redo.GetAllUncheckedEntries()
+
 	count := 0
-	for {
-		tx := db.redo.NextTransaction()
-		if tx == nil {
-			break
+	for _, ent := range ents {
+		switch ent.Type {
+		case RedoTypeSet:
+			db.kv.Set(ent.Key, ent.Val)
+		case RedoTypeDel:
+			db.kv.Del(ent.Key)
 		}
-		count ++
-		for _, ent := range tx.Entries() {
-			log.Println("    Redo", ent)
-		}
-		db.applyTransaction(tx)
 	}
+	
 	if count > 0 {
-		db.redo.WriteCheckpoint()
+		db.redo.Check()
 	} else {
 		log.Println("nothing to redo")
 	}
@@ -67,30 +65,6 @@ func (db *Db)CommitIndex() int64 {
 	return db.redo.CommitIndex()
 }
 
-// TODO: isolation
-func (db *Db)StartTransaction() *xna.Transaction {
-	return nil
-}
-
-func (db *Db)CommitTransaction(tx *xna.Transaction) {
-	if !db.redo.WriteTransaction(tx) {
-		log.Fatal("Write redolog failed.")
-		return
-	}
-	db.applyTransaction(tx)
-}
-
-func (db *Db)applyTransaction(tx *xna.Transaction) {
-	for _, ent := range tx.Entries() {
-		switch ent.Type {
-		case xna.EntryTypeSet:
-			db.kv.Set(ent.Key, ent.Val)
-		case xna.EntryTypeDel:
-			db.kv.Del(ent.Key)
-		}
-	}
-}
-
 /////////////////////////////////////////////////////////////////////
 
 func (db *Db)Get(key string) string {
@@ -98,17 +72,13 @@ func (db *Db)Get(key string) string {
 }
 
 func (db *Db)Set(idx int64, key string, val string) {
-	tx := xna.NewTransaction()
-	tx.AddEntry(xna.NewSetEntry(idx, key, val))
-
-	db.CommitTransaction(tx)
+	db.redo.Set(idx, key, val)
+	db.kv.Set(key, val)
 }
 
 func (db *Db)Del(idx int64, key string) {
-	tx := xna.NewTransaction()
-	tx.AddEntry(xna.NewDelEntry(idx, key))
-	
-	db.CommitTransaction(tx)
+	db.redo.Del(idx, key)
+	db.kv.Del(key)
 }
 
 func (db *Db)Incr(idx int64, key string, delta string) string {
@@ -116,10 +86,9 @@ func (db *Db)Incr(idx int64, key string, delta string) string {
 	num := util.Atoi64(old) + util.Atoi64(delta)
 	val := util.I64toa(num)
 	
-	tx := xna.NewTransaction()
-	tx.AddEntry(xna.NewSetEntry(idx, key, val))
-	
-	db.CommitTransaction(tx)
+	db.redo.Set(idx, key, val)
+	db.kv.Set(key, val)
+
 	return val
 }
 
