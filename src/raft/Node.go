@@ -65,8 +65,8 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	return node
 }
 
-func (node *Node)AddService(svc Service){
-	node.store.AddService(svc)
+func (node *Node)SetService(svc Service){
+	node.store.Service = svc
 }
 
 func (node *Node)Start(){

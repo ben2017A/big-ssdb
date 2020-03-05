@@ -6,4 +6,6 @@ type Service interface{
 	// If entry is not idempotent, service must apply entry
 	// and update lastApplied in one transaction for atomicity
 	ApplyEntry(ent *Entry)
+	
+	InstallSnapshot()
 }

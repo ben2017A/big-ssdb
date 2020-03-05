@@ -130,4 +130,5 @@ func main(){
 	setup_follower()
 	test_quorum_write()
 	fmt.Println("\n---------------------------------------------------\n")
+	
 }

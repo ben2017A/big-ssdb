@@ -41,7 +41,7 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc.xport = xport
 	svc.jobs = make(map[int64]*link.Request)
 
-	node.AddService(svc)
+	node.SetService(svc)
 	node.Start()
 
 	return svc
@@ -175,6 +175,10 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 	// 不需要持久化, 从 Redolog 中获取
 	svc.lastApplied = ent.Index
 	svc.handleRaftEntry(ent)
+}
+
+func (svc *Service)InstallSnapshot() {
+	log.Println("")
 }
 
 /* ############################################# */

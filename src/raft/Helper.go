@@ -21,7 +21,7 @@ type Helper struct{
 
 	// entries may not be continuous(for follower)
 	entries map[int64]*Entry
-	services []Service
+	Service Service
 	
 	db Storage
 }
@@ -30,12 +30,10 @@ func NewHelper(node *Node, db Storage) *Helper{
 	st := new(Helper)
 	st.state = NewState()
 	st.entries = make(map[int64]*Entry)
-	st.services = make([]Service, 0)
 	
 	st.db = db
 	st.C = make(chan int, 10)
 	st.node = node
-	st.AddService(node)
 
 	st.loadState()
 	st.loadEntries()
@@ -56,10 +54,6 @@ func (st *Helper)Close(){
 	if st.db != nil {
 		st.db.Close()
 	}
-}
-
-func (st *Helper)AddService(svc Service){
-	st.services = append(st.services, svc)
 }
 
 /* #################### State ###################### */
@@ -158,7 +152,7 @@ func (st *Helper)AppendEntry(ent *Entry){
 		}
 
 		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
-		log.Println("[RAFT] Log", ent.Encode())
+		log.Println("[RAFT] append Log", ent.Encode())
 
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
@@ -182,16 +176,20 @@ func (st *Helper)CommitEntry(commitIndex int64){
 }
 
 func (st *Helper)ApplyEntries(){
-	for _, svc := range st.services {
-		for idx := svc.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
+	for idx := st.node.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
+		ent := st.GetEntry(idx)
+		st.node.ApplyEntry(ent)
+	}
+	if st.Service != nil {
+		for idx := st.Service.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
 			if ent == nil {
-				// TODO:
-				log.Println("TODO: notify Service to install snapshot")
-				log.Fatalf("lost entry#%d, svc.LastApplied: %d", idx, svc.LastApplied())
-				break;
+				log.Printf("lost entry#%d, svc.LastApplied: %d, notify Service to install snapshot",
+						idx, st.Service.LastApplied())
+				st.Service.InstallSnapshot()
+				break
 			}
-			svc.ApplyEntry(ent)
+			st.node.ApplyEntry(ent)
 		}
 	}
 }
