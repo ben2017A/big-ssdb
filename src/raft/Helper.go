@@ -189,7 +189,7 @@ func (st *Helper)ApplyEntries(){
 				st.Service.InstallSnapshot()
 				break
 			}
-			st.node.ApplyEntry(ent)
+			st.Service.ApplyEntry(ent)
 		}
 	}
 }

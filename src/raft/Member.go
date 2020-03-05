@@ -13,7 +13,7 @@ type Member struct{
 	HeartbeatTimer int
 	ReplicationTimer int
 
-	ReceiveTimout int // increase on tick(), reset on ApplyEntryAck
+	ReceiveTimeout int // increase on tick(), reset on ApplyEntryAck
 }
 
 func NewMember(id, addr string) *Member{

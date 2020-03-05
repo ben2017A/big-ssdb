@@ -144,7 +144,10 @@ func (node *Node)Tick(timeElapse int){
 		}
 	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
-			m.ReceiveTimout += timeElapse
+			if m.NextIndex != m.MatchIndex + 1 { // waiting for ack
+				m.ReceiveTimeout += timeElapse
+			}
+			
 			m.ReplicationTimer += timeElapse
 			m.HeartbeatTimer += timeElapse
 
@@ -250,8 +253,8 @@ func (node *Node)replicateMember(m *Member){
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-	if m.ReceiveTimout >= ReplicationTimeout * 3 {
-		log.Printf("replicate timeout %s", m.Id)
+	if m.ReceiveTimeout >= ReplicationTimeout * 3 {
+		log.Printf("replicate timeout %s, %d", m.Id, m.ReceiveTimeout)
 		return
 	}
 
@@ -337,7 +340,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 			arr := make([]int, 0, len(node.Members) + 1)
 			arr = append(arr, 0) // self
 			for _, m := range node.Members {
-				arr = append(arr, m.ReceiveTimout)
+				arr = append(arr, m.ReceiveTimeout)
 			}
 			sort.Ints(arr)
 			log.Println("    receive timeouts =", arr)
@@ -439,7 +442,7 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
 	m := node.Members[msg.Src]
-	m.ReceiveTimout = 0
+	m.ReceiveTimeout = 0
 	for _, m := range node.Members {
 		m.Role = RoleFollower
 	}
@@ -473,7 +476,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.Members[msg.Src]
-	m.ReceiveTimout = 0
+	m.ReceiveTimeout = 0
 
 	if msg.Data == "false" {
 		if msg.PrevIndex == 0 {
