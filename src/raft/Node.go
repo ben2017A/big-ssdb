@@ -389,7 +389,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		} else if msg.Cmd == MessageCmdInstallSnapshot {
 			node.handleInstallSnapshot(msg)
 		} else {
-			log.Println("drop message")
+			log.Println("drop message", msg.Encode())
 		}
 		return
 	}
