@@ -24,3 +24,11 @@ func NewMember(id, addr string) *Member{
 	ret.SendWindow = 3
 	return ret
 }
+
+func (m *Member)Reset() {
+	m.NextIndex = 0
+	m.MatchIndex = 0
+	m.HeartbeatTimer = 0
+	m.ReplicationTimer = 0
+	m.ReceiveTimeout = 0
+}

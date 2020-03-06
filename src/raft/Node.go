@@ -209,8 +209,14 @@ func (node *Node)checkVoteResult(){
 func (node *Node)becomeLeader(){
 	node.Role = RoleLeader
 	node.resetAllMember()
-	// write noop entry with currentTerm
-	node.store.AddNewEntry(EntryTypeNoop, "")
+	// write noop entry with currentTerm to implictly commit previous term's log
+	if node.store.LastIndex == 0 || node.store.LastIndex != node.store.CommitIndex {
+		node.store.AddNewEntry(EntryTypeNoop, "")
+	} else {
+		for _, m := range node.Members {
+			node.pingMember(m)
+		}
+	}
 }
 
 /* ############################################# */
@@ -222,11 +228,9 @@ func (node *Node)resetAllMember(){
 }
 
 func (node *Node)resetMember(m *Member){
+	m.Reset()
 	m.Role = RoleFollower
 	m.NextIndex = node.store.LastIndex + 1
-	m.MatchIndex = 0
-	m.HeartbeatTimer = 0
-	m.ReplicationTimer = 0
 }
 
 func (node *Node)pingMember(m *Member){
@@ -365,7 +369,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		if msg.Cmd == MessageCmdAppendEntryAck {
 			node.handleAppendEntryAck(msg)
 		} else {
-			log.Println("drop message")
+			log.Println("drop message", msg.Encode())
 		}
 		return
 	}
@@ -373,7 +377,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		if msg.Cmd == MessageCmdRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		} else {
-			log.Println("drop message")
+			log.Println("drop message", msg.Encode())
 		}
 		return
 	}
