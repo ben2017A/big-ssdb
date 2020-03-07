@@ -13,11 +13,13 @@ type FakeTransport struct {
 
 type Bus struct {
 	clients map[string]*FakeTransport
+	started bool
 }
 
 func NewBus() *Bus {
 	b := new(Bus)
 	b.clients = make(map[string]*FakeTransport)
+	b.started = true
 	return b
 }
 
@@ -28,6 +30,10 @@ func (b *Bus)MakeTransport(id string, addr string) *FakeTransport {
 }
 
 func (b *Bus)Send(msg *raft.Message) {
+	if !b.started {
+		log.Println("drop message", msg.Encode())
+		return
+	}
 	log.Println(" send > ", msg.Encode())
 	t := b.clients[msg.Dst]
 	if t == nil {
@@ -35,6 +41,14 @@ func (b *Bus)Send(msg *raft.Message) {
 		return
 	}
 	t.C() <- msg
+}
+
+func (b *Bus)Pause() {
+	b.started = false
+}
+
+func (b *Bus)Resume() {
+	b.started = true
 }
 
 ////////////////////////////////////////

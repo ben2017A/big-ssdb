@@ -8,6 +8,8 @@ import (
 )
 
 const(
+	MessageCmdPreVote         = "PreVote"
+	MessageCmdPreVoteAck      = "PreVoteAck"
 	MessageCmdRequestVote     = "RequestVote"
 	MessageCmdRequestVoteAck  = "RequestVoteAck"
 	MessageCmdAppendEntry     = "AppendEntry"
@@ -56,6 +58,19 @@ func (m *Message)Decode(buf string) bool{
 	return true
 }
 
+func NewPreVoteMsg() *Message{
+	msg := new(Message)
+	msg.Cmd = MessageCmdPreVote
+	return msg
+}
+
+func NewPreVoteAck(dst string) *Message{
+	msg := new(Message)
+	msg.Cmd = MessageCmdPreVoteAck
+	msg.Dst = dst
+	return msg
+}
+
 func NewRequestVoteMsg() *Message{
 	msg := new(Message)
 	msg.Cmd = MessageCmdRequestVote
@@ -63,14 +78,14 @@ func NewRequestVoteMsg() *Message{
 	return msg
 }
 
-func NewRequestVoteAck(voteFor string, success bool) *Message{
+func NewRequestVoteAck(dst string, grant bool) *Message{
 	msg := new(Message)
 	msg.Cmd = MessageCmdRequestVoteAck
-	msg.Dst = voteFor
-	if success {
-		msg.Data = "true"
-	}else{
-		msg.Data = "false"
+	msg.Dst = dst
+	if grant {
+		msg.Data = "grant"
+	} else {
+		msg.Data = "reject"
 	}
 	return msg
 }

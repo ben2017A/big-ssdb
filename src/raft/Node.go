@@ -13,15 +13,20 @@ import (
 	"util"
 )
 
+type RoleType string
+
 const(
 	RoleLeader      = "leader"
 	RoleFollower    = "follower"
 	RoleCandidate   = "candidate"
 )
 
-const ElectionTimeout = 5 * 1000
-const HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
-const ReplicationTimeout = 1 * 1000
+const(
+	ElectionTimeout    = 5 * 1000
+	HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
+	ReplicationTimeout = 1 * 1000
+	ReceiveTimeout     = ReplicationTimeout * 3
+)
 
 type Node struct{
 	Id string
@@ -139,8 +144,8 @@ func (node *Node)Tick(timeElapse int){
 	if node.Role == RoleFollower || node.Role == RoleCandidate {
 		node.electionTimer += timeElapse
 		if node.electionTimer >= ElectionTimeout {
-			log.Println("Election timeout, became candidate")
-			node.startElection()
+			log.Println("start PreVote")
+			node.startPreVote()
 		}
 	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
@@ -163,31 +168,29 @@ func (node *Node)Tick(timeElapse int){
 	}
 }
 
-func (node *Node)becomeFollower(){
-	if node.Role == RoleFollower {
-		return
+func (node *Node)startPreVote(){
+	node.electionTimer = 0
+	node.votesReceived = make(map[string]string)
+	node.broadcast(NewPreVoteMsg())
+	
+	// 单节点运行
+	if len(node.Members) == 0 {
+		node.startElection()
 	}
-	node.Role = RoleFollower
-	node.electionTimer = 0	
-	node.resetAllMember()
 }
 
 func (node *Node)startElection(){
+	node.electionTimer = rand.Intn(200)
+	node.votesReceived = make(map[string]string)
+
 	node.Role = RoleCandidate
 	node.Term += 1
 	node.VoteFor = node.Id
 	node.store.SaveState()
 
-	node.votesReceived = make(map[string]string)
-	node.electionTimer = rand.Intn(200)
 	node.resetAllMember()
-
-	msg := NewRequestVoteMsg()
-	for _, m := range node.Members {
-		msg.Dst = m.Id
-		node.send(msg)
-	}
-
+	node.broadcast(NewRequestVoteMsg())
+	
 	// 单节点运行
 	if len(node.Members) == 0 {
 		node.checkVoteResult()
@@ -195,11 +198,25 @@ func (node *Node)startElection(){
 }
 
 func (node *Node)checkVoteResult(){
-	// checkQuorum
-	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+	count := 1
+	for _, res := range node.votesReceived {
+		if res == "grant" {
+			count ++
+		}
+	}
+	if count > (len(node.Members) + 1)/2 {
 		log.Printf("Node %s became leader", node.Id)
 		node.becomeLeader()
 	}
+}
+
+func (node *Node)becomeFollower(){
+	if node.Role == RoleFollower {
+		return
+	}
+	node.Role = RoleFollower
+	node.electionTimer = 0	
+	node.resetAllMember()
 }
 
 func (node *Node)becomeLeader(){
@@ -252,7 +269,7 @@ func (node *Node)replicateMember(m *Member){
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-	if m.ReceiveTimeout >= ReplicationTimeout * 3 {
+	if m.ReceiveTimeout >= ReceiveTimeout && m.NextIndex != m.MatchIndex + 1 {
 		log.Printf("replicate %s timeout, %d", m.Id, m.ReceiveTimeout)
 		return
 	}
@@ -337,21 +354,6 @@ func (node *Node)handleRaftMessage(msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term {
 		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term)
-		if node.Role == RoleLeader {
-			arr := make([]int, 0, len(node.Members) + 1)
-			arr = append(arr, 0) // self
-			for _, m := range node.Members {
-				arr = append(arr, m.ReceiveTimeout)
-			}
-			sort.Ints(arr)
-			log.Println("    receive timeouts =", arr)
-			timer := arr[len(arr)/2]
-			if timer < ElectionTimeout {
-				log.Println("    major followers are still reachable, ignore")
-				return
-			}
-		}
-		
 		node.Term = msg.Term
 		node.VoteFor = ""
 		if node.Role != RoleFollower {
@@ -365,6 +367,8 @@ func (node *Node)handleRaftMessage(msg *Message){
 	if node.Role == RoleLeader {
 		if msg.Cmd == MessageCmdAppendEntryAck {
 			node.handleAppendEntryAck(msg)
+		} else if msg.Cmd == MessageCmdPreVote {
+			node.handlePreVote(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
 		}
@@ -385,10 +389,46 @@ func (node *Node)handleRaftMessage(msg *Message){
 			node.handleAppendEntry(msg)
 		} else if msg.Cmd == MessageCmdInstallSnapshot {
 			node.handleInstallSnapshot(msg)
+		} else if msg.Cmd == MessageCmdPreVote {
+			node.handlePreVote(msg)
+		} else if msg.Cmd == MessageCmdPreVoteAck {
+			node.handlePreVoteAck(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
 		}
 		return
+	}
+}
+
+func (node *Node)handlePreVote(msg *Message){
+	if node.Role == RoleLeader {
+		arr := make([]int, 0, len(node.Members) + 1)
+		arr = append(arr, 0) // self
+		for _, m := range node.Members {
+			arr = append(arr, m.ReceiveTimeout)
+		}
+		sort.Ints(arr)
+		log.Println("    receive timeouts =", arr)
+		timer := arr[len(arr)/2]
+		if timer < ReceiveTimeout {
+			log.Println("    major followers are still reachable, ignore")
+			return
+		}
+	}
+	for _, m := range node.Members {
+		if m.Role == RoleLeader && m.ReceiveTimeout < ReceiveTimeout {
+			log.Printf("leader %s is still active, ignore PreVote from %s", m.Id, msg.Src)
+			return
+		}
+	}
+	node.send(NewPreVoteAck(msg.Src))
+}
+
+func (node *Node)handlePreVoteAck(msg *Message){
+	log.Printf("receive PreVoteAck from %s", msg.Src)
+	node.votesReceived[msg.Src] = msg.Data
+	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+		node.startElection()
 	}
 }
 
@@ -398,14 +438,6 @@ func (node *Node)handleRequestVote(msg *Message){
 		// just ignore
 		log.Println("already vote for", node.VoteFor, "ignore", msg.Src)
 		return
-	}
-	if node.electionTimer < ElectionTimeout * 2/3 {
-		for _, m := range node.Members {
-			if m.Role == RoleLeader {
-				log.Printf("leader %s is still active, ignore RequestVote from %s", m.Id, msg.Src)
-				return
-			}
-		}
 	}
 	
 	granted := false
@@ -429,15 +461,9 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	granted := (msg.Data == "true")
-	if granted {
-		log.Println("receive vote grant from", msg.Src)
-		node.votesReceived[msg.Src] = "true"
-		node.checkVoteResult()
-	} else {
-		log.Println("receive vote reject from", msg.Src)
-		node.becomeFollower()
-	}
+	log.Printf("receive vote %s from %s", msg.Data, msg.Src)
+	node.votesReceived[msg.Src] = msg.Data
+	node.checkVoteResult()
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
@@ -738,4 +764,11 @@ func (node *Node)send(msg *Message){
 		msg.PrevTerm = node.store.LastTerm
 	}
 	node.xport.Send(msg)
+}
+
+func (node *Node)broadcast(msg *Message){
+	for _, m := range node.Members {
+		msg.Dst = m.Id
+		node.send(msg)
+	}
 }

@@ -88,7 +88,14 @@ func test_quorum_write() {
 }
 
 func test_new_leader() {
-	n2.Tick(raft.ElectionTimeout) // start new vote
+	bus.Pause()
+	n1.Tick(raft.ReceiveTimeout) // old leader lost followers
+	bus.Resume()
+
+	n2.Tick(raft.ElectionTimeout) // start pre vote
+	log.Println("\n" + n2.Info())
+	n1.Step()
+	n2.Step() // request vote
 	log.Println("\n" + n2.Info())
 	if n2.Role != raft.RoleCandidate || n2.Term != 2 {
 		log.Fatal("error")
@@ -117,18 +124,18 @@ func test_new_leader() {
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	setup_master()
-	setup_follower()
-	fmt.Println("\n---------------------------------------------------\n")
+	// setup_master()
+	// setup_follower()
+	// fmt.Println("\n---------------------------------------------------\n")
 		
 	setup_master()
 	setup_follower()
 	test_new_leader()
 	fmt.Println("\n---------------------------------------------------\n")
 	
-	setup_master()
-	setup_follower()
-	test_quorum_write()
-	fmt.Println("\n---------------------------------------------------\n")
+	// setup_master()
+	// setup_follower()
+	// test_quorum_write()
+	// fmt.Println("\n---------------------------------------------------\n")
 	
 }
