@@ -31,13 +31,18 @@ func NewSnapshotWriter(commitIndex int64, path string) *Snapshot {
 }
 
 func NewSnapshotReader(path string) *Snapshot {
-	sn := new(Snapshot)
-	sn.wal = store.OpenWalFile(path)
-	
-	if !sn.Next() {
+	if !util.FileExists(path) {
+		log.Println("snapshot file not found:", path)
 		return nil
 	}
-	sn.commitIndex = util.Atoi64(sn.wal.Item())
+	
+	sn := new(Snapshot)
+	sn.wal = store.OpenWalFile(path)
+	if sn.Next() {
+		sn.commitIndex = util.Atoi64(sn.wal.Item())
+	} else {
+		sn.commitIndex =  = 0
+	}
 	
 	return sn
 }

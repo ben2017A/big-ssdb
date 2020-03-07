@@ -3,6 +3,7 @@
 ## Features
 
 * Leader election
+	* PreVote support
 * Membership changes
 * Log replication
 * Built-in log management
@@ -16,6 +17,6 @@ TODO: leader lease
 
 ### NOs
 
-Does not implement something that is strongly considered as not part of the Raft protocol.
+Does not implement something that is strongly considered as not part of a log replication protocol.
 
 * Log compaction
