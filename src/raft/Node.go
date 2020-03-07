@@ -144,17 +144,13 @@ func (node *Node)Tick(timeElapse int){
 		}
 	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
-			if m.NextIndex != m.MatchIndex + 1 { // waiting for ack
-				m.ReceiveTimeout += timeElapse
-			}
-			
-			m.ReplicationTimer += timeElapse
+			m.ReceiveTimeout += timeElapse
+			m.ReplicateTimer += timeElapse
 			m.HeartbeatTimer += timeElapse
 
-			if m.ReplicationTimer >= ReplicationTimeout {
-				// 如果 matchIndex == 0, 则只需要发送最新的一条 log(即 NextIndex=store.LastIndex)
-				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
-					log.Printf("resend member: %s, nextIndex: %d, matchIndex: %d", m.Id, m.NextIndex, m.MatchIndex)
+			if m.ReplicateTimer >= ReplicationTimeout {
+				if m.NextIndex != m.MatchIndex + 1 {
+					log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 					m.NextIndex = m.MatchIndex + 1
 				}
 				node.replicateMember(m)
@@ -252,19 +248,19 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
-	m.ReplicationTimer = 0
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
 	if m.ReceiveTimeout >= ReplicationTimeout * 3 {
-		log.Printf("replicate timeout %s, %d", m.Id, m.ReceiveTimeout)
+		log.Printf("replicate %s timeout, %d", m.Id, m.ReceiveTimeout)
 		return
 	}
 
+	m.ReplicateTimer = 0
 	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + m.SendWindow)
 	count := 0
-	for /**/; m.NextIndex <= maxIndex; m.NextIndex++ {
+	for m.NextIndex <= maxIndex {
 		ent := node.store.GetEntry(m.NextIndex)
 		if ent == nil {
 			break
@@ -273,7 +269,8 @@ func (node *Node)replicateMember(m *Member){
 		
 		prev := node.store.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
-
+		
+		m.NextIndex ++
 		count ++
 	}
 	if count > 0 {
@@ -326,13 +323,13 @@ func (node *Node)handleRaftMessage(msg *Message){
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
 		if msg.Cmd == MessageCmdRequestVote {
-			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 			node.send(NewRequestVoteAck(msg.Src, false))
 		} else if msg.Cmd == MessageCmdAppendEntry {
-			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 			node.send(NewAppendEntryAck(msg.Src, false))
 		} else {
-			log.Println("ignore", msg.Cmd, "msg.Term =", msg.Term, " < currentTerm = ", node.Term)
+			log.Println("ignore", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 		}
 		// finish processing msg
 		return

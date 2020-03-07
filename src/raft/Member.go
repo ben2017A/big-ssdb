@@ -11,7 +11,7 @@ type Member struct{
 	SendWindow int64  // 
 
 	HeartbeatTimer int
-	ReplicationTimer int
+	ReplicateTimer int
 
 	ReceiveTimeout int // increase on tick(), reset on ApplyEntryAck
 }
@@ -29,6 +29,6 @@ func (m *Member)Reset() {
 	m.NextIndex = 0
 	m.MatchIndex = 0
 	m.HeartbeatTimer = 0
-	m.ReplicationTimer = 0
+	m.ReplicateTimer = 0
 	m.ReceiveTimeout = 0
 }
