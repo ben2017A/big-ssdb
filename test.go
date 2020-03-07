@@ -17,7 +17,16 @@ import (
 
 /////////////////////////////////////////
 
+type ServiceStatus int
+
+const(
+	ServiceStatusLogger = 0
+	ServiceStatusActive = 1
+)
+
 type Service struct{
+	status ServiceStatus
+	
 	lastApplied int64
 	dir string
 	
@@ -34,6 +43,7 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc := new(Service)
 	
 	svc.dir = dir
+	svc.status = ServiceStatusActive
 	svc.db = ssdb.OpenDb(dir + "/data")
 	svc.lastApplied = svc.db.CommitIndex()
 
@@ -79,6 +89,20 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
+	if cmd == "info" {
+		s := svc.node.Info()
+		resp := &link.Message{req.Src, s}
+		svc.xport.Send(resp)
+		return
+	}
+	
+	if svc.status != ServiceStatusActive {
+		log.Println("Service unavailable")
+		resp := &link.Message{req.Src, "error: service unavailable"}
+		svc.xport.Send(resp)
+		return
+	}
+
 	if cmd == "get" {
 		s := svc.db.Get(req.Key())
 		log.Println(req.Key(), "=", s)
@@ -87,12 +111,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
-	if cmd == "info" {
-		s := svc.node.Info()
-		resp := &link.Message{req.Src, s}
-		svc.xport.Send(resp)
-		return
-	}
 	if cmd == "dump" {
 		fn := svc.dir + "/snapshot.db"
 		svc.db.MakeFileSnapshot(fn)
@@ -178,7 +196,8 @@ func (svc *Service)ApplyEntry(ent *raft.Entry){
 }
 
 func (svc *Service)InstallSnapshot() {
-	log.Println("")
+	svc.status = ServiceStatusLogger
+	log.Println("Service become unavailable")
 }
 
 /* ############################################# */

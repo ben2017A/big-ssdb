@@ -25,7 +25,7 @@ const(
 	ElectionTimeout    = 5 * 1000
 	HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
 	ReplicationTimeout = 1 * 1000
-	ReceiveTimeout     = ReplicationTimeout * 3
+	ReceiveTimeout     = HeartbeatTimeout * 3
 )
 
 type Node struct{
@@ -697,6 +697,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("commitIndex: %d\n", node.store.CommitIndex)
 	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
+	ret += fmt.Sprintf("electionTimer: %d\n", node.electionTimer)
 	
 	b, _ := json.Marshal(node.Members)
 	ret += fmt.Sprintf("members: %s\n", string(b))

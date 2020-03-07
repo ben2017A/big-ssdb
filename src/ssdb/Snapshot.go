@@ -41,7 +41,7 @@ func NewSnapshotReader(path string) *Snapshot {
 	if sn.Next() {
 		sn.commitIndex = util.Atoi64(sn.wal.Item())
 	} else {
-		sn.commitIndex =  = 0
+		sn.commitIndex = 0
 	}
 	
 	return sn
