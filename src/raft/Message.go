@@ -7,18 +7,20 @@ import (
 	"util"
 )
 
+type MessageType string
+
 const(
-	MessageCmdPreVote         = "PreVote"
-	MessageCmdPreVoteAck      = "PreVoteAck"
-	MessageCmdRequestVote     = "RequestVote"
-	MessageCmdRequestVoteAck  = "RequestVoteAck"
-	MessageCmdAppendEntry     = "AppendEntry"
-	MessageCmdAppendEntryAck  = "AppendEntryAck"
-	MessageCmdInstallSnapshot = "InstallSnapshot" // install raft state, not service state
+	MessageTypePreVote         = "PreVote"
+	MessageTypePreVoteAck      = "PreVoteAck"
+	MessageTypeRequestVote     = "RequestVote"
+	MessageTypeRequestVoteAck  = "RequestVoteAck"
+	MessageTypeAppendEntry     = "AppendEntry"
+	MessageTypeAppendEntryAck  = "AppendEntryAck"
+	MessageTypeInstallSnapshot = "InstallSnapshot" // install raft state, not service state
 )
 
 type Message struct{
-	Cmd string
+	Type MessageType
 	Src string
 	Dst string
 	Term int32
@@ -37,7 +39,7 @@ func DecodeMessage(buf string) *Message{
 }
 
 func (m *Message)Encode() string{
-	ps := []string{m.Cmd, m.Src, m.Dst, util.Itoa32(m.Term),
+	ps := []string{string(m.Type), m.Src, m.Dst, util.Itoa32(m.Term),
 		util.Itoa32(m.PrevTerm), util.I64toa(m.PrevIndex), m.Data}
 	return strings.Join(ps, " ")
 }
@@ -48,7 +50,7 @@ func (m *Message)Decode(buf string) bool{
 	if len(ps) != 7 {
 		return false
 	}
-	m.Cmd = ps[0]
+	m.Type = MessageType(ps[0])
 	m.Src = ps[1]
 	m.Dst = ps[2]
 	m.Term = util.Atoi32(ps[3])
@@ -60,27 +62,27 @@ func (m *Message)Decode(buf string) bool{
 
 func NewPreVoteMsg() *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdPreVote
+	msg.Type = MessageTypePreVote
 	return msg
 }
 
 func NewPreVoteAck(dst string) *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdPreVoteAck
+	msg.Type = MessageTypePreVoteAck
 	msg.Dst = dst
 	return msg
 }
 
 func NewRequestVoteMsg() *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdRequestVote
+	msg.Type = MessageTypeRequestVote
 	msg.Data = "please vote me"
 	return msg
 }
 
 func NewRequestVoteAck(dst string, grant bool) *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdRequestVoteAck
+	msg.Type = MessageTypeRequestVoteAck
 	msg.Dst = dst
 	if grant {
 		msg.Data = "grant"
@@ -92,7 +94,7 @@ func NewRequestVoteAck(dst string, grant bool) *Message{
 
 func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdAppendEntry
+	msg.Type = MessageTypeAppendEntry
 	msg.Dst = dst
 	if prev != nil {
 		msg.PrevIndex = prev.Index
@@ -104,7 +106,7 @@ func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
 
 func NewAppendEntryAck(dst string, success bool) *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdAppendEntryAck
+	msg.Type = MessageTypeAppendEntryAck
 	msg.Dst = dst
 	if success {
 		msg.Data = "true"
@@ -116,7 +118,7 @@ func NewAppendEntryAck(dst string, success bool) *Message{
 
 func NewInstallSnapshotMsg(dst string, data string) *Message{
 	msg := new(Message)
-	msg.Cmd = MessageCmdInstallSnapshot
+	msg.Type = MessageTypeInstallSnapshot
 	msg.Dst = dst
 	msg.Data = data
 	return msg

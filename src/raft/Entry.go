@@ -7,6 +7,8 @@ import (
 	"util"
 )
 
+type EntryType string
+
 const(
 	EntryTypeNoop      = "Noop"
 	EntryTypeData      = "Data"
@@ -19,7 +21,7 @@ type Entry struct{
 	Term int32
 	Index int64
 	CommitIndex int64
-	Type string
+	Type EntryType
 	Data string
 }
 
@@ -46,7 +48,7 @@ func (e *Entry)Decode(buf string) bool{
 	e.Term = util.Atoi32(ps[0])
 	e.Index = util.Atoi64(ps[1])
 	e.CommitIndex = util.Atoi64(ps[2])
-	e.Type = ps[3]
+	e.Type = EntryType(ps[3])
 	e.Data = ps[4]
 	return true
 }

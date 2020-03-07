@@ -115,7 +115,7 @@ func (st *Helper)GetEntry(index int64) *Entry{
 }
 
 // return a copy of appended entry
-func (st *Helper)AddNewEntry(type_, data string) *Entry{
+func (st *Helper)AddNewEntry(type_ EntryType, data string) *Entry{
 	ent := new(Entry)
 	ent.Type = type_
 	ent.Term = st.node.Term

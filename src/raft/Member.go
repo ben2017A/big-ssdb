@@ -2,8 +2,8 @@ package raft
 
 type Member struct{
 	Id string
-	Role string
 	Addr string
+	Role RoleType
 
 	// sliding window
 	NextIndex int64   // next_send

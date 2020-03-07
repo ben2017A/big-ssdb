@@ -31,7 +31,7 @@ const(
 type Node struct{
 	Id string
 	Addr string
-	Role string
+	Role RoleType
 
 	// Raft persistent state
 	Term int32
@@ -250,7 +250,7 @@ func (node *Node)pingMember(m *Member){
 	m.HeartbeatTimer = 0
 	
 	ent := NewPingEntry(node.store.CommitIndex)
-	prev := node.store.GetEntry(node.store.CommitIndex - 1)
+	prev := node.store.GetEntry(node.store.LastIndex)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -339,14 +339,14 @@ func (node *Node)handleRaftMessage(msg *Message){
 
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
-		if msg.Cmd == MessageCmdRequestVote {
-			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
+		if msg.Type == MessageTypeRequestVote {
+			log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 			node.send(NewRequestVoteAck(msg.Src, false))
-		} else if msg.Cmd == MessageCmdAppendEntry {
-			log.Println("reject", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
+		} else if msg.Type == MessageTypeAppendEntry {
+			log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 			node.send(NewAppendEntryAck(msg.Src, false))
 		} else {
-			log.Println("ignore", msg.Cmd, "msg.Term =", msg.Term, " < node.term = ", node.Term)
+			log.Println("ignore", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
 		}
 		// finish processing msg
 		return
@@ -365,9 +365,9 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 
 	if node.Role == RoleLeader {
-		if msg.Cmd == MessageCmdAppendEntryAck {
+		if msg.Type == MessageTypeAppendEntryAck {
 			node.handleAppendEntryAck(msg)
-		} else if msg.Cmd == MessageCmdPreVote {
+		} else if msg.Type == MessageTypePreVote {
 			node.handlePreVote(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
@@ -375,7 +375,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		return
 	}
 	if node.Role == RoleCandidate {
-		if msg.Cmd == MessageCmdRequestVoteAck {
+		if msg.Type == MessageTypeRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
@@ -383,15 +383,15 @@ func (node *Node)handleRaftMessage(msg *Message){
 		return
 	}
 	if node.Role == RoleFollower {
-		if msg.Cmd == MessageCmdRequestVote {
+		if msg.Type == MessageTypeRequestVote {
 			node.handleRequestVote(msg)
-		} else if msg.Cmd == MessageCmdAppendEntry {
+		} else if msg.Type == MessageTypeAppendEntry {
 			node.handleAppendEntry(msg)
-		} else if msg.Cmd == MessageCmdInstallSnapshot {
+		} else if msg.Type == MessageTypeInstallSnapshot {
 			node.handleInstallSnapshot(msg)
-		} else if msg.Cmd == MessageCmdPreVote {
+		} else if msg.Type == MessageTypePreVote {
 			node.handlePreVote(msg)
-		} else if msg.Cmd == MessageCmdPreVoteAck {
+		} else if msg.Type == MessageTypePreVoteAck {
 			node.handlePreVoteAck(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
@@ -480,7 +480,11 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if ent.Index != 1 { // if not very first entry
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil || prev.Term != msg.PrevTerm {
-			log.Println("bad prev entry", msg.PrevTerm, msg.PrevIndex)
+			if prev == nil {
+				log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
+			} else {
+				log.Printf("prev.Term %d != msg.PrevTerm %d", prev.Term, msg.PrevTerm)
+			}
 			node.send(NewAppendEntryAck(msg.Src, false))
 			return
 		}
@@ -669,7 +673,7 @@ func (node *Node)InfoMap() map[string]string {
 	m := make(map[string]string)
 	m["id"] = fmt.Sprintf("%d", node.Id)
 	m["addr"] = node.Addr
-	m["role"] = node.Role
+	m["role"] = string(node.Role)
 	m["term"] = fmt.Sprintf("%d", node.Term)
 	m["lastApplied"] = fmt.Sprintf("%d", node.lastApplied)
 	m["commitIndex"] = fmt.Sprintf("%d", node.store.CommitIndex)
@@ -759,7 +763,7 @@ func (node *Node)Helper() *Helper {
 func (node *Node)send(msg *Message){
 	msg.Src = node.Id
 	msg.Term = node.Term
-	if msg.Cmd != MessageCmdAppendEntry {
+	if msg.Type != MessageTypeAppendEntry {
 		msg.PrevIndex = node.store.LastIndex
 		msg.PrevTerm = node.store.LastTerm
 	}
