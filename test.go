@@ -27,7 +27,8 @@ func main(){
 	/////////////////////////////////////
 
 	log.Println("Raft server started at", port)
-	store := store.OpenKVStore(base_dir + "/raft")
+	db := store.OpenKVStore(base_dir + "/raft")
+	store := raft.NewStorage(db)
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
 	node := raft.NewNode(nodeId, store, raft_xport)
 

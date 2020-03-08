@@ -19,7 +19,7 @@ func newSnapshot() *Snapshot {
 	return sn
 }
 
-func NewSnapshotFromHelper(store *Helper) *Snapshot {
+func NewSnapshotFromStorage(store *Storage) *Snapshot {
 	sn := newSnapshot()
 	sn.state.CopyFrom(store.State())
 	sn.entries = make([]*Entry, 0)

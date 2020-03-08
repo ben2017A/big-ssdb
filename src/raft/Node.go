@@ -45,13 +45,13 @@ type Node struct{
 
 	electionTimer int
 
-	store *Helper
+	store *Storage
 	xport Transport
 	
 	mux sync.Mutex
 }
 
-func NewNode(nodeId string, db Storage, xport Transport) *Node{
+func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node := new(Node)
 	node.Id = nodeId
 	node.Addr = xport.Addr()
@@ -60,12 +60,20 @@ func NewNode(nodeId string, db Storage, xport Transport) *Node{
 	node.electionTimer = 3 * 1000
 
 	node.xport = xport
-	node.store = NewHelper(node, db)
+	node.store = store
+	store.SetNode(node)
 
-	node.lastApplied = node.store.CommitIndex
-	for nodeId, nodeAddr := range node.store.State().Members {
+	// init Raft state from persistent storage
+	node.lastApplied = store.CommitIndex
+	node.Term = store.State().Term
+	node.VoteFor = store.State().VoteFor
+	for nodeId, nodeAddr := range store.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
+
+	log.Printf("init raft node[%s]:", node.Id)
+	log.Println("    CommitIndex:", store.CommitIndex, "LastTerm:", store.LastTerm, "LastIndex:", store.LastIndex)
+	log.Println("    " + store.State().Encode())
 
 	return node
 }
@@ -755,9 +763,6 @@ func (node *Node)QuitGroup() {
 func (node *Node)UpdateStatus() {
 }
 
-func (node *Node)Helper() *Helper {
-	return node.store
-}
 
 /* ############################################# */
 
