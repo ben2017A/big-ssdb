@@ -16,11 +16,11 @@ var bus *Bus
 func setup_master() {
 	bus = NewBus()
 	t1 := bus.MakeTransport("n1", "addr1")
-	s1 := NewFakeStorage()
+	s1 := raft.NewStorage(NewFakeDb())
 	n1 = raft.NewNode("n1", s1, t1)
 
 	t2 := bus.MakeTransport("n2", "addr2")
-	s2 := NewFakeStorage()
+	s2 := raft.NewStorage(NewFakeDb())
 	n2 = raft.NewNode("n2", s2, t2)
 
 	log.Println("init:\n" + n1.Info())
