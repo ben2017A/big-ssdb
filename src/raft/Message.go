@@ -10,6 +10,7 @@ import (
 type MessageType string
 
 const(
+	MessageTypeNone            = "None"
 	MessageTypePreVote         = "PreVote"
 	MessageTypePreVoteAck      = "PreVoteAck"
 	MessageTypeRequestVote     = "RequestVote"
@@ -58,6 +59,13 @@ func (m *Message)Decode(buf string) bool{
 	m.PrevIndex = util.Atoi64(ps[5])
 	m.Data = ps[6]
 	return true
+}
+
+func NewNoneMsg(dst string) *Message{
+	msg := new(Message)
+	msg.Type = MessageTypeNone
+	msg.Dst = dst
+	return msg
 }
 
 func NewPreVoteMsg() *Message{

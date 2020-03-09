@@ -3,12 +3,14 @@ package raft
 import (
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"util"
 )
 
 type Storage struct{
 	// Discovered from log entries
+	FirstIndex int64
 	LastTerm int32
 	LastIndex int64
 	// Discovered from log entries, also in db @CommitIndex
@@ -87,6 +89,7 @@ func (st *Storage)SaveState(){
 /* #################### Entry ###################### */
 
 func (st *Storage)loadEntries(){
+	st.FirstIndex = math.MaxInt64
 	for k, v := range st.db.All() {
 		if !strings.HasPrefix(k, "log#") {
 			continue
@@ -96,9 +99,8 @@ func (st *Storage)loadEntries(){
 		if ent == nil {
 			log.Println("bad entry format:", v)
 		} else {
-			if ent.Index > 0 && ent.Term > 0 {
-				st.entries[ent.Index] = ent
-			}
+			st.entries[ent.Index] = ent
+			st.FirstIndex = util.MinInt64(st.FirstIndex, ent.Index)
 			st.LastTerm = util.MaxInt32(st.LastTerm, ent.Term)
 			st.LastIndex = util.MaxInt64(st.LastIndex, ent.Index)
 		}
@@ -138,6 +140,7 @@ func (st *Storage)AppendEntry(ent *Entry){
 	}
 
 	st.entries[ent.Index] = ent
+	st.FirstIndex = util.MinInt64(st.FirstIndex, ent.Index)
 
 	// 更新 LastTer 和 LastIndex, 忽略空洞
 	for{

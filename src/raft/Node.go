@@ -347,15 +347,8 @@ func (node *Node)handleRaftMessage(msg *Message){
 
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term {
-		if msg.Type == MessageTypeRequestVote {
-			log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
-			node.send(NewRequestVoteAck(msg.Src, false))
-		} else if msg.Type == MessageTypeAppendEntry {
-			log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
-			node.send(NewAppendEntryAck(msg.Src, false))
-		} else {
-			log.Println("ignore", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
-		}
+		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term)
+		node.send(NewNoneMsg(msg.Src))
 		// finish processing msg
 		return
 	}
@@ -370,6 +363,9 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		node.store.SaveState()
 		// continue processing msg
+	}
+	if msg.Type == MessageTypeNone {
+		return
 	}
 
 	if node.Role == RoleLeader {
@@ -487,12 +483,13 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	if ent.Index != 1 { // if not very first entry
 		prev := node.store.GetEntry(msg.PrevIndex)
-		if prev == nil || prev.Term != msg.PrevTerm {
-			if prev == nil {
-				log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			} else {
-				log.Printf("prev.Term %d != msg.PrevTerm %d", prev.Term, msg.PrevTerm)
-			}
+		if prev == nil {
+			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
+			node.send(NewAppendEntryAck(msg.Src, false))
+			return
+		}
+		if prev.Term != msg.PrevTerm {
+			log.Printf("prev.Term %d != msg.PrevTerm %d", prev.Term, msg.PrevTerm)
 			node.send(NewAppendEntryAck(msg.Src, false))
 			return
 		}
@@ -503,8 +500,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	} else {
 		old := node.store.GetEntry(ent.Index)
 		if old != nil && old.Term != ent.Term {
-			// TODO:
-			log.Println("delete conflict entry, and entries that follow")
+			log.Println("TODO: delete conflict entry, and entries that follow")
 		}
 		node.store.AppendEntry(ent)
 	}
@@ -518,26 +514,11 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m.ReceiveTimeout = 0
 
 	if msg.Data == "false" {
-		if msg.PrevIndex == 0 {
-			node.sendInstallSnapshot(m)
-			return
-		}
-		if msg.PrevIndex < node.store.LastIndex {
-			m.NextIndex = util.MaxInt64(1, msg.PrevIndex + 1)
-			log.Println("decrease NextIndex for node", m.Id, "to", m.NextIndex)
-
-			ent := node.store.GetEntry(m.NextIndex)
-			if ent != nil {
-				node.replicateMember(m)
-			} else {
-				node.sendInstallSnapshot(m)
-			}
-		}
-	}else{
-		oldMatchIndex := m.MatchIndex
-		m.NextIndex = util.MaxInt64(m.NextIndex, msg.PrevIndex + 1)
+		m.NextIndex = util.MinInt64(m.NextIndex - 1, msg.PrevIndex + 1)
+		log.Printf("node %s, reset nextIndex: %d", m.Id, m.NextIndex)
+	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
-		if m.MatchIndex > oldMatchIndex {
+		if m.MatchIndex > node.store.CommitIndex {
 			// sort matchIndex[] in descend order
 			matchIndex := make([]int64, 0, len(node.Members) + 1)
 			matchIndex = append(matchIndex, node.store.LastIndex) // self
@@ -547,26 +528,36 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			sort.Slice(matchIndex, func(i, j int) bool{
 				return matchIndex[i] > matchIndex[j]
 			})
-			log.Println("matchIndex[] =", matchIndex)
 			commitIndex := matchIndex[len(matchIndex)/2]
+			log.Println("match[] =", matchIndex, "commit", commitIndex)
 
-			ent := node.store.GetEntry(commitIndex)
-			// only commit currentTerm's log
-			if ent.Term == node.Term && commitIndex > node.store.CommitIndex {
-				node.store.CommitEntry(commitIndex)
-			}
-			
-			if m.NextIndex <= node.store.LastIndex {
-				node.replicateMember(m)
-			} else {
-				// 如果 follower 回复了最后一条 entry
-				if m.MatchIndex  == node.store.LastIndex {
-					// immediately notify followers to commit
-					node.pingMember(m)
+			if commitIndex > node.store.CommitIndex {
+				// only commit currentTerm's log
+				ent := node.store.GetEntry(commitIndex)
+				if ent.Term == node.Term {
+					node.store.CommitEntry(commitIndex)
 				}
+			}
+			// follower acked last entry, heartbeat it to commit
+			if m.MatchIndex == node.store.LastIndex {
+				node.pingMember(m)
+				return
 			}
 		}
 	}
+
+	// force new node added to group to install snapshot, avoid replaying too many logs.
+	if msg.PrevIndex == 0 {
+		log.Printf("new node, notify it to install snapshot")
+		node.sendInstallSnapshot(m)
+		return
+	}
+	if m.NextIndex < node.store.FirstIndex {
+		log.Printf("follower %s out-of-sync, notify it to install snapshot", m.Id)
+		node.sendInstallSnapshot(m)
+		return
+	}
+	node.replicateMember(m)
 }
 
 func (node *Node)sendInstallSnapshot(m *Member){
