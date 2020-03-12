@@ -7,6 +7,7 @@ import (
 
 type Request struct{
 	Src int
+	Term int32
 	cmd string
 	args []string
 }

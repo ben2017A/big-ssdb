@@ -134,7 +134,8 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		return
 	}
 	
-	idx := svc.node.Write(s)
+	term, idx := svc.node.Write(s)
+	req.Term = term
 	svc.jobs[idx] = req
 }
 
@@ -171,6 +172,10 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 		return
 	}
 	delete(svc.jobs, ent.Index)
+	if req.Term != ent.Term {
+		log.Println("entry was overwritten by new leader")
+		ret = "error"
+	}
 	
 	if ret == "" {
 		ret = "ok"

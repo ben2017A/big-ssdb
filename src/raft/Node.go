@@ -33,12 +33,12 @@ type Node struct{
 	Addr string
 	Role RoleType
 
-	// Raft persistent state
+	// Raft persisted state
 	Term int32
 	VoteFor string
 	Members map[string]*Member
 
-	// volatile value
+	// not valotile, persisted in Raft's database as CommitIndex
 	lastApplied int64
 	
 	votesReceived map[string]string
@@ -650,17 +650,17 @@ func (node *Node)DelMember(nodeId string) int64 {
 	return ent.Index
 }
 
-func (node *Node)Write(data string) int64 {
+func (node *Node)Write(data string) (int32, int64) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
 	if node.Role != RoleLeader {
 		log.Println("error: not leader")
-		return -1
+		return -1, -1
 	}
 	
 	ent := node.store.AddNewEntry(EntryTypeData, data)
-	return ent.Index
+	return ent.Term, ent.Index
 }
 
 /* ###################### Operations ####################### */

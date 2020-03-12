@@ -13,12 +13,14 @@ type Storage struct{
 	FirstIndex int64
 	LastTerm int32
 	LastIndex int64
-	// Discovered from log entries, also in db @CommitIndex
+	// Saved in db @CommitIndex
+	// All committed entries are immediately applied to Raft it self,
+	// but may asynchronously be applied to Service
 	CommitIndex int64
 	state *State
 
 	node *Node
-	// notify channel reader there is new entry to be replicated
+	// notify Raft there is new entry to be replicated
 	C chan int
 
 	// entries may not be continuous(for follower)
