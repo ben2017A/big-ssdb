@@ -102,9 +102,9 @@ func (st *Storage)loadEntries(){
 			log.Println("bad entry format:", v)
 		} else {
 			st.entries[ent.Index] = ent
-			st.FirstIndex = util.MinInt64(st.FirstIndex, ent.Index)
-			st.LastTerm = util.MaxInt32(st.LastTerm, ent.Term)
-			st.LastIndex = util.MaxInt64(st.LastIndex, ent.Index)
+			st.FirstIndex  = util.MinInt64(st.FirstIndex, ent.Index)
+			st.LastTerm    = util.MaxInt32(st.LastTerm, ent.Term)
+			st.LastIndex   = util.MaxInt64(st.LastIndex, ent.Index)
 		}
 	}
 }
@@ -137,7 +137,7 @@ func (st *Storage)SaveEntry(ent *Entry){
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 func (st *Storage)AppendEntry(ent *Entry){
 	if ent.Index <= st.CommitIndex {
-		log.Println(ent.Index, "<", st.CommitIndex)
+		log.Println("ent.Index", ent.Index, "<", "commitIndex", st.CommitIndex)
 		return
 	}
 
@@ -178,6 +178,9 @@ func (st *Storage)CommitEntry(commitIndex int64){
 func (st *Storage)ApplyEntries(){
 	for idx := st.node.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 		ent := st.GetEntry(idx)
+		if ent == nil {
+			log.Fatalf("entry#%d not found", idx)
+		}
 		st.node.ApplyEntry(ent)
 	}
 	if st.Service != nil {
@@ -202,16 +205,13 @@ func (st *Storage)CreateSnapshot() *Snapshot {
 
 // install 之前, Node 需要配置好 Members, 因为 SaveState() 会从 node.Members 获取
 func (st *Storage)InstallSnapshot(sn *Snapshot) bool {
-	state := sn.State()
-	st.node.Term = state.Term
-	st.node.VoteFor = state.VoteFor
-	
-	ent := sn.LastEntry()
-	st.CommitIndex = ent.Index
-	st.LastTerm = ent.Term
-	st.LastIndex = ent.Index
-	
 	st.db.CleanAll()
+
+	st.node.Term    = sn.State().Term
+	st.node.VoteFor = ""
+	st.LastTerm     = sn.LastTerm()
+	st.LastIndex    = sn.LastIndex()
+	st.CommitIndex  = sn.LastIndex()
 
 	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
 	st.SaveState()

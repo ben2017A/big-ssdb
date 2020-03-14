@@ -3,12 +3,13 @@ package raft
 import (
 	"log"
 	"encoding/json"
+	"util"
 )
 
 // Raft's snapshot, not service's
 type Snapshot struct {
 	state *State
-	// 新节点需要至少存储两条日志, 否则收到 Heartbeat 时校验 prevEntry 会失败
+	// 新节点需要至少存储两条日志(如果 commitIndex > 2), 否则收到 Heartbeat 时校验 prevEntry 会失败
 	entries []*Entry
 }
 
@@ -24,22 +25,17 @@ func NewSnapshotFromStorage(store *Storage) *Snapshot {
 	sn.state.CopyFrom(store.State())
 	sn.entries = make([]*Entry, 0)
 	
-	if store.CommitIndex != 1 {
-		ent := store.GetEntry(store.CommitIndex - 1)
+	const NUM int64 = 2
+	start := util.MaxInt64(1, store.CommitIndex - NUM + 1)
+	for idx := start; idx <= store.CommitIndex; idx ++ {
+		ent := store.GetEntry(idx)
 		if ent == nil {
-			log.Fatal("lost entry#", store.CommitIndex - 1)
+			log.Fatal("lost entry#", idx)
 			return nil
 		}
 		ent.CommitIndex = ent.Index
 		sn.entries = append(sn.entries, ent)
 	}
-	ent := store.GetEntry(store.CommitIndex)
-	if ent == nil {
-		log.Fatal("lost entry#", store.CommitIndex)
-		return nil
-	}
-	ent.CommitIndex = ent.Index
-	sn.entries = append(sn.entries, ent)
 
 	return sn
 }
@@ -52,8 +48,22 @@ func NewSnapshotFromString(data string) *Snapshot {
 	return sn
 }
 
-func (sn *Snapshot)CommitIndex() int64 {
-	return sn.LastEntry().Index
+func (sn *Snapshot)LastTerm() int32 {
+	if len(sn.entries) == 0 {
+		return 0
+	}
+	return sn.lastEntry().Term
+}
+
+func (sn *Snapshot)LastIndex() int64 {
+	if len(sn.entries) == 0 {
+		return 0
+	}
+	return sn.lastEntry().Index
+}
+
+func (sn *Snapshot)lastEntry() *Entry {
+	return sn.entries[len(sn.entries)-1]
 }
 
 func (sn *Snapshot)State() *State {
@@ -63,10 +73,6 @@ func (sn *Snapshot)State() *State {
 // Lastest committed entries
 func (sn *Snapshot)Entries() []*Entry {
 	return sn.entries
-}
-
-func (sn *Snapshot)LastEntry() *Entry {
-	return sn.entries[len(sn.entries)-1]
 }
 
 func (sn *Snapshot)Encode() string {
@@ -89,16 +95,15 @@ func (sn *Snapshot)Decode(data string) bool {
 		log.Println("json_decode error:", err, "data:", data)
 		return false
 	}
-	if len(arr) != 3 {
+	if len(arr) == 0 {
 		log.Println("bad data:", data)
 		return false
 	}
-	
 	if sn.state.Decode(arr[0]) != true {
 		log.Println("decode state error:", data)
 		return false
 	}
-	
+
 	for _, s := range arr[1:] {
 		var ent Entry
 		if ent.Decode(s) == false {

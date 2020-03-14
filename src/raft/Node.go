@@ -196,6 +196,7 @@ func (node *Node)Tick(timeElapse int){
 
 func (node *Node)startPreVote(){
 	node.electionTimer = 0
+	node.Role = RoleFollower
 	node.votesReceived = make(map[string]string)
 	node.broadcast(NewPreVoteMsg())
 	
@@ -224,15 +225,21 @@ func (node *Node)startElection(){
 }
 
 func (node *Node)checkVoteResult(){
-	count := 1
+	grant := 1
+	reject := 0
 	for _, res := range node.votesReceived {
 		if res == "grant" {
-			count ++
+			grant ++
+		} else {
+			reject ++
 		}
 	}
-	if count > (len(node.Members) + 1)/2 {
+	if grant > (len(node.Members) + 1)/2 {
 		log.Printf("Node %s became leader", node.Id)
 		node.becomeLeader()
+	} else if reject > len(node.Members)/2 {
+		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.Members)+1)
+		node.becomeFollower()
 	}
 }
 
@@ -536,6 +543,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		log.Printf("node %s, reset nextIndex: %d", m.Id, m.NextIndex)
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
+		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
 		if m.MatchIndex > node.store.CommitIndex {
 			// sort matchIndex[] in descend order
 			matchIndex := make([]int64, 0, len(node.Members) + 1)
@@ -607,7 +615,7 @@ func (node *Node)_installSnapshot(sn *Snapshot) bool {
 	for nodeId, nodeAddr := range sn.State().Members {
 		node.connectMember(nodeId, nodeAddr)
 	}
-	node.lastApplied = sn.LastEntry().Index
+	node.lastApplied = sn.LastIndex()
 
 	return node.store.InstallSnapshot(sn)
 }
