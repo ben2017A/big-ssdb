@@ -84,18 +84,36 @@ func (node *Node)SetService(svc Service){
 
 func (node *Node)Start(){
 	go func() {
+		log.Println("apply logs on startup")
+		node.mux.Lock()
+		node.store.ApplyEntries()
+		node.mux.Unlock()
+	}()
+	node.StartTicker()
+	node.StartCommunication()
+}
+
+func (node *Node)StartTicker(){
+	go func() {
 		const TimerInterval = 100
 		ticker := time.NewTicker(TimerInterval * time.Millisecond)
 		defer ticker.Stop()
 
-		node.store.ApplyEntries()
-	
+		log.Println("setup ticker, interval:", TimerInterval)
+		for {
+			<- ticker.C
+			node.mux.Lock()
+			node.Tick(TimerInterval)
+			node.mux.Unlock()
+		}
+	}()
+}
+
+func (node *Node)StartCommunication(){
+	go func() {
+		log.Println("setup communication")
 		for{
 			select{
-			case <-ticker.C:
-				node.mux.Lock()
-				node.Tick(TimerInterval)
-				node.mux.Unlock()
 			case <-node.store.C:
 				for len(node.store.C) > 0 {
 					<-node.store.C

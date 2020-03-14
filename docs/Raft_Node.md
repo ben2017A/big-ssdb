@@ -20,7 +20,15 @@ freeze 状态不响应任何 Raft 请求.
 
 ## 指令设计
 
-### AddMember
+### node.join_group
+
+删除 Raft Database, 然后 Connect leader. Leader 会给节点发 Install Snapshot 指令.
+
+### node.quit_group
+
+不删除数据, 进入 freeze 状态.
+
+### group.add_member
 
 * 客户端给 leader 发 AddMember 指令后, 新节点被集群接受
 * 新节点启动后进入 freeze 状态
@@ -28,17 +36,23 @@ freeze 状态不响应任何 Raft 请求.
 
 TODO: Service Database.
 
-### DelMember
+### group.del_member
 
 给 leader 发 DelMember 指令后, 节点被从集群中剔除. 被删节点可能收到 DelMember log 也可能收不到, 可能收到 commit 也可能收不到.
 
 所以, 需要给被删节点发送 QuitGroup 指令.
 
-### JoinGroup
+### container.split_group
 
-删除 Raft Database, 然后 Connect leader. Leader 会给节点发 Install Snapshot 指令.
+组成员分成两批, 分别去组建新的 Group(fork 出不同的新组), 而旧组转成"销毁中"状态继续运行, 不对外提供服务, 仅执行垃圾回收任务.
 
-### QuitGroup
+### container.merge_group
 
-不删除数据, 进入 freeze 状态.
+* 生成新组, initializing 状态
+* 给旧组发送 prepare destroy 指令
+* 旧组 promised destroy 状态, 不提供服务
+	* 所有节点的日志必须全部 applied
+* 新组 active 状态
+* 旧组 destroying 状态
 
+操作过程中, 新组和旧组指向的数据有重叠. 注意, 组的状态变更后, 不代表全部组成员都已变更, 而是经多数派共识.
