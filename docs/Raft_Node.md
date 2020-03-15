@@ -22,7 +22,9 @@ freeze 状态不响应任何 Raft 请求.
 
 ### node.join_group
 
-删除 Raft Database, 然后 Connect leader. Leader 会给节点发 Install Snapshot 指令.
+删除 Raft Database, 然后 Connect leader. Leader 会在 Heartbeat 时发现其落后, 然后发 Install Snapshot 指令.
+
+需要先 group_add_member 接受节点后, 其 join_group 才会生效, 否则其它节点会忽略它.
 
 ### node.quit_group
 
@@ -40,11 +42,13 @@ TODO: Service Database.
 
 给 leader 发 DelMember 指令后, 节点被从集群中剔除. 被删节点可能收到 DelMember log 也可能收不到, 可能收到 commit 也可能收不到.
 
-所以, 需要给被删节点发送 QuitGroup 指令.
+所以, 需要给被删节点发送 quit_group 指令.
 
 ### container.split_group
 
 组成员分成两批, 分别去组建新的 Group(fork 出不同的新组), 而旧组转成"销毁中"状态继续运行, 不对外提供服务, 仅执行垃圾回收任务.
+
+TODO:
 
 ### container.merge_group
 
