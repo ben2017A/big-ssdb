@@ -523,15 +523,34 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if ent.Type == EntryTypePing {
 		//
 	} else {
-		old := node.store.GetEntry(ent.Index)
-		if old != nil && old.Term != ent.Term {
-			log.Println("TODO: delete conflict entry, and entries that follow")
+		if ent.Index <= node.store.CommitIndex {
+			log.Printf("ignore entry after committed, entry: %d, committed: %d", ent.Index, node.store.CommitIndex)
+		} else {
+			old := node.store.GetEntry(ent.Index)
+			if old != nil && old.Term != ent.Term {
+				log.Println("TODO: delete conflict entry, and entries that follow")
+			}
+			node.store.AppendEntry(ent)
 		}
-		node.store.AppendEntry(ent)
 	}
 
 	node.send(NewAppendEntryAck(msg.Src, true))
 	node.store.CommitEntry(ent.CommitIndex)
+}
+
+func (node *Node)checkCommitIndex() int64 {
+	// sort matchIndex[] in descend order
+	matchIndex := make([]int64, 0, len(node.Members) + 1)
+	matchIndex = append(matchIndex, node.store.LastIndex) // self
+	for _, m := range node.Members {
+		matchIndex = append(matchIndex, m.MatchIndex)
+	}
+	sort.Slice(matchIndex, func(i, j int) bool{
+		return matchIndex[i] > matchIndex[j]
+	})
+	commitIndex := matchIndex[len(matchIndex)/2]
+	log.Println("match[] =", matchIndex, "commit", commitIndex)
+	return commitIndex
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -542,32 +561,23 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		m.NextIndex = util.MinInt64(m.NextIndex - 1, msg.PrevIndex + 1)
 		log.Printf("node %s, reset nextIndex: %d", m.Id, m.NextIndex)
 	} else {
-		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
+		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		if m.MatchIndex > node.store.CommitIndex {
-			// sort matchIndex[] in descend order
-			matchIndex := make([]int64, 0, len(node.Members) + 1)
-			matchIndex = append(matchIndex, node.store.LastIndex) // self
-			for _, m := range node.Members {
-				matchIndex = append(matchIndex, m.MatchIndex)
-			}
-			sort.Slice(matchIndex, func(i, j int) bool{
-				return matchIndex[i] > matchIndex[j]
-			})
-			commitIndex := matchIndex[len(matchIndex)/2]
-			log.Println("match[] =", matchIndex, "commit", commitIndex)
-
+			commitIndex := node.checkCommitIndex()
 			if commitIndex > node.store.CommitIndex {
 				// only commit currentTerm's log
 				ent := node.store.GetEntry(commitIndex)
 				if ent.Term == node.Term {
 					node.store.CommitEntry(commitIndex)
+
+					// follower acked last entry, heartbeat it to commit
+					if m.MatchIndex == node.store.LastIndex {
+						// TODO: ping all?
+						node.pingMember(m)
+						return
+					}
 				}
-			}
-			// follower acked last entry, heartbeat it to commit
-			if m.MatchIndex == node.store.LastIndex {
-				node.pingMember(m)
-				return
 			}
 		}
 	}
@@ -605,7 +615,7 @@ func (node *Node)handleInstallSnapshot(msg *Message){
 	node._installSnapshot(sn)
 	node.send(NewAppendEntryAck(msg.Src, true))
 	
-	// TODO: copy service snapshot
+	// TODO: notify service to install snapshot
 	log.Println("TODO: install Service snapshot")
 }
 
