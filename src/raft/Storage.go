@@ -114,7 +114,7 @@ func (st *Storage)GetEntry(index int64) *Entry{
 }
 
 // return a copy of appended entry
-func (st *Storage)AddNewEntry(type_ EntryType, data string) *Entry{
+func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 	ent := new(Entry)
 	ent.Type = type_
 	ent.Term = st.node.Term
@@ -122,20 +122,14 @@ func (st *Storage)AddNewEntry(type_ EntryType, data string) *Entry{
 	ent.CommitIndex = st.CommitIndex
 	ent.Data = data
 
-	st.AppendEntry(ent)
+	st.PrepareEntry(ent)
 	// notify xport to send
 	st.C <- 0
 	return ent
 }
 
-// called when install snapshot
-func (st *Storage)SaveEntry(ent *Entry){
-	st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
-	st.entries[ent.Index] = ent
-}
-
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-func (st *Storage)AppendEntry(ent *Entry){
+func (st *Storage)PrepareEntry(ent *Entry){
 	if ent.Index <= st.CommitIndex {
 		log.Println("ent.Index", ent.Index, "<", "commitIndex", st.CommitIndex)
 		return
@@ -144,7 +138,7 @@ func (st *Storage)AppendEntry(ent *Entry){
 	st.entries[ent.Index] = ent
 	st.FirstIndex = util.MinInt64(st.FirstIndex, ent.Index)
 
-	// 更新 LastTer 和 LastIndex, 忽略空洞
+	// 找出连续的 entries, 更新 LastTerm 和 LastIndex,
 	for{
 		ent := st.GetEntry(st.LastIndex + 1)
 		if ent == nil {
@@ -152,11 +146,16 @@ func (st *Storage)AppendEntry(ent *Entry){
 		}
 
 		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
-		log.Println("[RAFT] append Log", ent.Encode())
+		log.Println("[RAFT] write Log", ent.Encode())
+		// IMPORTANT: 必须在这里 fsync()
 
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
 	}
+}
+
+// TODO:
+func (st *Storage)AsyncCommitEntry(commitIndex int64){
 }
 
 // 如果存在空洞, 不会跳过空洞 commit
@@ -209,14 +208,14 @@ func (st *Storage)InstallSnapshot(sn *Snapshot) bool {
 
 	st.node.Term    = sn.State().Term
 	st.node.VoteFor = ""
-	st.LastTerm     = sn.LastTerm()
-	st.LastIndex    = sn.LastIndex()
+	st.LastTerm     = 0
+	st.LastIndex    = 0
 	st.CommitIndex  = sn.LastIndex()
 
-	// TODO: 需要实现保存的原子性, SaveEntry 和 SaveState 中间是有可能失败的
+	// TODO: 需要实现保存的原子性
 	st.SaveState()
 	for _, ent := range sn.Entries() {
-		st.SaveEntry(ent)
+		st.PrepareEntry(ent)
 	}
 
 	return true

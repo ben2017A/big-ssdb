@@ -257,7 +257,7 @@ func (node *Node)becomeLeader(){
 	node.resetAllMember()
 	// write noop entry with currentTerm to implictly commit previous term's log
 	if node.store.LastIndex == 0 || node.store.LastIndex != node.store.CommitIndex {
-		node.store.AddNewEntry(EntryTypeNoop, "")
+		node.store.AppendEntry(EntryTypeNoop, "")
 	} else {
 		for _, m := range node.Members {
 			node.pingMember(m)
@@ -530,7 +530,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			if old != nil && old.Term != ent.Term {
 				log.Println("TODO: delete conflict entry, and entries that follow")
 			}
-			node.store.AppendEntry(ent)
+			node.store.PrepareEntry(ent)
 		}
 	}
 
@@ -668,7 +668,7 @@ func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	}
 	
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
-	ent := node.store.AddNewEntry(EntryTypeAddMember, data)
+	ent := node.store.AppendEntry(EntryTypeAddMember, data)
 	return ent.Index
 }
 
@@ -682,7 +682,7 @@ func (node *Node)DelMember(nodeId string) int64 {
 	}
 	
 	data := nodeId
-	ent := node.store.AddNewEntry(EntryTypeDelMember, data)
+	ent := node.store.AppendEntry(EntryTypeDelMember, data)
 	return ent.Index
 }
 
@@ -695,7 +695,7 @@ func (node *Node)Write(data string) (int32, int64) {
 		return -1, -1
 	}
 	
-	ent := node.store.AddNewEntry(EntryTypeData, data)
+	ent := node.store.AppendEntry(EntryTypeData, data)
 	return ent.Term, ent.Index
 }
 
