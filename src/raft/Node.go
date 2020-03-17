@@ -524,13 +524,18 @@ func (node *Node)handleAppendEntry(msg *Message){
 		//
 	} else {
 		if ent.Index <= node.store.CommitIndex {
-			log.Printf("ignore entry after committed, entry: %d, committed: %d", ent.Index, node.store.CommitIndex)
+			log.Printf("duplicated entry, entry: %d, committed: %d", ent.Index, node.store.CommitIndex)
 		} else {
 			old := node.store.GetEntry(ent.Index)
-			if old != nil && old.Term != ent.Term {
-				log.Println("TODO: delete conflict entry, and entries that follow")
+			if old != nil {
+				if old.Term != ent.Term {
+					// TODO:
+					log.Println("TODO: delete conflict entry, and entries that follow")
+				} else {
+					log.Println("duplicated entry ", ent.Term, ent.Index)
+				}
 			}
-			node.store.PrepareEntry(ent)
+			node.store.PrepareEntry(*ent)
 		}
 	}
 

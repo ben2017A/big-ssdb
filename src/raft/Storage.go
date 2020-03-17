@@ -113,7 +113,6 @@ func (st *Storage)GetEntry(index int64) *Entry{
 	return st.entries[index]
 }
 
-// return a copy of appended entry
 func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 	ent := new(Entry)
 	ent.Type = type_
@@ -122,20 +121,21 @@ func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 	ent.CommitIndex = st.CommitIndex
 	ent.Data = data
 
-	st.PrepareEntry(ent)
+	st.PrepareEntry(*ent)
 	// notify xport to send
 	st.C <- 0
 	return ent
 }
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
-func (st *Storage)PrepareEntry(ent *Entry){
+// 参数值拷贝
+func (st *Storage)PrepareEntry(ent Entry){
 	if ent.Index <= st.CommitIndex {
 		log.Println("ent.Index", ent.Index, "<", "commitIndex", st.CommitIndex)
 		return
 	}
 
-	st.entries[ent.Index] = ent
+	st.entries[ent.Index] = &ent
 	st.FirstIndex = util.MinInt64(st.FirstIndex, ent.Index)
 
 	// 找出连续的 entries, 更新 LastTerm 和 LastIndex,
@@ -182,6 +182,8 @@ func (st *Storage)ApplyEntries(){
 		}
 		st.node.ApplyEntry(ent)
 	}
+
+	// TODO: async
 	if st.Service != nil {
 		for idx := st.Service.LastApplied() + 1; idx <= st.CommitIndex; idx ++ {
 			ent := st.GetEntry(idx)
@@ -215,7 +217,7 @@ func (st *Storage)InstallSnapshot(sn *Snapshot) bool {
 	// TODO: 需要实现保存的原子性
 	st.SaveState()
 	for _, ent := range sn.Entries() {
-		st.PrepareEntry(ent)
+		st.PrepareEntry(*ent)
 	}
 
 	return true
