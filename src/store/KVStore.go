@@ -114,6 +114,10 @@ func (db *KVStore)loadWalFile(fn string){
 	}
 }
 
+func (db *KVStore)Fsync() error {
+	return db.wal.Fsync()
+}
+
 // 目前是无序的
 func (db *KVStore)All() map[string]string {
 	return db.mm

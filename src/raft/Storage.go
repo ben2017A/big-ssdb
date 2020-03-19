@@ -13,7 +13,6 @@ type Storage struct{
 	FirstIndex int64
 	LastTerm int32
 	LastIndex int64
-	// Saved in db @CommitIndex
 	// All committed entries are immediately applied to Raft it self,
 	// but may asynchronously be applied to Service
 	CommitIndex int64
@@ -37,6 +36,8 @@ func NewStorage(db Db) *Storage {
 	
 	st.db = db
 	st.C = make(chan int, 10)
+
+	st.FirstIndex = math.MaxInt64
 
 	st.loadState()
 	st.loadEntries()
@@ -67,7 +68,6 @@ func (st *Storage)loadState() {
 	if st.state.Members == nil {
 		st.state.Members = make(map[string]string)
 	}
-	st.CommitIndex = util.Atoi64(st.db.Get("@CommitIndex"))
 }
 
 func (st *Storage)SaveState(){
@@ -81,31 +81,33 @@ func (st *Storage)SaveState(){
 	}
 	
 	st.db.Set("@State", st.state.Encode())
-	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
 
 	log.Printf("save raft state[%s]:", st.node.Id)
-	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
-	log.Println("    State:", st.state.Encode())
+	log.Println("    ", st.state.Encode())
+
+	err := st.db.Fsync()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 /* #################### Entry ###################### */
 
 func (st *Storage)loadEntries(){
-	st.FirstIndex = math.MaxInt64
 	for k, v := range st.db.All() {
 		if !strings.HasPrefix(k, "log#") {
 			continue
 		}
-		
 		ent := DecodeEntry(v)
 		if ent == nil {
-			log.Println("bad entry format:", v)
-		} else {
-			st.entries[ent.Index] = ent
-			st.FirstIndex  = util.MinInt64(st.FirstIndex, ent.Index)
-			st.LastTerm    = util.MaxInt32(st.LastTerm, ent.Term)
-			st.LastIndex   = util.MaxInt64(st.LastIndex, ent.Index)
+			log.Fatal("bad entry format:", v)
 		}
+
+		st.entries[ent.Index] = ent
+		st.CommitIndex = util.MaxInt64(st.LastIndex, ent.Index)
+		st.FirstIndex  = util.MinInt64(st.FirstIndex, ent.Index)
+		st.LastTerm    = util.MaxInt32(st.LastTerm, ent.Term)
+		st.LastIndex   = util.MaxInt64(st.LastIndex, ent.Index)
 	}
 }
 
@@ -118,7 +120,7 @@ func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 	ent.Type = type_
 	ent.Term = st.node.Term
 	ent.Index = st.LastIndex + 1
-	ent.CommitIndex = st.CommitIndex
+	ent.Commit = st.CommitIndex
 	ent.Data = data
 
 	st.PrepareEntry(*ent)
@@ -144,11 +146,6 @@ func (st *Storage)PrepareEntry(ent Entry){
 		if ent == nil {
 			break;
 		}
-
-		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
-		log.Println("[RAFT] write Log", ent.Encode())
-		// IMPORTANT: 必须在这里 fsync()
-
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
 	}
@@ -166,12 +163,19 @@ func (st *Storage)CommitEntry(commitIndex int64){
 		return
 	}
 
-	st.CommitIndex = commitIndex
-	st.ApplyEntries()
+	if st.CommitIndex < commitIndex {
+		st.CommitIndex += 1
 
-	// save after applied
-	st.db.Set("@CommitIndex", fmt.Sprintf("%d", st.CommitIndex))
-	log.Printf("[RAFT] CommitIndex: %d", st.CommitIndex)
+		ent := st.GetEntry(st.CommitIndex)
+		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
+		log.Println("[RAFT] write Log", ent.Encode())
+	}
+	err := st.db.Fsync()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	st.ApplyEntries()
 }
 
 func (st *Storage)ApplyEntries(){
@@ -215,10 +219,10 @@ func (st *Storage)InstallSnapshot(sn *Snapshot) bool {
 	st.CommitIndex  = sn.LastIndex()
 
 	// TODO: 需要实现保存的原子性
-	st.SaveState()
 	for _, ent := range sn.Entries() {
 		st.PrepareEntry(*ent)
 	}
+	st.SaveState()
 
 	return true
 }

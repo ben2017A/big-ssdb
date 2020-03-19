@@ -88,6 +88,10 @@ func (wal *WalFile)ReadLast() string{
 	return last
 }
 
+func (wal *WalFile)Fsync() error {
+	return wal.fp.Sync()
+}
+
 // record.indexOf('\n') == false
 func (wal *WalFile)Append(record string) bool{
 	record += "\n"

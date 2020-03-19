@@ -23,7 +23,7 @@ func main() {
 	start := time.Now()
 	for i := 0; i < num; i++ {
 		key := fmt.Sprintf("k%04d", i)
-		fmt.Fprintf(conn, "get %s %d\n", key, i)
+		fmt.Fprintf(conn, "set %s %d\n", key, i)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			log.Println(err)

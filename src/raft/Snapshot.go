@@ -33,7 +33,7 @@ func NewSnapshotFromStorage(store *Storage) *Snapshot {
 			log.Fatal("lost entry#", idx)
 			return nil
 		}
-		ent.CommitIndex = ent.Index
+		ent.Commit = ent.Index
 		sn.entries = append(sn.entries, ent)
 	}
 

@@ -2,8 +2,9 @@ package raft
 
 type Db interface {
 	Close()
-	All() map[string]string
+	Fsync() error
 	Get(key string) string
 	Set(key string, val string)
+	All() map[string]string
 	CleanAll()
 } 

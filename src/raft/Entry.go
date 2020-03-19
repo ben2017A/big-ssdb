@@ -20,7 +20,7 @@ const(
 type Entry struct{
 	Term int32
 	Index int64
-	CommitIndex int64
+	Commit int64
 	Type EntryType
 	Data string
 }
@@ -35,7 +35,7 @@ func DecodeEntry(buf string) *Entry{
 }
 
 func (e *Entry)Encode() string{
-	return fmt.Sprintf("%d %d %d %s %s", e.Term, e.Index, e.CommitIndex, e.Type, e.Data)
+	return fmt.Sprintf("%d %d %d %s %s", e.Term, e.Index, e.Commit, e.Type, e.Data)
 }
 
 func (e *Entry)Decode(buf string) bool{
@@ -47,7 +47,7 @@ func (e *Entry)Decode(buf string) bool{
 
 	e.Term = util.Atoi32(ps[0])
 	e.Index = util.Atoi64(ps[1])
-	e.CommitIndex = util.Atoi64(ps[2])
+	e.Commit = util.Atoi64(ps[2])
 	e.Type = EntryType(ps[3])
 	e.Data = ps[4]
 	return true
@@ -58,6 +58,6 @@ func NewPingEntry(commitIndex int64) *Entry{
 	ent.Type = EntryTypePing
 	ent.Term = 0
 	ent.Index = 0
-	ent.CommitIndex = commitIndex
+	ent.Commit = commitIndex
 	return ent
 }

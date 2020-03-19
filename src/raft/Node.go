@@ -315,7 +315,7 @@ func (node *Node)replicateMember(m *Member){
 		if ent == nil {
 			break
 		}
-		ent.CommitIndex = node.store.CommitIndex
+		ent.Commit = node.store.CommitIndex
 		
 		prev := node.store.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
@@ -540,7 +540,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 
 	node.send(NewAppendEntryAck(msg.Src, true))
-	node.store.CommitEntry(ent.CommitIndex)
+	node.store.CommitEntry(ent.Commit)
 }
 
 func (node *Node)checkCommitIndex() int64 {
