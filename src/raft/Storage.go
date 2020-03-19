@@ -185,6 +185,7 @@ func (st *Storage)ApplyEntries(){
 			log.Fatalf("entry#%d not found", idx)
 		}
 		st.node.ApplyEntry(ent)
+		// TODO: 需要存储 Raft 自己的 lastApplied
 	}
 
 	// TODO: async
