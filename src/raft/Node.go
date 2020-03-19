@@ -711,7 +711,7 @@ func (node *Node)InfoMap() map[string]string {
 	defer node.mux.Unlock()
 	
 	m := make(map[string]string)
-	m["id"] = fmt.Sprintf("%d", node.Id)
+	m["id"] = fmt.Sprintf("%s", node.Id)
 	m["addr"] = node.Addr
 	m["role"] = string(node.Role)
 	m["term"] = fmt.Sprintf("%d", node.Term)
