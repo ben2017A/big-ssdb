@@ -56,6 +56,17 @@ func (svc *Service)Close() {
 	svc.db.Close()
 }
 
+func (svc *Service)MakeSnapshot() string {
+	fn := svc.dir + "/snapshot.db"
+	svc.db.MakeFileSnapshot(fn)
+	data, _ := ioutil.ReadFile(fn)
+	return data
+}
+
+func (svc *Service)InstallSnapshot(data string) {
+	// TODO:
+}
+
 func (svc *Service)HandleClientMessage(msg *link.Message) {
 	svc.mux.Lock()
 	defer svc.mux.Unlock()
@@ -69,22 +80,29 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	
 	cmd := req.Cmd()
 
-	// TODO: config join_group
 	if cmd == "JoinGroup" {
 		svc.node.JoinGroup(req.Arg(0), req.Arg(1))
 		return
 	}
-	// TODO: config add_member
 	if cmd == "AddMember" {
 		svc.node.AddMember(req.Arg(0), req.Arg(1))
 		return
 	}
-	// TODO: config del_member
 	if cmd == "DelMember" {
 		svc.node.DelMember(req.Arg(0))
 		return
 	}
-	
+	if cmd == "InstallSnapshot" {
+		// TODO:
+		return
+	}
+	if cmd == "MakeSnapshot" {
+		data := svc.MakeSnapshot()
+		resp := &link.Message{req.Src, data}
+		svc.xport.Send(resp)
+		return
+	}
+
 	if cmd == "info" {
 		s := svc.node.Info()
 		resp := &link.Message{req.Src, s}
@@ -101,18 +119,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 
 	if cmd == "get" {
 		s := svc.db.Get(req.Key())
-		log.Println(req.Key(), "=", s)
-		resp := &link.Message{req.Src, s}
-		svc.xport.Send(resp)
-		return
-	}
-	
-	if cmd == "dump" {
-		fn := svc.dir + "/snapshot.db"
-		svc.db.MakeFileSnapshot(fn)
-		data, _ := ioutil.ReadFile(fn)
-		s := string(data)
-
 		log.Println(req.Key(), "=", s)
 		resp := &link.Message{req.Src, s}
 		svc.xport.Send(resp)
