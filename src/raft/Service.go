@@ -7,6 +7,7 @@ type Service interface{
 	// and update lastApplied in a transaction for atomicity
 	ApplyEntry(ent *Entry)
 	
+	// TODO: rename to RaftApplyBroken()
 	InstallSnapshot()
 	
 	// RaftIsUp()

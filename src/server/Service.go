@@ -44,6 +44,8 @@ func NewService(dir string, node *raft.Node, xport *link.TcpServer) *Service {
 	svc.xport = xport
 	svc.jobs = make(map[int64]*Request)
 
+	log.Printf("lastApplied: %d", svc.lastApplied)
+
 	node.SetService(svc)
 	node.Start()
 
@@ -56,14 +58,14 @@ func (svc *Service)Close() {
 	svc.db.Close()
 }
 
-func (svc *Service)MakeSnapshot() string {
+func (svc *Service)MakeSnapshotToData() string {
 	fn := svc.dir + "/snapshot.db"
 	svc.db.MakeFileSnapshot(fn)
 	data, _ := ioutil.ReadFile(fn)
-	return data
+	return string(data)
 }
 
-func (svc *Service)InstallSnapshot(data string) {
+func (svc *Service)InstallSnapshotFromData(data string) {
 	// TODO:
 }
 
@@ -92,14 +94,14 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 		svc.node.DelMember(req.Arg(0))
 		return
 	}
-	if cmd == "InstallSnapshot" {
-		// TODO:
-		return
-	}
 	if cmd == "MakeSnapshot" {
-		data := svc.MakeSnapshot()
+		data := svc.MakeSnapshotToData()
 		resp := &link.Message{req.Src, data}
 		svc.xport.Send(resp)
+		return
+	}
+	if cmd == "InstallSnapshot" {
+		// TODO:
 		return
 	}
 
@@ -112,7 +114,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	
 	if svc.status != ServiceStatusActive {
 		log.Println("Service unavailable")
-		resp := &link.Message{req.Src, "error: service unavailable"}
+		resp := &link.Message{req.Src, "error: Service unavailable"}
 		svc.xport.Send(resp)
 		return
 	}
@@ -133,13 +135,6 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	}
 	
 	s := req.Encode()
-	if s == "" {
-		log.Println("error: unknown cmd: " + cmd)
-		resp := &link.Message{req.Src, "error: unkown cmd " + cmd}
-		svc.xport.Send(resp)
-		return
-	}
-	
 	term, idx := svc.node.Write(s)
 	req.Term = term
 	svc.jobs[idx] = req
@@ -170,6 +165,9 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 			svc.db.Del(ent.Index, key)
 		case "incr":
 			ret = svc.db.Incr(ent.Index, key, val)
+		default:
+			log.Println("error: unknown cmd: " + req.Cmd())
+			ret = "error: unkown cmd " + req.Cmd()
 		}
 	}
 
