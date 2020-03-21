@@ -1,5 +1,7 @@
 # TODO
 
+* network protocol
+
 * Service snapshot
 	* node.make_snapshot
 	* node.install_snapshot

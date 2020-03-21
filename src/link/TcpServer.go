@@ -9,6 +9,10 @@ import (
 	"sync"
 )
 
+/*
+请求响应模式, 一个连接如果有一个请求在处理时, 则不再解析报文, 等响应后再解析下一个报文.
+*/
+
 type TcpServer struct {
 	C chan *Message
 	
@@ -66,7 +70,7 @@ func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 			}
 			line = strings.Trim(line, "\r\n")
 			log.Printf("    receive < %s\n", line)
-			tcp.C <- &Message{clientId, line}
+			tcp.C <- &Message{clientId, line, []string{}}
 		}
 		
 		n, err := conn.Read(tmp)
