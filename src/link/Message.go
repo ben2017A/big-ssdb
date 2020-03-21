@@ -1,8 +1,12 @@
 package link
 
+import (
+	// "bytes"
+	// "strings"
+)
+
 type Message struct {
 	Src int
-	Data string
 	ps []string
 }
 
@@ -10,6 +14,24 @@ func NewMessage(ps []string) *Message {
 	ret := new(Message)
 	ret.ps = ps
 	return ret
+}
+
+func NewResponse(src int, ps []string) *Message {
+	ret := new(Message)
+	ret.Src = src
+	ret.ps = ps
+	return ret
+}
+
+func NewErrorResponse(src int, desc string) *Message {
+	ret := new(Message)
+	ret.Src = src
+	ret.ps = []string{"error", desc}
+	return ret
+}
+
+func (m *Message)Data() []string {
+	return m.ps
 }
 
 func (m *Message)Cmd() string {

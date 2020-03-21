@@ -12,7 +12,7 @@ func TestTcpServer(t *testing.T){
 	for {
 		select {
 		case msg := <- tcp.C:
-			fmt.Println(msg.Data)
+			fmt.Println(msg.Data())
 		}
 	}
 }

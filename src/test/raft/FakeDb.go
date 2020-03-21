@@ -33,3 +33,7 @@ func (db *FakeDb)Set(key string, val string) {
 func (db *FakeDb)CleanAll(){
 	db.mm = make(map[string]string)
 }
+
+func (db *FakeDb)Fsync() error {
+	return nil
+}

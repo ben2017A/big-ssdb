@@ -4,9 +4,11 @@ import (
 	"net"
 	"log"
 	"fmt"
+	"sync"
 	"strings"
 	"bytes"
-	"sync"
+	"strconv"
+	"util"
 )
 
 /*
@@ -59,32 +61,39 @@ func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 	tcp.mux.Lock()
 	tcp.clients[clientId] = conn
 	tcp.mux.Unlock()
-	
-	buf := new(bytes.Buffer)
-	tmp := make([]byte, 64*1024)
+
+	defer func() {
+		log.Println("Close connection", clientId, conn.RemoteAddr().String())
+		tcp.mux.Lock()
+		delete(tcp.clients, clientId)
+		tcp.mux.Unlock()
+		conn.Close()	
+	}()
+
+	parser := new(Parser)
+	tmp := make([]byte, 128*1024)
+
 	for {
 		for {
-			line, err := buf.ReadString('\n')
+			msg, err := parser.Parse()
 			if err != nil {
-				break;
+				log.Println("Parse error")
+				return
 			}
-			line = strings.Trim(line, "\r\n")
-			log.Printf("    receive < %s\n", line)
-			tcp.C <- &Message{clientId, line, []string{}}
+			if msg == nil {
+				break
+			}
+			msg.Src = clientId
+			tcp.C <- msg
 		}
 		
 		n, err := conn.Read(tmp)
 		if err != nil {
 			break
 		}
-		buf.Write(tmp[0:n])
+		parser.Append(tmp[0:n])
+		log.Printf("    receive > %d %s\n", clientId, util.ReplaceBytes(string(tmp[0:n]), []string{"\r", "\n"}, []string{"\\r", "\\n"}))
 	}
-
-	log.Println("Close connection", clientId, conn.RemoteAddr().String())
-	tcp.mux.Lock()
-	delete(tcp.clients, clientId)
-	tcp.mux.Unlock()
-	conn.Close()
 }
 
 func (tcp *TcpServer)Send(msg *Message) {
@@ -97,6 +106,34 @@ func (tcp *TcpServer)Send(msg *Message) {
 		return
 	}
 	
-	conn.Write([]byte(msg.Data + "\n"))
-	log.Printf("    send > %s\n", msg.Data)
+	s := tcp.encodeResponse(msg)
+	log.Printf("    send > %d %s\n", msg.Src, util.ReplaceBytes(s, []string{"\r", "\n"}, []string{"\\r", "\\n"}))
+	conn.Write([]byte(s))
+}
+
+func (tcp *TcpServer)encodeResponse(m *Message) string {
+	code := strings.ToLower(m.Code())
+	if code == "ok" {
+		if len(m.Args()) == 0 {
+			return "+OK\r\n"
+		}
+	} else if code == "error" {
+		return fmt.Sprintf("-ERR %s\r\n", m.Args()[0])
+	}
+
+	var buf bytes.Buffer
+	count := len(m.Args())
+	if count > 1 {
+		buf.WriteString("*")
+		buf.WriteString(strconv.Itoa(count))
+		buf.WriteString("\r\n")
+	}
+	for _, p := range m.Args() {
+		buf.WriteString("$")
+		buf.WriteString(strconv.Itoa(len(p)))
+		buf.WriteString("\r\n")
+		buf.WriteString(p)
+		buf.WriteString("\r\n")
+	}
+	return buf.String()
 }

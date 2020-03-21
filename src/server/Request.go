@@ -3,62 +3,72 @@ package server
 import (
 	"fmt"
 	"strings"
+	"link"
 )
 
 type Request struct{
 	Src int
 	Term int32
-	cmd string
-	args []string
+
+	ps []string
+	msg *link.Message
+}
+
+func NewRequest(m *link.Message) *Request {
+	ret := new(Request)
+	ret.msg = m
+	return ret
 }
 
 func (req *Request)Decode(buf string) bool {
-	ps := strings.Split(buf, " ")
-	req.cmd = ps[0]
-	req.args = ps[1:]
+	req.ps = strings.SplitN(buf, " ", 3)
 	return true
 }
 
 func (req *Request)Encode() string {
+	cmd := req.Cmd()
 	key := req.Key()
 	val := req.Val()
 	
 	var s string
-	switch req.cmd {
+	switch cmd {
 	case "set":
-		s = fmt.Sprintf("%s %s %s", req.cmd, key, val)
+		s = fmt.Sprintf("%s %s %s", cmd, key, val)
 	case "del":
-		s = fmt.Sprintf("%s %s", req.cmd, key)
+		s = fmt.Sprintf("%s %s", cmd, key)
 	case "incr":
 		if val == "" {
 			val = "1"
 		}
-		s = fmt.Sprintf("%s %s %s", req.cmd, key, val)
+		s = fmt.Sprintf("%s %s %s", cmd, key, val)
 	}
 	return s
 }
 
 func (req *Request)Cmd() string {
-	return req.cmd
+	if len(req.ps) > 0 {
+		return strings.ToLower(req.ps[0])
+	}
+	return strings.ToLower(req.msg.Cmd())
 }
 
 func (req *Request)Key() string {
-	if len(req.args) > 0 {
-		return req.args[0]
-	}
-	return ""
+	return req.Arg(0)
 }
 
 func (req *Request)Val() string {
-	if len(req.args) > 1 {
-		return req.args[1]
-	}
-	return ""	
+	return req.Arg(1)
 }
 
 func (req *Request)Arg(idx int) string {
-	if len(req.args) <= idx {
+	var args []string
+	if len(req.ps) > 0 {
+		args = req.ps[1 : ]
+	} else {
+		args = req.msg.Args()
+	}
+	if len(args) <= idx {
 		return ""
 	}
-	return req.args[idx]
+	return args[idx]
 }

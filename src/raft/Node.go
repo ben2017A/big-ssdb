@@ -57,7 +57,7 @@ func NewNode(nodeId string, store *Storage, xport Transport) *Node{
 	node.Addr = xport.Addr()
 	node.Role = RoleFollower
 	node.Members = make(map[string]*Member)
-	node.electionTimer = 3 * 1000
+	node.electionTimer = 2 * 1000
 
 	node.xport = xport
 	node.store = store
@@ -115,9 +115,9 @@ func (node *Node)StartCommunication(){
 		for{
 			select{
 			case <-node.store.C:
-				for len(node.store.C) > 0 {
-					<-node.store.C
-				}
+				// for len(node.store.C) > 0 {
+				// 	<-node.store.C
+				// }
 				node.mux.Lock()
 				node.replicateAllMembers()
 				node.mux.Unlock()
@@ -147,9 +147,7 @@ func (node *Node)Step(){
 		}
 		// send
 		if len(node.store.C) > 0 {
-			for len(node.store.C) > 0 {
-				<-node.store.C
-			}
+			<-node.store.C
 			node.replicateAllMembers()
 			n ++
 		}
@@ -695,6 +693,7 @@ func (node *Node)Write(data string) (int32, int64) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
+	log.Println("")
 	if node.Role != RoleLeader {
 		log.Println("error: not leader")
 		return -1, -1

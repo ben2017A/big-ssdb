@@ -1,7 +1,7 @@
 package link
 
 import (
-	// "log"
+	"log"
 	"bytes"
 	"errors"
 	"strings"
@@ -72,8 +72,11 @@ func (p *Parser)parseSSDBMessage(bs []byte) (*Message, int) {
 			break
 		}
 
-		p := string(bs[s : s+idx])
+		p := bs[s : s+idx]
 		s += idx + 1
+		if len(p) > 0 && p[0] == '\r' {
+			p = p[0 : len(p)-1]
+		}
 		if len(p) == 0 || (len(p) == 1 && p[0] == '\r') {
 			// log.Printf("parse end")
 			msg := NewMessage(ps)
@@ -81,7 +84,7 @@ func (p *Parser)parseSSDBMessage(bs []byte) (*Message, int) {
 		}
 		// log.Printf("> size [%s]\n", p);
 
-		size, err := strconv.Atoi(p)
+		size, err := strconv.Atoi(string(p))
 		if err != nil || size < 0 {
 			return nil, -1
 		}
@@ -147,10 +150,13 @@ func (p *Parser)parseRedisMessage(bs []byte) (*Message, int) {
 		if idx == -1 {
 			break
 		}
-		p := string(bs[s : s+idx])
-		size, err := strconv.Atoi(p)
+		p := bs[s : s+idx]
+		if len(p) > 0 && p[len(p)-1] == '\r' {
+			p = p[0 : len(p)-1]
+		}
+		size, err := strconv.Atoi(string(p))
 		if err != nil || size < 0 {
-			// log.Println("")
+			log.Println(err)
 			return nil, -1
 		}
 		s += idx + 1
@@ -160,7 +166,8 @@ func (p *Parser)parseRedisMessage(bs []byte) (*Message, int) {
 			type_  = BULK
 			if bulks == 0 {
 				// log.Println("")
-				return nil, -1
+				msg := NewMessage([]string{})
+				return msg, s
 			}
 			continue
 		}
@@ -176,7 +183,7 @@ func (p *Parser)parseRedisMessage(bs []byte) (*Message, int) {
 			}
 		}
 		if bs[end] != '\n' {
-			// log.Println("")
+			log.Println("")
 			return nil, -1
 		} else {
 			p := string(bs[s : s + size])

@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"sync"
+	"strings"
 	"io/ioutil"
 
 	"raft"
@@ -73,48 +74,49 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	svc.mux.Lock()
 	defer svc.mux.Unlock()
 
-	req := new(Request)
-	if !req.Decode(msg.Data) {
-		log.Println("bad request:", msg.Data)
-		return
-	}
+	req := NewRequest(msg)
 	req.Src = msg.Src
 	
 	cmd := req.Cmd()
 
-	if cmd == "JoinGroup" {
-		svc.node.JoinGroup(req.Arg(0), req.Arg(1))
-		return
-	}
-	if cmd == "AddMember" {
-		svc.node.AddMember(req.Arg(0), req.Arg(1))
-		return
-	}
-	if cmd == "DelMember" {
-		svc.node.DelMember(req.Arg(0))
-		return
-	}
-	if cmd == "MakeSnapshot" {
-		data := svc.MakeSnapshotToData()
-		resp := &link.Message{req.Src, data}
+	if cmd == "command" { // redis
+		resp := link.NewResponse(req.Src, []string{"ok"})
 		svc.xport.Send(resp)
 		return
 	}
-	if cmd == "InstallSnapshot" {
+	if cmd == "joingroup" {
+		svc.node.JoinGroup(req.Arg(0), req.Arg(1))
+		return
+	}
+	if cmd == "addmember" {
+		svc.node.AddMember(req.Arg(0), req.Arg(1))
+		return
+	}
+	if cmd == "delmember" {
+		svc.node.DelMember(req.Arg(0))
+		return
+	}
+	if cmd == "makesnapshot" {
+		data := svc.MakeSnapshotToData()
+		resp := link.NewResponse(req.Src, []string{"ok", data})
+		svc.xport.Send(resp)
+		return
+	}
+	if cmd == "installsnapshot" {
 		// TODO:
 		return
 	}
 
 	if cmd == "info" {
 		s := svc.node.Info()
-		resp := &link.Message{req.Src, s}
+		resp := link.NewResponse(req.Src, []string{"ok", s})
 		svc.xport.Send(resp)
 		return
 	}
 	
 	if svc.status != ServiceStatusActive {
 		log.Println("Service unavailable")
-		resp := &link.Message{req.Src, "error: Service unavailable"}
+		resp := link.NewErrorResponse(req.Src, "Service unavailable")
 		svc.xport.Send(resp)
 		return
 	}
@@ -122,14 +124,14 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	if cmd == "get" {
 		s := svc.db.Get(req.Key())
 		log.Println(req.Key(), "=", s)
-		resp := &link.Message{req.Src, s}
+		resp := link.NewResponse(req.Src, []string{"ok", s})
 		svc.xport.Send(resp)
 		return
 	}
 
 	if svc.node.Role != raft.RoleLeader {
 		log.Println("error: not leader")
-		resp := &link.Message{req.Src, "error: not leader"}
+		resp := link.NewErrorResponse(req.Src, "not leader")
 		svc.xport.Send(resp)
 		return
 	}
@@ -155,10 +157,11 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 			return
 		}
 
+		cmd := strings.ToLower(req.Cmd())
 		key := req.Key()
 		val := req.Val()
 		
-		switch req.Cmd() {
+		switch cmd {
 		case "set":
 			svc.db.Set(ent.Index, key, val)
 		case "del":
@@ -184,7 +187,7 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 	if ret == "" {
 		ret = "ok"
 	}
-	resp := &link.Message{req.Src, ret}
+	resp := link.NewResponse(req.Src, []string{"ok", ret})
 	svc.xport.Send(resp)
 }
 
