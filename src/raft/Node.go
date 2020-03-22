@@ -177,12 +177,14 @@ func (node *Node)Tick(timeElapse int){
 			m.ReplicateTimer += timeElapse
 			m.HeartbeatTimer += timeElapse
 
-			if m.ReplicateTimer >= ReplicationTimeout {
-				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
-					log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
-					m.NextIndex = m.MatchIndex + 1
+			if m.ReceiveTimeout < ReceiveTimeout {
+				if m.ReplicateTimer >= ReplicationTimeout {
+					if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
+						log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+						m.NextIndex = m.MatchIndex + 1
+					}
+					node.replicateMember(m)
 				}
-				node.replicateMember(m)
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// log.Println("Heartbeat timeout for node", m.Id)
@@ -303,15 +305,8 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
-	if m.NextIndex == 0 {
-		m.NextIndex = node.store.LastIndex + 1
-	}
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > m.SendWindow {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
-		return
-	}
-	if m.ReceiveTimeout >= ReceiveTimeout {
-		log.Printf("replicate %s timeout, %d", m.Id, m.ReceiveTimeout)
 		return
 	}
 
@@ -508,8 +503,10 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	}
 	
 	ack := NewAppendEntryAck(msg.Src, false)
-	ack.PrevTerm = prev.Term
-	ack.PrevIndex = prev.Index
+	if prev != nil {
+		ack.PrevTerm = prev.Term
+		ack.PrevIndex = prev.Index
+	}
 
 	node.send(ack)
 }
@@ -517,15 +514,20 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
 	m := node.Members[msg.Src]
-	m.ReceiveTimeout = 0
-	for _, m := range node.Members {
-		m.Role = RoleFollower
-	}
 	m.Role = RoleLeader
+	m.ReceiveTimeout = 0
+	for _, m2 := range node.Members {
+		if m != m2 {
+			m2.Role = RoleFollower
+		}
+	}
 
-	ent := DecodeEntry(msg.Data)
 	if msg.PrevIndex > node.store.CommitIndex {
-		log.Printf("uncontinuous entry, prevTerm: %d, prevIndex: %d", msg.PrevTerm, msg.PrevIndex)
+		if msg.PrevIndex != node.store.LastIndex {
+			log.Printf("uncontinuous entry, prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.store.LastIndex)
+			node.sendDuplicatedAckToMessage(msg)
+			return
+		}
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
@@ -533,11 +535,13 @@ func (node *Node)handleAppendEntry(msg *Message){
 			return
 		}
 		if prev.Term != msg.PrevTerm {
-			log.Printf("index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
+			log.Printf("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 	}
+
+	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == EntryTypePing {
 		//

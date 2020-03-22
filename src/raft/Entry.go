@@ -10,9 +10,9 @@ import (
 type EntryType string
 
 const(
+	EntryTypePing      = "Ping"
 	EntryTypeNoop      = "Noop"
 	EntryTypeData      = "Data"
-	EntryTypePing      = "Ping"
 	EntryTypeAddMember = "AddMember"
 	EntryTypeDelMember = "DelMember"
 )
