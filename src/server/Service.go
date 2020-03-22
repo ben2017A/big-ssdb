@@ -146,7 +146,8 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 	svc.mux.Lock()
 	defer svc.mux.Unlock()
 
-	var ret string
+	code := "ok"
+	data := ""
 
 	if ent.Type == raft.EntryTypeData{
 		log.Println("[Apply]", ent.Index, ent.Data)
@@ -167,10 +168,11 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 		case "del":
 			svc.db.Del(ent.Index, key)
 		case "incr":
-			ret = svc.db.Incr(ent.Index, key, val)
+			data = svc.db.Incr(ent.Index, key, val)
 		default:
 			log.Println("error: unknown cmd: " + req.Cmd())
-			ret = "error: unkown cmd " + req.Cmd()
+			code = "error"
+			data = "unkown cmd " + req.Cmd()
 		}
 	}
 
@@ -181,13 +183,11 @@ func (svc *Service)handleRaftEntry(ent *raft.Entry) {
 	delete(svc.jobs, ent.Index)
 	if req.Term != ent.Term {
 		log.Println("entry was overwritten by new leader")
-		ret = "error"
+		code = "error"
+		data = ""
 	}
 	
-	if ret == "" {
-		ret = "ok"
-	}
-	resp := link.NewResponse(req.Src, []string{"ok", ret})
+	resp := link.NewResponse(req.Src, []string{code, data})
 	svc.xport.Send(resp)
 }
 

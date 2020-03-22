@@ -163,7 +163,7 @@ func (st *Storage)CommitEntry(commitIndex int64){
 		return
 	}
 
-	if st.CommitIndex < commitIndex {
+	for st.CommitIndex < commitIndex {
 		st.CommitIndex += 1
 
 		ent := st.GetEntry(st.CommitIndex)
@@ -215,13 +215,13 @@ func (st *Storage)InstallSnapshot(sn *Snapshot) bool {
 
 	st.node.Term    = sn.State().Term
 	st.node.VoteFor = ""
-	st.LastTerm     = 0
-	st.LastIndex    = 0
+	st.LastTerm     = sn.LastTerm()
+	st.LastIndex    = sn.LastIndex()
 	st.CommitIndex  = sn.LastIndex()
 
-	// TODO: 需要实现保存的原子性
 	for _, ent := range sn.Entries() {
-		st.PrepareEntry(*ent)
+		st.entries[ent.Index] = ent
+		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
 	}
 	st.SaveState()
 

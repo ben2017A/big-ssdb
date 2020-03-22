@@ -114,7 +114,7 @@ func (tcp *TcpServer)Send(msg *Message) {
 func (tcp *TcpServer)encodeResponse(m *Message) string {
 	code := strings.ToLower(m.Code())
 	if code == "ok" {
-		if len(m.Args()) == 0 {
+		if len(m.Args()) == 0 || m.Args()[0] == "" {
 			return "+OK\r\n"
 		}
 	} else if code == "error" {

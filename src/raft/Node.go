@@ -178,7 +178,7 @@ func (node *Node)Tick(timeElapse int){
 			m.HeartbeatTimer += timeElapse
 
 			if m.ReplicateTimer >= ReplicationTimeout {
-				if m.NextIndex != m.MatchIndex + 1 {
+				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
 					log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 					m.NextIndex = m.MatchIndex + 1
 				}
@@ -252,14 +252,16 @@ func (node *Node)becomeFollower(){
 
 func (node *Node)becomeLeader(){
 	node.Role = RoleLeader
+	node.electionTimer = 0
 	node.resetAllMember()
+	for _, m := range node.Members {
+		m.NextIndex = node.store.LastIndex
+	}
 	// write noop entry with currentTerm to implictly commit previous term's log
 	if node.store.LastIndex == 0 || node.store.LastIndex != node.store.CommitIndex {
 		node.store.AppendEntry(EntryTypeNoop, "")
 	} else {
-		for _, m := range node.Members {
-			node.pingMember(m)
-		}
+		node.pingAllMember()
 	}
 }
 
@@ -274,7 +276,12 @@ func (node *Node)resetAllMember(){
 func (node *Node)resetMember(m *Member){
 	m.Reset()
 	m.Role = RoleFollower
-	m.NextIndex = node.store.LastIndex + 1
+}
+
+func (node *Node)pingAllMember(){
+	for _, m := range node.Members {
+		node.pingMember(m)
+	}
 }
 
 func (node *Node)pingMember(m *Member){
@@ -296,18 +303,20 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
-	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex >= m.SendWindow {
+	if m.NextIndex == 0 {
+		m.NextIndex = node.store.LastIndex + 1
+	}
+	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > m.SendWindow {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-	if m.ReceiveTimeout >= ReceiveTimeout && m.NextIndex != m.MatchIndex + 1 {
+	if m.ReceiveTimeout >= ReceiveTimeout {
 		log.Printf("replicate %s timeout, %d", m.Id, m.ReceiveTimeout)
 		return
 	}
 
 	m.ReplicateTimer = 0
 	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + m.SendWindow)
-	count := 0
 	for m.NextIndex <= maxIndex {
 		ent := node.store.GetEntry(m.NextIndex)
 		if ent == nil {
@@ -319,9 +328,6 @@ func (node *Node)replicateMember(m *Member){
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
 		
 		m.NextIndex ++
-		count ++
-	}
-	if count > 0 {
 		m.HeartbeatTimer = 0
 	}
 }
@@ -493,6 +499,21 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	node.checkVoteResult()
 }
 
+func (node *Node)sendDuplicatedAckToMessage(msg *Message){
+	var prev *Entry
+	if msg.PrevIndex < node.store.LastIndex {
+		prev = node.store.GetEntry(msg.PrevIndex - 1)
+	} else {
+		prev = node.store.GetEntry(node.store.LastIndex)
+	}
+	
+	ack := NewAppendEntryAck(msg.Src, false)
+	ack.PrevTerm = prev.Term
+	ack.PrevIndex = prev.Index
+
+	node.send(ack)
+}
+
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
 	m := node.Members[msg.Src]
@@ -503,17 +524,17 @@ func (node *Node)handleAppendEntry(msg *Message){
 	m.Role = RoleLeader
 
 	ent := DecodeEntry(msg.Data)
-
-	if ent.Index != 1 { // if not very first entry
+	if msg.PrevIndex > node.store.CommitIndex {
+		log.Printf("uncontinuous entry, prevTerm: %d, prevIndex: %d", msg.PrevTerm, msg.PrevIndex)
 		prev := node.store.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			node.send(NewAppendEntryAck(msg.Src, false))
+			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 		if prev.Term != msg.PrevTerm {
-			log.Printf("prev.Term %d != msg.PrevTerm %d", prev.Term, msg.PrevTerm)
-			node.send(NewAppendEntryAck(msg.Src, false))
+			log.Printf("index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
+			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 	}
@@ -521,39 +542,26 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if ent.Type == EntryTypePing {
 		//
 	} else {
-		if ent.Index <= node.store.CommitIndex {
-			log.Printf("duplicated entry, entry: %d, committed: %d", ent.Index, node.store.CommitIndex)
-		} else {
-			old := node.store.GetEntry(ent.Index)
-			if old != nil {
-				if old.Term != ent.Term {
-					// TODO:
-					log.Println("TODO: delete conflict entry, and entries that follow")
-				} else {
-					log.Println("duplicated entry ", ent.Term, ent.Index)
-				}
-			}
-			node.store.PrepareEntry(*ent)
+		if ent.Index < node.store.CommitIndex {
+			log.Printf("entry: %d before committed: %d", ent.Index, node.store.CommitIndex)
+			node.sendDuplicatedAckToMessage(msg)
+			return
 		}
+
+		old := node.store.GetEntry(ent.Index)
+		if old != nil {
+			if old.Term != ent.Term {
+				// TODO:
+				log.Println("TODO: delete conflict entry, and entries that follow")
+			} else {
+				log.Println("duplicated entry ", ent.Term, ent.Index)
+			}
+		}
+		node.store.PrepareEntry(*ent)
 	}
 
 	node.send(NewAppendEntryAck(msg.Src, true))
 	node.store.CommitEntry(ent.Commit)
-}
-
-func (node *Node)checkCommitIndex() int64 {
-	// sort matchIndex[] in descend order
-	matchIndex := make([]int64, 0, len(node.Members) + 1)
-	matchIndex = append(matchIndex, node.store.LastIndex) // self
-	for _, m := range node.Members {
-		matchIndex = append(matchIndex, m.MatchIndex)
-	}
-	sort.Slice(matchIndex, func(i, j int) bool{
-		return matchIndex[i] > matchIndex[j]
-	})
-	commitIndex := matchIndex[len(matchIndex)/2]
-	log.Println("match[] =", matchIndex, "commit", commitIndex)
-	return commitIndex
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -561,11 +569,11 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m.ReceiveTimeout = 0
 
 	if msg.Data == "false" {
-		m.NextIndex = util.MinInt64(m.NextIndex - 1, msg.PrevIndex + 1)
-		log.Printf("node %s, reset nextIndex: %d", m.Id, m.NextIndex)
+		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+		m.NextIndex = msg.PrevIndex + 1
 	} else {
-		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
+		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
 		if m.MatchIndex > node.store.CommitIndex {
 			commitIndex := node.checkCommitIndex()
 			if commitIndex > node.store.CommitIndex {
@@ -597,6 +605,21 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		return
 	}
 	node.replicateMember(m)
+}
+
+func (node *Node)checkCommitIndex() int64 {
+	// sort matchIndex[] in descend order
+	matchIndex := make([]int64, 0, len(node.Members) + 1)
+	matchIndex = append(matchIndex, node.store.LastIndex) // self
+	for _, m := range node.Members {
+		matchIndex = append(matchIndex, m.MatchIndex)
+	}
+	sort.Slice(matchIndex, func(i, j int) bool{
+		return matchIndex[i] > matchIndex[j]
+	})
+	commitIndex := matchIndex[len(matchIndex)/2]
+	log.Println("match[] =", matchIndex, "commit", commitIndex)
+	return commitIndex
 }
 
 func (node *Node)sendInstallSnapshot(m *Member){
@@ -714,6 +737,7 @@ func (node *Node)InfoMap() map[string]string {
 	m["addr"] = node.Addr
 	m["role"] = string(node.Role)
 	m["term"] = fmt.Sprintf("%d", node.Term)
+	m["voteFor"] = fmt.Sprintf("%s", node.VoteFor)
 	m["lastApplied"] = fmt.Sprintf("%d", node.lastApplied)
 	m["commitIndex"] = fmt.Sprintf("%d", node.store.CommitIndex)
 	m["lastTerm"] = fmt.Sprintf("%d", node.store.LastTerm)
@@ -732,12 +756,12 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("addr: %s\n", node.Addr)
 	ret += fmt.Sprintf("role: %s\n", node.Role)
 	ret += fmt.Sprintf("term: %d\n", node.Term)
+	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor)
 	ret += fmt.Sprintf("lastApplied: %d\n", node.lastApplied)
 	ret += fmt.Sprintf("commitIndex: %d\n", node.store.CommitIndex)
 	ret += fmt.Sprintf("lastTerm: %d\n", node.store.LastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.store.LastIndex)
 	ret += fmt.Sprintf("electionTimer: %d\n", node.electionTimer)
-	
 	b, _ := json.Marshal(node.Members)
 	ret += fmt.Sprintf("members: %s\n", string(b))
 
@@ -800,9 +824,9 @@ func (node *Node)UpdateStatus() {
 func (node *Node)send(msg *Message){
 	msg.Src = node.Id
 	msg.Term = node.Term
-	if msg.Type != MessageTypeAppendEntry {
-		msg.PrevIndex = node.store.LastIndex
+	if msg.PrevTerm == 0 {
 		msg.PrevTerm = node.store.LastTerm
+		msg.PrevIndex = node.store.LastIndex
 	}
 	node.xport.Send(msg)
 }
