@@ -544,7 +544,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == EntryTypePing {
-		//
+		node.send(NewAppendEntryAck(msg.Src, true))
 	} else {
 		if ent.Index < node.store.CommitIndex {
 			log.Printf("entry: %d before committed: %d", ent.Index, node.store.CommitIndex)
@@ -561,10 +561,11 @@ func (node *Node)handleAppendEntry(msg *Message){
 				log.Println("duplicated entry ", ent.Term, ent.Index)
 			}
 		}
-		node.store.PrepareEntry(*ent)
+		node.store.WriteEntry(*ent)
+		// TODO: delay/batch ack
+		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	node.send(NewAppendEntryAck(msg.Src, true))
 	node.store.CommitEntry(ent.Commit)
 }
 

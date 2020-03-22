@@ -80,15 +80,11 @@ func (st *Storage)SaveState(){
 		st.state.Members[m.Id] = m.Addr
 	}
 	
-	st.db.Set("@State", st.state.Encode())
-
 	log.Printf("save raft state[%s]:", st.node.Id)
 	log.Println("    ", st.state.Encode())
 
-	err := st.db.Fsync()
-	if err != nil {
-		log.Fatal(err)
-	}
+	st.db.Set("@State", st.state.Encode())
+	st.Fsync()
 }
 
 /* #################### Entry ###################### */
@@ -123,7 +119,7 @@ func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 	ent.Commit = st.CommitIndex
 	ent.Data = data
 
-	st.PrepareEntry(*ent)
+	st.WriteEntry(*ent)
 	// notify xport to send
 	st.C <- 0
 	return ent
@@ -131,7 +127,7 @@ func (st *Storage)AppendEntry(type_ EntryType, data string) *Entry{
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 // 参数值拷贝
-func (st *Storage)PrepareEntry(ent Entry){
+func (st *Storage)WriteEntry(ent Entry){
 	if ent.Index <= st.CommitIndex {
 		log.Println("ent.Index", ent.Index, "<", "commitIndex", st.CommitIndex)
 		return
@@ -148,6 +144,16 @@ func (st *Storage)PrepareEntry(ent Entry){
 		}
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
+
+		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
+		log.Println("[RAFT] write Log", ent.Encode())
+	}
+}
+
+func (st *Storage)Fsync() {
+	err := st.db.Fsync()
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -155,26 +161,15 @@ func (st *Storage)PrepareEntry(ent Entry){
 func (st *Storage)AsyncCommitEntry(commitIndex int64){
 }
 
-// 如果存在空洞, 不会跳过空洞 commit
 func (st *Storage)CommitEntry(commitIndex int64){
+	// 如果存在空洞, 不会跳过空洞 commit
 	commitIndex = util.MinInt64(commitIndex, st.LastIndex)
 	if commitIndex <= st.CommitIndex {
 		// log.Printf("msg.CommitIndex: %d <= CommitIndex: %d\n", commitIndex, st.CommitIndex)
 		return
 	}
-
-	for st.CommitIndex < commitIndex {
-		st.CommitIndex += 1
-
-		ent := st.GetEntry(st.CommitIndex)
-		st.db.Set(fmt.Sprintf("log#%03d", ent.Index), ent.Encode())
-		log.Println("[RAFT] write Log", ent.Encode())
-	}
-	err := st.db.Fsync()
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	st.CommitIndex = commitIndex
+	st.Fsync()
 	st.ApplyEntries()
 }
 
