@@ -44,19 +44,20 @@ TODO: Service Database.
 
 所以, 需要给被删节点发送 quit_group 指令.
 
+### container.new_group
+
+通过 add_member/join_group 流程创建新组.
+
 ### container.split_group
 
-组成员分成两批, 分别去组建新的 Group(fork 出不同的新组), 而旧组转成"销毁中"状态继续运行, 不对外提供服务, 仅执行垃圾回收任务.
-
-TODO:
+* 创建两个新组
+* 新组 set_range, "只读"
+* 旧组转为"只读"
+* 新组提供服务
+* 旧组转成"销毁中"状态继续运行, 不对外提供服务, 仅执行垃圾回收任务.
 
 ### container.merge_group
 
-* 生成新组, initializing 状态
-* 给旧组发送 prepare destroy 指令
-* 旧组 promised destroy 状态, 不提供服务
-	* 所有节点的日志必须全部 applied
-* 新组 active 状态
-* 旧组 destroying 状态
+创建新组.
 
-操作过程中, 新组和旧组指向的数据有重叠. 注意, 组的状态变更后, 不代表全部组成员都已变更, 而是经多数派共识.
+选定要合并的两个组中的其中一个, 向其发送 merge 操作, 经 raft 同步后即可生成新组, 然后 container 命令两个旧组转成"销毁中".
