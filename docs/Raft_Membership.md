@@ -1,4 +1,6 @@
-# Raft Node
+# Raft Membership
+
+Multi 使用一个单独的 Raft Group 作为管理组, 以进行集群管理. 这样, 可以简化 Node 的代码, 让 Node 只专注于同步日志.
 
 ## 状态
 
@@ -44,11 +46,11 @@ TODO: Service Database.
 
 所以, 需要给被删节点发送 quit_group 指令.
 
-### container.new_group
+### multi.new_group
 
 通过 add_member/join_group 流程创建新组.
 
-### container.split_group
+### multi.split_group
 
 * 创建两个新组
 * 新组 set_range, "只读"
@@ -56,7 +58,7 @@ TODO: Service Database.
 * 新组提供服务
 * 旧组转成"销毁中"状态继续运行, 不对外提供服务, 仅执行垃圾回收任务.
 
-### container.merge_group
+### multi.merge_group
 
 创建新组.
 
