@@ -137,7 +137,7 @@ func (svc *Service)HandleClientMessage(msg *link.Message) {
 	}
 	
 	s := req.Encode()
-	term, idx := svc.node.Write(s)
+	term, idx := svc.node.Propose(s)
 	req.Term = term
 	svc.jobs[idx] = req
 }

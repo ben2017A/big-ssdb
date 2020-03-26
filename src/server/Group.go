@@ -1,6 +1,6 @@
-package raft
+package server
 
-type Group struct {
-	status string
-	members map[string]*Member
-}
+// type Group struct {
+// 	status string
+// 	members map[string]*Member
+// }

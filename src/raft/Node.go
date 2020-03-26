@@ -46,36 +46,49 @@ type Node struct{
 	electionTimer int
 
 	store *Storage
-	xport Transport
+	// messages to be processed by raft
+	recv_c chan *Message
+	// messages to be sent to other node
+	send_c chan *Message
 	
 	mux sync.Mutex
 }
 
-func NewNode(nodeId string, store *Storage, xport Transport) *Node{
+func NewNode(nodeId string, addr string, db Db) *Node{
 	node := new(Node)
 	node.Id = nodeId
-	node.Addr = xport.Addr()
+	node.Addr = addr
 	node.Role = RoleFollower
 	node.Members = make(map[string]*Member)
 	node.electionTimer = 2 * 1000
 
-	node.xport = xport
-	node.store = store
-	store.SetNode(node)
+	node.store = NewStorage(node, db)
+
+	node.recv_c = make(chan *Message, 3)
+	node.send_c = make(chan *Message, 3)
 
 	// init Raft state from persistent storage
-	node.lastApplied = store.CommitIndex
-	node.Term = store.State().Term
-	node.VoteFor = store.State().VoteFor
-	for nodeId, nodeAddr := range store.State().Members {
-		node.connectMember(nodeId, nodeAddr)
+	st := node.store
+	node.lastApplied = st.CommitIndex
+	node.Term = st.State().Term
+	node.VoteFor = st.State().VoteFor
+	for nodeId, nodeAddr := range st.State().Members {
+		node.addMember(nodeId, nodeAddr)
 	}
 
 	log.Printf("init raft node[%s]:", node.Id)
-	log.Println("    CommitIndex:", store.CommitIndex, "LastTerm:", store.LastTerm, "LastIndex:", store.LastIndex)
-	log.Println("    " + store.State().Encode())
+	log.Println("    CommitIndex:", st.CommitIndex, "LastTerm:", st.LastTerm, "LastIndex:", st.LastIndex)
+	log.Println("    " + st.State().Encode())
 
 	return node
+}
+
+func (node *Node)RecvC() chan<- *Message {
+	return node.recv_c
+}
+
+func (node *Node)SendC() <-chan *Message {
+	return node.send_c
 }
 
 func (node *Node)SetService(svc Service){
@@ -121,7 +134,7 @@ func (node *Node)StartCommunication(){
 				node.mux.Lock()
 				node.replicateAllMembers()
 				node.mux.Unlock()
-			case msg := <-node.xport.C():
+			case msg := <-node.recv_c:
 				node.mux.Lock()
 				node.handleRaftMessage(msg)
 				node.mux.Unlock()
@@ -139,8 +152,8 @@ func (node *Node)Step(){
 	for {
 		n := 0
 		// receive
-		for len(node.xport.C()) > 0 {
-			msg := <-node.xport.C()
+		for len(node.recv_c) > 0 {
+			msg := <-node.recv_c
 			log.Println("    receive < ", msg.Encode())
 			node.handleRaftMessage(msg)
 			n ++
@@ -155,21 +168,21 @@ func (node *Node)Step(){
 			break
 		}
 	}
-	// timer
-	node.Tick(900)
+	time.Sleep(50 * time.Millisecond)
 }
 
 func (node *Node)Close(){
 	node.store.Close()
-	node.xport.Close()
 }
 
 func (node *Node)Tick(timeElapse int){
 	if node.Role == RoleFollower || node.Role == RoleCandidate {
-		node.electionTimer += timeElapse
-		if node.electionTimer >= ElectionTimeout {
-			log.Println("start PreVote")
-			node.startPreVote()
+		if len(node.Members) > 0 {
+			node.electionTimer += timeElapse
+			if node.electionTimer >= ElectionTimeout {
+				log.Println("start PreVote")
+				node.startPreVote()
+			}
 		}
 	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
@@ -235,7 +248,6 @@ func (node *Node)checkVoteResult(){
 		}
 	}
 	if grant > (len(node.Members) + 1)/2 {
-		log.Printf("Node %s became leader", node.Id)
 		node.becomeLeader()
 	} else if reject > len(node.Members)/2 {
 		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.Members)+1)
@@ -253,6 +265,8 @@ func (node *Node)becomeFollower(){
 }
 
 func (node *Node)becomeLeader(){
+	log.Printf("Node %s became leader", node.Id)
+
 	node.Role = RoleLeader
 	node.electionTimer = 0
 	node.resetAllMember()
@@ -327,7 +341,7 @@ func (node *Node)replicateMember(m *Member){
 	}
 }
 
-func (node *Node)connectMember(nodeId string, nodeAddr string){
+func (node *Node)addMember(nodeId string, nodeAddr string){
 	if nodeId == node.Id {
 		return
 	}
@@ -337,18 +351,17 @@ func (node *Node)connectMember(nodeId string, nodeAddr string){
 	m := NewMember(nodeId, nodeAddr)
 	node.resetMember(m)
 	node.Members[m.Id] = m
-	node.xport.Connect(m.Id, m.Addr)
-	log.Println("    connect member", m.Id, m.Addr)
+	log.Println("    add member", m.Id, m.Addr)
 }
 
 func (node *Node)disconnectAllMember(){
 	for _, m := range node.Members {
 		// it's ok to delete item while iterating
-		node.disconnectMember(m.Id)
+		node.removeMember(m.Id)
 	}
 }
 
-func (node *Node)disconnectMember(nodeId string){
+func (node *Node)removeMember(nodeId string){
 	if nodeId == node.Id {
 		return
 	}
@@ -357,7 +370,6 @@ func (node *Node)disconnectMember(nodeId string){
 	}
 	m := node.Members[nodeId]
 	delete(node.Members, nodeId)
-	node.xport.Disconnect(m.Id)
 	log.Println("    disconnect member", m.Id, m.Addr)
 }
 
@@ -365,7 +377,7 @@ func (node *Node)disconnectMember(nodeId string){
 
 func (node *Node)handleRaftMessage(msg *Message){
 	if msg.Dst != node.Id || node.Members[msg.Src] == nil {
-		log.Println(node.Id, "drop message src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
+		log.Println(node.Id, "drop message from unknown src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
 		return
 	}
 
@@ -524,7 +536,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 	if msg.PrevIndex > node.store.CommitIndex {
 		if msg.PrevIndex != node.store.LastIndex {
-			log.Printf("uncontinuous entry, prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.store.LastIndex)
+			log.Printf("non-continuous entry, prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.store.LastIndex)
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
@@ -654,7 +666,7 @@ func (node *Node)_installSnapshot(sn *Snapshot) bool {
 	log.Println("install Raft snapshot")
 	node.disconnectAllMember()
 	for nodeId, nodeAddr := range sn.State().Members {
-		node.connectMember(nodeId, nodeAddr)
+		node.addMember(nodeId, nodeAddr)
 	}
 	node.lastApplied = sn.LastIndex()
 
@@ -675,14 +687,14 @@ func (node *Node)ApplyEntry(ent *Entry){
 		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
 		if len(ps) == 2 {
-			node.connectMember(ps[0], ps[1])
+			node.addMember(ps[0], ps[1])
 			node.store.SaveState()
 		}
 	}else if ent.Type == EntryTypeDelMember {
 		log.Println("[Apply]", ent.Encode())
 		nodeId := ent.Data
 		// the deleted node would not receive a commit msg that it had been deleted
-		node.disconnectMember(nodeId)
+		node.removeMember(nodeId)
 		node.store.SaveState()
 	}
 }
@@ -694,10 +706,15 @@ func (node *Node)AddMember(nodeId string, nodeAddr string) int64 {
 	defer node.mux.Unlock()
 
 	if node.Role != RoleLeader {
-		log.Println("error: not leader")
-		return -1
+		if len(node.Members) == 0 {
+			// TODO: init state from storage
+			node.becomeLeader();
+		} else {
+			log.Println("error: not leader")
+			return -1
+		}
 	}
-	
+
 	data := fmt.Sprintf("%s %s", nodeId, nodeAddr)
 	ent := node.store.AppendEntry(EntryTypeAddMember, data)
 	return ent.Index
@@ -717,7 +734,7 @@ func (node *Node)DelMember(nodeId string) int64 {
 	return ent.Index
 }
 
-func (node *Node)Write(data string) (int32, int64) {
+func (node *Node)Propose(data string) (int32, int64) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
@@ -804,7 +821,7 @@ func (node *Node)JoinGroup(leaderId string, leaderAddr string) {
 	node.Term = 0
 	node.VoteFor = ""
 	node.lastApplied = 0
-	node.connectMember(leaderId, leaderAddr)
+	node.addMember(leaderId, leaderAddr)
 	node.becomeFollower()
 	
 	log.Println("clean Raft database")
@@ -820,9 +837,6 @@ func (node *Node)QuitGroup() {
 	node.store.SaveState()
 }
 
-func (node *Node)UpdateStatus() {
-}
-
 
 /* ############################################# */
 
@@ -833,7 +847,7 @@ func (node *Node)send(msg *Message){
 		msg.PrevTerm = node.store.LastTerm
 		msg.PrevIndex = node.store.LastIndex
 	}
-	node.xport.Send(msg)
+	node.send_c <- msg
 }
 
 func (node *Node)broadcast(msg *Message){

@@ -29,12 +29,13 @@ type Storage struct{
 	db Db
 }
 
-func NewStorage(db Db) *Storage {
+func NewStorage(node *Node, db Db) *Storage {
 	st := new(Storage)
 	st.state = NewState()
 	st.entries = make(map[int64]*Entry)
 	
 	st.db = db
+	st.node = node
 	st.C = make(chan int, 10)
 
 	st.FirstIndex = math.MaxInt64
@@ -50,10 +51,6 @@ func (st *Storage)Close(){
 	if st.db != nil {
 		st.db.Close()
 	}
-}
-
-func (st *Storage)SetNode(node *Node) {
-	st.node = node
 }
 
 /* #################### State ###################### */
