@@ -104,10 +104,10 @@ func (node *Node)StartNetwork(){
 		log.Println("setup networking")
 		for{
 			select{
-			// case <-node.store.C:
-			// 	node.mux.Lock()
-			// 	node.replicateAllMembers()
-			// 	node.mux.Unlock()
+			case <-node.logs.FsyncNotify:
+				node.mux.Lock()
+				node.replicateAllMembers()
+				node.mux.Unlock()
 			case msg := <-node.recv_c:
 				node.mux.Lock()
 				node.handleRaftMessage(msg)
