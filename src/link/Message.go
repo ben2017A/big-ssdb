@@ -1,8 +1,8 @@
 package link
 
 import (
-	// "bytes"
-	// "strings"
+	"bytes"
+	"strconv"
 )
 
 type Message struct {
@@ -50,4 +50,22 @@ func (m *Message)Args() []string {
 		return m.ps[1 : ]
 	}
 	return make([]string, 0)
+}
+
+func (m *Message)Encode() string {
+	var buf bytes.Buffer
+	count := len(m.ps)
+	if count > 1 {
+		buf.WriteString("*")
+		buf.WriteString(strconv.Itoa(count))
+		buf.WriteString("\r\n")
+	}
+	for _, p := range m.ps {
+		buf.WriteString("$")
+		buf.WriteString(strconv.Itoa(len(p)))
+		buf.WriteString("\r\n")
+		buf.WriteString(p)
+		buf.WriteString("\r\n")
+	}
+	return buf.String()
 }

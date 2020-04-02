@@ -2,13 +2,15 @@
 
 ### 分层与解耦
 
-Raft 只负责 log 同步, Service 只负责 log 重放.
+Raft 只负责 log 同步, Service 只负责 log 重放. 日志分为 Conf 和 Data, 对于 Conf 类型, Raft 自己会 apply, 对于 Data 类型, 则交给 Service 处理.
 
 ### Raft
 
-当 Raft Commit(和 Service 的 Commit 无关) 了一条 log 之后, 它会同步地将该条 log Appply 到所有的 Service, 然后再 Commit 下一条(批) log.
+当 Raft Commit 了一条 log 之后, 它会同步地将该条 log appply, 然后再 Commit 下一条(批) log.
 
 ### Service
+
+Raft 异步地将 log 发送给 Service 进行 apply.
 
 Service 对 log 的 Apply 操作是幂等的, 因为, Apply 操作并不一定是真正的持久化, 也可能只是 Apply 到 Service 自己的 write buffer 中, 所以 Service 重启后可能需要 Raft 重传某一条 log.
 

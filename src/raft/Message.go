@@ -104,9 +104,12 @@ func NewAppendEntryMsg(dst string, ent *Entry, prev *Entry) *Message{
 	msg := new(Message)
 	msg.Type = MessageTypeAppendEntry
 	msg.Dst = dst
-	if prev != nil {
-		msg.PrevIndex = prev.Index
+	if prev == nil {
+		msg.PrevTerm = 0
+		msg.PrevIndex = 0
+	} else {
 		msg.PrevTerm = prev.Term
+		msg.PrevIndex = prev.Index
 	}
 	msg.Data = ent.Encode()
 	return msg
@@ -124,10 +127,9 @@ func NewAppendEntryAck(dst string, success bool) *Message{
 	return msg
 }
 
-func NewInstallSnapshotMsg(dst string, data string) *Message{
+func NewInstallSnapshotMsg(dst string) *Message{
 	msg := new(Message)
 	msg.Type = MessageTypeInstallSnapshot
 	msg.Dst = dst
-	msg.Data = data
 	return msg
 }

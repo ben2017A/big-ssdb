@@ -12,6 +12,7 @@ type EntryType string
 const(
 	EntryTypePing      = "Ping"
 	EntryTypeNoop      = "Noop"
+	EntryTypeConf      = "Conf"
 	EntryTypeData      = "Data"
 	EntryTypeAddMember = "AddMember"
 	EntryTypeDelMember = "DelMember"

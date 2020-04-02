@@ -26,6 +26,7 @@ func NewMember(id, addr string) *Member{
 }
 
 func (m *Member)Reset() {
+	m.Role = RoleFollower
 	m.NextIndex = 0
 	m.MatchIndex = 0
 	m.HeartbeatTimer = 0
