@@ -125,13 +125,13 @@ func (tcp *TcpServer)encodeResponse(m *Message) string {
 	}
 
 	var buf bytes.Buffer
-	count := len(m.Args())
+	count := len(m.Array())
 	if count > 1 {
 		buf.WriteString("*")
 		buf.WriteString(strconv.Itoa(count))
 		buf.WriteString("\r\n")
 	}
-	for _, p := range m.Args() {
+	for _, p := range m.Array() {
 		buf.WriteString("$")
 		buf.WriteString(strconv.Itoa(len(p)))
 		buf.WriteString("\r\n")
