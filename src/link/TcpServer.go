@@ -70,28 +70,31 @@ func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 		conn.Close()	
 	}()
 
-	parser := new(Parser)
+	var buf bytes.Buffer
+	var msg *Message
+	msg = new(Message)
 	tmp := make([]byte, 128*1024)
 
 	for {
 		for {
-			msg, err := parser.Parse()
-			if err != nil {
+			n := msg.Decode(buf.Bytes())
+			if n == -1 {
 				log.Println("Parse error")
 				return
-			}
-			if msg == nil {
+			} else if (n == 0){
 				break
 			}
+			buf.Next(n)
 			msg.Src = clientId
 			tcp.C <- msg
+			msg = new(Message)
 		}
 		
 		n, err := conn.Read(tmp)
 		if err != nil {
 			break
 		}
-		parser.Append(tmp[0:n])
+		buf.Write(tmp[0:n])
 		log.Printf("    receive > %d %s\n", clientId, util.ReplaceBytes(string(tmp[0:n]), []string{"\r", "\n"}, []string{"\\r", "\\n"}))
 	}
 }
