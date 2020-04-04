@@ -15,11 +15,12 @@ func TestNode(t *testing.T){
 
 	fmt.Printf("\n=========================================================\n")
 	testSingleNode()
-	time.Sleep(10 * time.Millisecond)
+	sleep(0.01)
 	fmt.Printf("\n=========================================================\n")
 	test2Node()
-	time.Sleep(10 * time.Millisecond)
+	sleep(0.01)
 
+	sleep(0.1)
 	log.Println("end")
 }
 
@@ -50,13 +51,31 @@ func test2Node() {
 	go xport()
 
 	n1.Tick(5000)
-	time.Sleep(3000 * time.Millisecond)
+	sleep(0.1)
+
+	if n1.Role != RoleLeader {
+		log.Fatal("error")
+	}
+
+	t, i := n1.Propose("set a 1")
+	t, i = n1.Propose("set b 2")
+	log.Println("Propose", t, i)
+	sleep(0.1)
+	log.Println("\n" + n1.Info() + "\n" + n2.Info())
+}
+
+func sleep(second float32){
+	time.Sleep((time.Duration)(second * 1000) * time.Millisecond)
 }
 
 func xport() {
 	ns := []*Node{n1, n2}
 	for {
 		count := 0
+		for _, n := range ns {
+			n.Step()
+			n.Tick(1)
+		}
 		for _, n := range ns {
 			if len(n.SendC()) > 0 {
 				count ++
@@ -70,14 +89,8 @@ func xport() {
 				}
 			}
 		}
-		for _, n := range ns {
-			if len(n.RecvC()) > 0 {
-				count ++
-				n.Step()
-			}
-		}
 		if count == 0 {
-			time.Sleep(1 * time.Millisecond)
+			sleep(0.001)
 			// break
 		}
 	}

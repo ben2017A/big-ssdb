@@ -112,7 +112,9 @@ func (node *Node)StartNetwork(){
 			select{
 			case <-node.logs.FsyncNotify:
 				node.mux.Lock()
-				node.replicateAllMembers()
+				if node.Role == RoleLeader {
+					node.replicateAllMembers()
+				}
 				node.mux.Unlock()
 			case msg := <-node.recv_c:
 				node.mux.Lock()
@@ -130,7 +132,9 @@ func (node *Node)Step() {
 		if len(node.logs.FsyncNotify) > 0{
 			<- node.logs.FsyncNotify
 			node.mux.Lock()
-			node.replicateAllMembers()
+			if node.Role == RoleLeader {
+				node.replicateAllMembers()
+			}
 			node.mux.Unlock()
 		}
 		if len(node.recv_c) > 0 {
@@ -250,6 +254,7 @@ func (node *Node)replicateMember(m *Member){
 	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + m.SendWindow)
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
+		// log.Println(node.Id(), m.Id, m.NextIndex, ent)
 		if ent == nil {
 			break
 		}
@@ -482,6 +487,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
+	if ent.Commit > node.commitIndex {
+		log.Println("commit", ent.Commit)
+	}
 	node.CommitEntry(ent.Commit)
 }
 

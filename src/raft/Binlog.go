@@ -1,6 +1,7 @@
 package raft
 
 import (
+	// "log"
 )
 
 type Binlog struct{
@@ -14,14 +15,14 @@ type Binlog struct{
 
 	// persistent
 	FsyncIndex int64 // 本地日志持久化的进度
-	FsyncNotify chan *Entry // 当有日志在本地持久化时
+	FsyncNotify chan int64 // 当有日志在本地持久化时
 }
 
 func NewBinlog(node *Node) *Binlog {
 	st := new(Binlog)
 	st.node = node
 	st.entries = make(map[int64]*Entry)
-	st.FsyncNotify = make(chan *Entry, 10)
+	st.FsyncNotify = make(chan int64, 10)
 	return st
 }
 
@@ -58,6 +59,6 @@ func (st *Binlog)WriteEntry(ent Entry){
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
 
-		st.FsyncNotify <- ent
+		st.FsyncNotify <- ent.Index
 	}
 }

@@ -22,6 +22,7 @@ func NewMember(id, addr string) *Member{
 	ret.Id = id
 	ret.Addr = addr
 	ret.SendWindow = 3
+	ret.Reset()
 	return ret
 }
 
