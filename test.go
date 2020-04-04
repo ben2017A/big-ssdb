@@ -27,7 +27,7 @@ func main(){
 	// node := raft.NewNode(nodeId, raft_xport.Addr(), db)
 
 	log.Println("Service server started at", port+1000)
-	svc_xport := link.NewTcpServer("127.0.0.1", port+1000)
+	svc_xport := link.NewServer("127.0.0.1", port+1000)
 	// svc := server.NewService(base_dir, node, svc_xport)
 	// defer svc.Close()
 

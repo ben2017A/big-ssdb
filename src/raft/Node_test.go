@@ -77,7 +77,7 @@ func xport() {
 			n.Tick(1)
 		}
 		for _, n := range ns {
-			if len(n.SendC()) > 0 {
+			for len(n.SendC()) > 0 {
 				count ++
 				msg := <- n.SendC()
 				log.Println("    send > " + msg.Encode())

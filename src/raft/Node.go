@@ -487,10 +487,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	if ent.Commit > node.commitIndex {
-		log.Println("commit", ent.Commit)
-	}
 	node.CommitEntry(ent.Commit)
+	if ent.Commit > node.commitIndex {
+		log.Println("commit", node.commitIndex)
+	}
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
