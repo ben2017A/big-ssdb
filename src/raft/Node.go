@@ -123,10 +123,15 @@ func (node *Node)Close(){
 
 func (node *Node)Tick(timeElapse int){
 	if node.Role == RoleFollower || node.Role == RoleCandidate {
-		if len(node.Members) > 0 {
+		// 单节点运行
+		if len(node.Members) == 0 {
+			log.Println("Start Election")
+			node.startElection()
+			node.checkVoteResult()
+		} else {
 			node.electionTimer += timeElapse
 			if node.electionTimer >= ElectionTimeout {
-				log.Println("start PreVote")
+				log.Println("Start PreVote")
 				node.startPreVote()
 			}
 		}
@@ -157,13 +162,7 @@ func (node *Node)startPreVote(){
 	node.Role = RoleFollower
 	node.electionTimer = 0
 	node.votesReceived = make(map[string]string)
-
 	node.broadcast(NewPreVoteMsg())
-	
-	// 单节点运行
-	if len(node.Members) == 0 {
-		node.startElection()
-	}
 }
 
 func (node *Node)startElection(){
@@ -171,14 +170,8 @@ func (node *Node)startElection(){
 	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
 	node.resetMembers()
-
 	node.conf.NewTerm()
 	node.broadcast(NewRequestVoteMsg())
-	
-	// 单节点运行
-	if len(node.Members) == 0 {
-		node.checkVoteResult()
-	}
 }
 
 func (node *Node)becomeFollower(){
@@ -251,24 +244,6 @@ func (node *Node)replicateMember(m *Member){
 
 
 /* ############################################# */
-
-func (node *Node)checkVoteResult(){
-	grant := 1
-	reject := 0
-	for _, res := range node.votesReceived {
-		if res == "grant" {
-			grant ++
-		} else {
-			reject ++
-		}
-	}
-	if grant > (len(node.Members) + 1)/2 {
-		node.becomeLeader()
-	} else if reject > len(node.Members)/2 {
-		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.Members)+1)
-		node.becomeFollower()
-	}
-}
 
 func (node *Node)handleRaftMessage(msg *Message){
 	m := node.Members[msg.Src]
@@ -395,6 +370,24 @@ func (node *Node)handleRequestVoteAck(msg *Message){
 	log.Printf("receive vote %s from %s", msg.Data, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
 	node.checkVoteResult()
+}
+
+func (node *Node)checkVoteResult(){
+	grant := 1
+	reject := 0
+	for _, res := range node.votesReceived {
+		if res == "grant" {
+			grant ++
+		} else {
+			reject ++
+		}
+	}
+	if grant > (len(node.Members) + 1)/2 {
+		node.becomeLeader()
+	} else if reject > len(node.Members)/2 {
+		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.Members)+1)
+		node.becomeFollower()
+	}
 }
 
 func (node *Node)sendDuplicatedAckToMessage(msg *Message){
@@ -537,25 +530,6 @@ func (node *Node)Propose(data string) (int32, int64) {
 }
 
 /* ###################### Operations ####################### */
-
-func (node *Node)InfoMap() map[string]string {
-	node.mux.Lock()
-	defer node.mux.Unlock()
-	
-	m := make(map[string]string)
-	m["id"] = fmt.Sprintf("%s", node.Id())
-	m["addr"] = node.conf.Addr()
-	m["role"] = string(node.Role)
-	m["term"] = fmt.Sprintf("%d", node.Term())
-	m["voteFor"] = fmt.Sprintf("%s", node.VoteFor())
-	m["lastApplied"] = fmt.Sprintf("%d", node.conf.LastApplied())
-	m["commitIndex"] = fmt.Sprintf("%d", node.commitIndex)
-	m["lastTerm"] = fmt.Sprintf("%d", node.logs.LastTerm)
-	m["lastIndex"] = fmt.Sprintf("%d", node.logs.LastIndex)
-	b, _ := json.Marshal(node.Members)
-	m["members"] = string(b)
-	return m
-}
 
 func (node *Node)Info() string {
 	node.mux.Lock()
