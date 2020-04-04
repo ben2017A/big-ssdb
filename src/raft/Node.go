@@ -83,13 +83,19 @@ func (node *Node)Start(){
 	node.StartNetwork()
 }
 
+func (node *Node)Close(){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+	node.logs.Close()
+}
+
 func (node *Node)StartTicker(){
+	const TimerInterval = 100
+	log.Println("start ticker, interval:", TimerInterval)
 	go func() {
-		const TimerInterval = 100
 		ticker := time.NewTicker(TimerInterval * time.Millisecond)
 		defer ticker.Stop()
 
-		log.Println("setup ticker, interval:", TimerInterval)
 		for {
 			<- ticker.C
 			node.mux.Lock()
@@ -100,8 +106,8 @@ func (node *Node)StartTicker(){
 }
 
 func (node *Node)StartNetwork(){
+	log.Println("start networking")
 	go func() {
-		log.Println("setup networking")
 		for{
 			select{
 			case <-node.logs.FsyncNotify:
@@ -117,29 +123,44 @@ func (node *Node)StartNetwork(){
 	}()
 }
 
-func (node *Node)Close(){
-	node.logs.Close()
+// for testing
+func (node *Node)Step() {
+	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
+	for len(node.logs.FsyncNotify) > 0 || len(node.recv_c) > 0 {
+		if len(node.logs.FsyncNotify) > 0{
+			<- node.logs.FsyncNotify
+			node.mux.Lock()
+			node.replicateAllMembers()
+			node.mux.Unlock()
+		}
+		if len(node.recv_c) > 0 {
+			msg := <-node.recv_c
+			node.mux.Lock()
+			node.handleRaftMessage(msg)
+			node.mux.Unlock()
+		}
+	}
 }
 
-func (node *Node)Tick(timeElapse int){
+func (node *Node)Tick(timeElapseMs int){
 	if node.Role == RoleFollower || node.Role == RoleCandidate {
 		// 单节点运行
 		if len(node.Members) == 0 {
-			log.Println("Start Election")
+			log.Println("start Election")
 			node.startElection()
 			node.checkVoteResult()
 		} else {
-			node.electionTimer += timeElapse
+			node.electionTimer += timeElapseMs
 			if node.electionTimer >= ElectionTimeout {
-				log.Println("Start PreVote")
+				log.Println("start PreVote")
 				node.startPreVote()
 			}
 		}
 	} else if node.Role == RoleLeader {
 		for _, m := range node.Members {
-			m.ReceiveTimeout += timeElapse
-			m.ReplicateTimer += timeElapse
-			m.HeartbeatTimer += timeElapse
+			m.ReceiveTimeout += timeElapseMs
+			m.ReplicateTimer += timeElapseMs
+			m.HeartbeatTimer += timeElapseMs
 
 			if m.ReceiveTimeout < ReceiveTimeout {
 				if m.ReplicateTimer >= ReplicationTimeout {
@@ -333,7 +354,7 @@ func (node *Node)handlePreVote(msg *Message){
 }
 
 func (node *Node)handlePreVoteAck(msg *Message){
-	log.Printf("receive PreVoteAck from %s", msg.Src)
+	log.Printf("receive %s from %s", msg.Type, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
 	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
 		node.startElection()
@@ -367,7 +388,7 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	log.Printf("receive vote %s from %s", msg.Data, msg.Src)
+	log.Printf("receive %s from %s", msg.Type, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
 	node.checkVoteResult()
 }

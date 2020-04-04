@@ -8,10 +8,12 @@ import (
 
 func TestUdpTransport(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	xport := NewUdpTransport("127.0.0.1", 9000)
+	
+	log.Println("Use nc 127.0.0.1 900 to connect")
 
+	xport := NewUdpTransport("127.0.0.1", 9000)
 	for {
-		msg := <-xport.C
+		msg := <-xport.C()
 		fmt.Println(msg)
 	}
 }
