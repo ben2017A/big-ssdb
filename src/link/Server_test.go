@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-func TestTcpServer(t *testing.T){
-	tcp := NewTcpServer("127.0.0.1", 9000)
+func TestServer(t *testing.T){
+	tcp := NewServer("127.0.0.1", 9000)
 	defer tcp.Close()
 
 	for {

@@ -5,9 +5,7 @@ import (
 	"log"
 	"fmt"
 	"sync"
-	"strings"
 	"bytes"
-	"strconv"
 	"util"
 )
 
@@ -15,7 +13,7 @@ import (
 请求响应模式, 一个连接如果有一个请求在处理时, 则不再解析报文, 等响应后再解析下一个报文.
 */
 
-type TcpServer struct {
+type Server struct {
 	C chan *Message
 	
 	lastClientId int
@@ -24,11 +22,11 @@ type TcpServer struct {
 	mux sync.Mutex
 }
 
-func NewTcpServer(ip string, port int) *TcpServer {
+func NewServer(ip string, port int) *Server {
 	addr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ip, port))
 	conn, _ := net.ListenTCP("tcp", addr)
 
-	tcp := new(TcpServer)
+	tcp := new(Server)
 	tcp.C = make(chan *Message)
 	tcp.lastClientId = 0
 	tcp.conn = conn
@@ -38,12 +36,12 @@ func NewTcpServer(ip string, port int) *TcpServer {
 	return tcp
 }
 
-func (tcp *TcpServer)Close(){
+func (tcp *Server)Close(){
 	tcp.conn.Close()
 	close(tcp.C)
 } 
 
-func (tcp *TcpServer)start() {
+func (tcp *Server)start() {
 	go func(){
 		for {
 			conn, err := tcp.conn.Accept()
@@ -57,7 +55,7 @@ func (tcp *TcpServer)start() {
 	}()
 }
 
-func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
+func (tcp *Server)handleClient(clientId int, conn net.Conn) {
 	tcp.mux.Lock()
 	tcp.clients[clientId] = conn
 	tcp.mux.Unlock()
@@ -99,7 +97,7 @@ func (tcp *TcpServer)handleClient(clientId int, conn net.Conn) {
 	}
 }
 
-func (tcp *TcpServer)Send(msg *Message) {
+func (tcp *Server)Send(msg *Message) {
 	tcp.mux.Lock()
 	conn := tcp.clients[msg.Src]
 	tcp.mux.Unlock()
@@ -109,34 +107,7 @@ func (tcp *TcpServer)Send(msg *Message) {
 		return
 	}
 	
-	s := tcp.encodeResponse(msg)
+	s := msg.Encode()
 	log.Printf("    send > %d %s\n", msg.Src, util.ReplaceBytes(s, []string{"\r", "\n"}, []string{"\\r", "\\n"}))
 	conn.Write([]byte(s))
-}
-
-func (tcp *TcpServer)encodeResponse(m *Message) string {
-	code := strings.ToLower(m.Code())
-	if code == "ok" {
-		if len(m.Args()) == 0 || m.Args()[0] == "" {
-			return "+OK\r\n"
-		}
-	} else if code == "error" {
-		return fmt.Sprintf("-ERR %s\r\n", m.Args()[0])
-	}
-
-	var buf bytes.Buffer
-	count := len(m.Array())
-	if count > 1 {
-		buf.WriteString("*")
-		buf.WriteString(strconv.Itoa(count))
-		buf.WriteString("\r\n")
-	}
-	for _, p := range m.Array() {
-		buf.WriteString("$")
-		buf.WriteString(strconv.Itoa(len(p)))
-		buf.WriteString("\r\n")
-		buf.WriteString(p)
-		buf.WriteString("\r\n")
-	}
-	return buf.String()
 }
