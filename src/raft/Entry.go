@@ -14,8 +14,6 @@ const(
 	EntryTypeNoop      = "Noop"
 	EntryTypeConf      = "Conf"
 	EntryTypeData      = "Data"
-	EntryTypeAddMember = "AddMember"
-	EntryTypeDelMember = "DelMember"
 )
 
 type Entry struct{

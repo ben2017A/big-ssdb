@@ -2,7 +2,7 @@ package raft
 
 import (
 	"log"
-	"strings"
+	// "strings"
 )
 
 // 复杂 Raft 配置的持久化
@@ -67,28 +67,28 @@ func (c *Config)SaveState(term int32, voteFor string) {
 	c.voteFor = voteFor
 }
 
-func (c *Config)AddMember(nodeId string, nodeAddr string) {
-	if nodeId == c.id {
-		return
-	}
-	if c.members[nodeId] != nil {
-		return
-	}
-	m := NewMember(nodeId, nodeAddr)
-	c.members[m.Id] = m
-	c.node.Members = c.members
-}
+// func (c *Config)AddMember(nodeId string, nodeAddr string) {
+// 	if nodeId == c.id {
+// 		return
+// 	}
+// 	if c.members[nodeId] != nil {
+// 		return
+// 	}
+// 	m := NewMember(nodeId, nodeAddr)
+// 	c.members[m.Id] = m
+// 	c.node.Members = c.members
+// }
 
-func (c *Config)DelMember(nodeId string) {
-	if nodeId == c.id {
-		return
-	}
-	if c.members[nodeId] == nil {
-		return
-	}
-	delete(c.members, nodeId)
-	c.node.Members = c.members
-}
+// func (c *Config)DelMember(nodeId string) {
+// 	if nodeId == c.id {
+// 		return
+// 	}
+// 	if c.members[nodeId] == nil {
+// 		return
+// 	}
+// 	delete(c.members, nodeId)
+// 	c.node.Members = c.members
+// }
 
 
 /* ###################### Service interface ####################### */
@@ -102,11 +102,5 @@ func (c *Config)ApplyEntry(ent *Entry){
 
 	if ent.Type == EntryTypeConf {
 		log.Println("[Apply]", ent.Encode())
-		ps := strings.Split(ent.Data, " ")
-		if ps[0] == "AddMember" {
-			c.AddMember(ps[1], ps[2])
-		} else if ps[0] == "DelMember" {
-			c.DelMember(ps[1])
-		}
 	}
 }

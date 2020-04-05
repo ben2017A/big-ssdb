@@ -153,39 +153,32 @@ func (node *Node)Tick(timeElapseMs int){
 			}
 		}
 	} else if node.Role == RoleLeader {
-		// update members' timers
 		for _, m := range node.Members {
 			m.ReceiveTimeout += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
-		}
-		node.shouldContactAllMembers()
-	}
-}
 
-// prepare send data to or ping all members, will actually contact on Tick()
-func (node *Node)prepareContactAllMembers(){
-	for _, m := range node.Members {
-		m.ReplicateTimer = ReplicationTimeout
-		m.HeartbeatTimer = HeartbeatTimeout
-	}
-}
-
-func (node *Node)shouldContactAllMembers(){
-	for _, m := range node.Members {
-		if m.ReceiveTimeout < ReceiveTimeout {
-			if m.ReplicateTimer >= ReplicationTimeout {
-				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
-					log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
-					m.NextIndex = m.MatchIndex + 1
+			if m.ReceiveTimeout < ReceiveTimeout {
+				if m.ReplicateTimer >= ReplicationTimeout {
+					if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
+						log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+						m.NextIndex = m.MatchIndex + 1
+					}
+					node.replicateMember(m)
 				}
-				node.replicateMember(m)
+			}
+			if m.HeartbeatTimer >= HeartbeatTimeout {
+				// log.Println("Heartbeat timeout for node", m.Id)
+				node.pingMember(m)
 			}
 		}
-		if m.HeartbeatTimer >= HeartbeatTimeout {
-			// log.Println("Heartbeat timeout for node", m.Id)
-			node.pingMember(m)
-		}
+	}
+}
+
+// prepare ping all members, will actually ping in Tick()
+func (node *Node)preparePingAllMembers(){
+	for _, m := range node.Members {
+		m.HeartbeatTimer = HeartbeatTimeout
 	}
 }
 
@@ -288,7 +281,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 	// MUST: smaller msg.Term is rejected or ignored
 	if msg.Term < node.Term() {
 		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
-		node.send(NewNoneMsg(msg.Src))
+		node.send(NewGossipMsg(msg.Src))
 		// finish processing msg
 		return
 	}
@@ -302,7 +295,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		// continue processing msg
 	}
-	if msg.Type == MessageTypeNone {
+	if msg.Type == MessageTypeGossip {
 		return
 	}
 
@@ -505,7 +498,8 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 	if msg.Data == "false" {
 		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
-		m.NextIndex = msg.PrevIndex + 1
+		m.MatchIndex = msg.PrevIndex
+		m.NextIndex  = m.MatchIndex + 1
 		node.replicateMember(m)
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
@@ -515,10 +509,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			node.proceedCommitIndex()
 			newI := node.commitIndex
 			if oldI != newI {
-				node.prepareContactAllMembers()
-			} else {
-				node.replicateMember(m)
+				node.preparePingAllMembers()
 			}
+			node.replicateMember(m)
 		}
 	}
 }
@@ -549,7 +542,7 @@ func (node *Node)proceedCommitIndex() int64 {
 	return node.commitIndex
 }
 
-/* ###################### Quorum Methods ####################### */
+/* ###################### Methods ####################### */
 
 func (node *Node)Propose(data string) (int32, int64) {
 	node.mux.Lock()
@@ -563,8 +556,6 @@ func (node *Node)Propose(data string) (int32, int64) {
 	ent := node.logs.AppendEntry(EntryTypeData, data)
 	return ent.Term, ent.Index
 }
-
-/* ###################### Operations ####################### */
 
 func (node *Node)Info() string {
 	node.mux.Lock()

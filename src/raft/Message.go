@@ -10,7 +10,7 @@ import (
 type MessageType string
 
 const(
-	MessageTypeNone            = "None"
+	MessageTypeGossip          = "Gossip"
 	MessageTypePreVote         = "PreVote"
 	MessageTypePreVoteAck      = "PreVoteAck"
 	MessageTypeRequestVote     = "RequestVote"
@@ -61,9 +61,9 @@ func (m *Message)Decode(buf string) bool{
 	return true
 }
 
-func NewNoneMsg(dst string) *Message{
+func NewGossipMsg(dst string) *Message{
 	msg := new(Message)
-	msg.Type = MessageTypeNone
+	msg.Type = MessageTypeGossip
 	msg.Dst = dst
 	return msg
 }
