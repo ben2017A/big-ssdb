@@ -5,7 +5,7 @@ import (
 	// "strings"
 )
 
-// 复杂 Raft 配置的持久化
+// 负责 Raft 配置的持久化
 type Config struct {
 	id string
 	addr string
@@ -14,9 +14,9 @@ type Config struct {
 	voteFor string
 	members map[string]*Member // 不包含自己
 
-	node *Node
-
 	lastApplied int64
+
+	node *Node
 }
 
 func NewConfig(id string, addr string, members map[string]string) *Config {
