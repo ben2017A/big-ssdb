@@ -60,8 +60,8 @@ func test2Node() {
 	t, i := n1.Propose("set a 1")
 	t, i = n1.Propose("set b 2")
 	log.Println("Propose", t, i)
-	sleep(0.1)
-	log.Println("\n" + n1.Info() + "\n" + n2.Info())
+	sleep(8.1)
+	// log.Println("\n" + n1.Info() + "\n" + n2.Info())
 }
 
 func sleep(second float32){

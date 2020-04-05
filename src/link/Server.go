@@ -80,6 +80,7 @@ func (tcp *Server)handleClient(clientId int, conn net.Conn) {
 				log.Println("Parse error")
 				return
 			} else if (n == 0){
+				// log.Println("not ready")
 				break
 			}
 			buf.Next(n)

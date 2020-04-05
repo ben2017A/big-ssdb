@@ -79,8 +79,8 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
-	node.StartTicker()
-	node.StartNetwork()
+	node.startTicker()
+	node.startNetwork()
 }
 
 func (node *Node)Close(){
@@ -89,7 +89,7 @@ func (node *Node)Close(){
 	node.logs.Close()
 }
 
-func (node *Node)StartTicker(){
+func (node *Node)startTicker(){
 	const TimerInterval = 100
 	log.Println("start ticker, interval:", TimerInterval)
 	go func() {
@@ -98,55 +98,47 @@ func (node *Node)StartTicker(){
 
 		for {
 			<- ticker.C
-			node.mux.Lock()
 			node.Tick(TimerInterval)
-			node.mux.Unlock()
 		}
 	}()
 }
 
-func (node *Node)StartNetwork(){
+func (node *Node)startNetwork(){
 	log.Println("start networking")
 	go func() {
 		for{
-			select{
-			case <-node.logs.FsyncNotify:
-				node.mux.Lock()
-				if node.Role == RoleLeader {
-					node.replicateAllMembers()
-				}
-				node.mux.Unlock()
-			case msg := <-node.recv_c:
-				node.mux.Lock()
-				node.handleRaftMessage(msg)
-				node.mux.Unlock()
-			}
+			node.handleEvent()
 		}
 	}()
+}
+
+func (node *Node)handleEvent() {
+	select{
+	case <-node.logs.FsyncNotify:
+		node.mux.Lock()
+		if node.Role == RoleLeader {
+			node.replicateAllMembers()
+		}
+		node.mux.Unlock()
+	case msg := <-node.recv_c:
+		node.mux.Lock()
+		node.handleRaftMessage(msg)
+		node.mux.Unlock()
+	}
 }
 
 // for testing
 func (node *Node)Step() {
 	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
 	for len(node.logs.FsyncNotify) > 0 || len(node.recv_c) > 0 {
-		if len(node.logs.FsyncNotify) > 0{
-			<- node.logs.FsyncNotify
-			node.mux.Lock()
-			if node.Role == RoleLeader {
-				node.replicateAllMembers()
-			}
-			node.mux.Unlock()
-		}
-		if len(node.recv_c) > 0 {
-			msg := <-node.recv_c
-			node.mux.Lock()
-			node.handleRaftMessage(msg)
-			node.mux.Unlock()
-		}
+		node.handleEvent()
 	}
 }
 
 func (node *Node)Tick(timeElapseMs int){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+
 	if node.Role == RoleFollower || node.Role == RoleCandidate {
 		// 单节点运行
 		if len(node.Members) == 0 {
@@ -161,24 +153,38 @@ func (node *Node)Tick(timeElapseMs int){
 			}
 		}
 	} else if node.Role == RoleLeader {
+		// update members' timers
 		for _, m := range node.Members {
 			m.ReceiveTimeout += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
+		}
+		node.shouldContactAllMembers()
+	}
+}
 
-			if m.ReceiveTimeout < ReceiveTimeout {
-				if m.ReplicateTimer >= ReplicationTimeout {
-					if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
-						log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
-						m.NextIndex = m.MatchIndex + 1
-					}
-					node.replicateMember(m)
+// prepare send data to or ping all members, will actually contact on Tick()
+func (node *Node)prepareContactAllMembers(){
+	for _, m := range node.Members {
+		m.ReplicateTimer = ReplicationTimeout
+		m.HeartbeatTimer = HeartbeatTimeout
+	}
+}
+
+func (node *Node)shouldContactAllMembers(){
+	for _, m := range node.Members {
+		if m.ReceiveTimeout < ReceiveTimeout {
+			if m.ReplicateTimer >= ReplicationTimeout {
+				if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
+					log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+					m.NextIndex = m.MatchIndex + 1
 				}
+				node.replicateMember(m)
 			}
-			if m.HeartbeatTimer >= HeartbeatTimeout {
-				// log.Println("Heartbeat timeout for node", m.Id)
-				node.pingMember(m)
-			}
+		}
+		if m.HeartbeatTimer >= HeartbeatTimeout {
+			// log.Println("Heartbeat timeout for node", m.Id)
+			node.pingMember(m)
 		}
 	}
 }
@@ -487,9 +493,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	node.CommitEntry(ent.Commit)
-	if ent.Commit > node.commitIndex {
-		log.Println("commit", node.commitIndex)
+	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex)
+	if commitIndex > node.commitIndex {
+		log.Printf("commit %d => %d", node.commitIndex, commitIndex)
+		node.commitIndex = commitIndex
 	}
 }
 
@@ -499,32 +506,24 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	if msg.Data == "false" {
 		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 		m.NextIndex = msg.PrevIndex + 1
+		node.replicateMember(m)
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
 		if m.MatchIndex > node.commitIndex {
-			commitIndex := node.checkCommitIndex()
-			if commitIndex > node.commitIndex {
-				// only commit currentTerm's log
-				ent := node.logs.GetEntry(commitIndex)
-				if ent.Term == node.Term() {
-					node.CommitEntry(commitIndex)
-
-					// follower acked last entry, heartbeat it to commit
-					if m.MatchIndex == node.logs.LastIndex {
-						// TODO: ping all?
-						node.pingMember(m)
-						return
-					}
-				}
+			oldI := node.commitIndex
+			node.proceedCommitIndex()
+			newI := node.commitIndex
+			if oldI != newI {
+				node.prepareContactAllMembers()
+			} else {
+				node.replicateMember(m)
 			}
 		}
 	}
-
-	node.replicateMember(m)
 }
 
-func (node *Node)checkCommitIndex() int64 {
+func (node *Node)proceedCommitIndex() int64 {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.Members) + 1)
 	matchIndex = append(matchIndex, node.logs.LastIndex) // self
@@ -535,12 +534,19 @@ func (node *Node)checkCommitIndex() int64 {
 		return matchIndex[i] > matchIndex[j]
 	})
 	commitIndex := matchIndex[len(matchIndex)/2]
-	log.Println("match[] =", matchIndex, "commit", commitIndex)
-	return commitIndex
-}
+	log.Println("match[] =", matchIndex, " major matchIndex", commitIndex)
 
-func (node *Node)CommitEntry(index int64) {
-	node.commitIndex = util.MinInt64(node.logs.LastIndex, index)
+	commitIndex = util.MinInt64(commitIndex, node.logs.LastIndex)
+	if commitIndex > node.commitIndex {
+		ent := node.logs.GetEntry(commitIndex)
+		// only commit currentTerm's log
+		if ent.Term == node.Term() {
+			log.Printf("commit %d => %d", node.commitIndex, commitIndex)
+			node.commitIndex = commitIndex
+		}
+	}
+
+	return node.commitIndex
 }
 
 /* ###################### Quorum Methods ####################### */

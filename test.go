@@ -49,7 +49,8 @@ func main(){
 	for{
 		select{
 		case req := <-svc_xport.C:
-			node.Propose(req.Cmd())
+			t, i := node.Propose(req.Cmd())
+			log.Println("Propose", t, i)
 		case msg := <-raft_xport.C():
 			node.RecvC() <- msg
 		case msg := <-node.SendC():
