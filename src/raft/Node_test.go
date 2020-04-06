@@ -20,7 +20,7 @@ func TestNode(t *testing.T){
 	test2Node()
 	sleep(0.01)
 
-	sleep(0.1)
+	sleep(0.01)
 	log.Println("end")
 }
 
@@ -48,19 +48,23 @@ func test2Node() {
 	conf2 := NewConfig("n2", members["n2"], members)
 	n2 = NewNode(conf2)
 
-	go xport()
+	n1.Start()
+	n2.Start()
+	networking()
+	sleep(0.01)
 
 	n1.Tick(5000)
-	sleep(0.1)
+	sleep(0.01)
 
 	if n1.Role != RoleLeader {
 		log.Fatal("error")
 	}
 
 	t, i := n1.Propose("set a 1")
+	log.Println("Propose", t, i)
 	t, i = n1.Propose("set b 2")
 	log.Println("Propose", t, i)
-	sleep(0.1)
+	sleep(0.01)
 	// log.Println("\n" + n1.Info() + "\n" + n2.Info())
 }
 
@@ -68,30 +72,28 @@ func sleep(second float32){
 	time.Sleep((time.Duration)(second * 1000) * time.Millisecond)
 }
 
-func xport() {
-	ns := []*Node{n1, n2}
-	for {
-		count := 0
-		for _, n := range ns {
-			n.Step()
-			n.Tick(1)
-		}
-		for _, n := range ns {
-			for len(n.SendC()) > 0 {
-				count ++
+func networking() {
+	ns := map[string]*Node{n1.Id():n1, n2.Id():n2}
+	for _, n := range ns {
+		// go func(n *Node){
+		// 	for {
+		// 		n.Tick(100)
+		// 		sleep(0.1)
+		// 	}
+		// }(n)
+		// go func(n *Node){
+		// 	for {
+		// 		n.Step()
+		// 		sleep(0.001)
+		// 	}
+		// }(n)
+		go func(n *Node){
+			for {
 				msg := <- n.SendC()
 				log.Println("    send > " + msg.Encode())
-				for _, dst := range ns {
-					if dst.Id() == msg.Dst {
-						dst.RecvC() <- msg
-						// log.Println("    recv < " + msg.Encode())
-					}
-				}
+				ns[msg.Dst].RecvC() <- msg
+				// sleep(0.001)
 			}
-		}
-		if count == 0 {
-			sleep(0.001)
-			// break
-		}
+		}(n)
 	}
 }

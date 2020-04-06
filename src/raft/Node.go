@@ -133,7 +133,7 @@ func (node *Node)handleEvent() {
 // for testing
 func (node *Node)Step() {
 	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
-	for len(node.logs.FsyncNotify) > 0 || len(node.recv_c) > 0 {
+	for {
 		node.handleEvent()
 	}
 }
