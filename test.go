@@ -39,8 +39,6 @@ func main(){
 	node := raft.NewNode(conf)
 	node.Start()
 
-	// raft_xport.Connect("8001", "127.0.0.1:8001")
-	// raft_xport.Connect("8002", "127.0.0.1:8002")
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
 	for k, v := range members {
 		raft_xport.Connect(k, v)

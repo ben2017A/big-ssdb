@@ -64,7 +64,7 @@ func test2Node() {
 	log.Println("Propose", t, i)
 	t, i = n1.Propose("set b 2")
 	log.Println("Propose", t, i)
-	sleep(0.01)
+	sleep(0.1) // wait Tick to send ping
 	// log.Println("\n" + n1.Info() + "\n" + n2.Info())
 }
 

@@ -490,10 +490,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 
 	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex)
-	if commitIndex > node.commitIndex {
-		log.Printf("commit %d => %d", node.commitIndex, commitIndex)
-		node.commitIndex = commitIndex
-	}
+	node.commitEntry(commitIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
@@ -518,7 +515,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	node.replicateMember(m)
 }
 
-func (node *Node)proceedCommitIndex() int64 {
+func (node *Node)proceedCommitIndex() {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.Members) + 1)
 	matchIndex = append(matchIndex, node.logs.LastIndex) // self
@@ -536,12 +533,28 @@ func (node *Node)proceedCommitIndex() int64 {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
-			log.Printf("commit %d => %d", node.commitIndex, commitIndex)
-			node.commitIndex = commitIndex
+			node.commitEntry(commitIndex)
 		}
 	}
+}
 
-	return node.commitIndex
+func (node *Node)commitEntry(commitIndex int64) {
+	if commitIndex <= node.commitIndex {
+		return
+	}
+	log.Printf("commit %d => %d", node.commitIndex, commitIndex)
+	node.commitIndex = commitIndex
+
+	// synchronously apply to Config
+	for index := node.conf.LastApplied() + 1; index <= node.commitIndex; index ++ {
+		ent := node.logs.GetEntry(index)
+		if ent == nil {
+			log.Fatalf("Lost entry@%d", index)
+		}
+		node.conf.ApplyEntry(ent)
+	}
+
+	// TODO: asynchronously apply to Service
 }
 
 /* ###################### Methods ####################### */
