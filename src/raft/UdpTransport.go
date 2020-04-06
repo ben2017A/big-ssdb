@@ -28,7 +28,7 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	tp := new(UdpTransport)
 	tp.addr = fmt.Sprintf("%s:%d", ip, port)
 	tp.conn = conn
-	tp.c = make(chan *Message)
+	tp.c = make(chan *Message, 8)
 	tp.dns = make(map[string]string)
 
 	tp.start()

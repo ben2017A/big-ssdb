@@ -21,10 +21,14 @@ const(
 )
 
 const(
+	TickerInterval     = 100
 	ElectionTimeout    = 5 * 1000
 	HeartbeatTimeout   = 4 * 1000 // TODO: ElectionTimeout/3
-	ReplicationTimeout = 1 * 1000
-	ReceiveTimeout     = HeartbeatTimeout * 3
+	ReplicateTimeout   = 1 * 1000
+	ReceiveTimeout     = ReplicateTimeout * 3
+
+	SendWindowSize  = 3
+	SendChannelSize = 10
 )
 
 type Node struct{
@@ -50,9 +54,9 @@ func NewNode(conf *Config) *Node{
 	node.Role = RoleFollower
 	node.conf = conf
 	node.logs = NewBinlog(node)
-	node.recv_c = make(chan *Message, 3)
-	node.send_c = make(chan *Message, 3)
-	node.electionTimer = 2 * 1000
+	node.recv_c = make(chan *Message, 1)
+	node.send_c = make(chan *Message, SendChannelSize)
+	node.electionTimer = 3 * 1000
 
 	node.conf.Init(node)
 	return node
@@ -90,15 +94,14 @@ func (node *Node)Close(){
 }
 
 func (node *Node)startTicker(){
-	const TimerInterval = 100
-	log.Println("start ticker, interval:", TimerInterval)
+	log.Println("start ticker, interval:", TickerInterval)
 	go func() {
-		ticker := time.NewTicker(TimerInterval * time.Millisecond)
+		ticker := time.NewTicker(TickerInterval * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
 			<- ticker.C
-			node.Tick(TimerInterval)
+			node.Tick(TickerInterval)
 		}
 	}()
 }
@@ -159,7 +162,7 @@ func (node *Node)Tick(timeElapseMs int){
 			m.HeartbeatTimer += timeElapseMs
 
 			if m.ReceiveTimeout < ReceiveTimeout {
-				if m.ReplicateTimer >= ReplicationTimeout {
+				if m.ReplicateTimer >= ReplicateTimeout {
 					if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
 						log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 						m.NextIndex = m.MatchIndex + 1
@@ -244,13 +247,13 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
-	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > m.SendWindow {
+	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > SendWindowSize {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
 
 	m.ReplicateTimer = 0
-	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + m.SendWindow)
+	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + SendWindowSize)
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
 		// log.Println(node.Id(), m.Id, m.NextIndex, ent)
@@ -500,7 +503,6 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 		m.MatchIndex = msg.PrevIndex
 		m.NextIndex  = m.MatchIndex + 1
-		node.replicateMember(m)
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
@@ -511,9 +513,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			if oldI != newI {
 				node.preparePingAllMembers()
 			}
-			node.replicateMember(m)
 		}
 	}
+	node.replicateMember(m)
 }
 
 func (node *Node)proceedCommitIndex() int64 {

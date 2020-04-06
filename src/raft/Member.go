@@ -8,7 +8,6 @@ type Member struct{
 	// sliding window
 	NextIndex int64   // next_send
 	MatchIndex int64  // last_ack
-	SendWindow int64  // 
 
 	HeartbeatTimer int
 	ReplicateTimer int
@@ -21,7 +20,6 @@ func NewMember(id, addr string) *Member{
 	ret.Role = RoleFollower
 	ret.Id = id
 	ret.Addr = addr
-	ret.SendWindow = 3
 	ret.Reset()
 	return ret
 }

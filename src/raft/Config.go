@@ -28,7 +28,8 @@ func NewConfig(id string, addr string, members map[string]string) *Config {
 		if nodeId == c.id {
 			continue
 		}
-		c.members[nodeId] = NewMember(nodeId, nodeAddr)
+		m := NewMember(nodeId, nodeAddr)
+		c.members[nodeId] = m
 	}
 	return c
 }
