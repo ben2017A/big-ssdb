@@ -59,6 +59,7 @@ func (st *Binlog)WriteEntry(ent Entry){
 		st.LastTerm = ent.Term
 		st.LastIndex = ent.Index
 
-		st.FsyncNotify <- ent.Index
+		st.FsyncIndex = st.LastIndex
+		st.FsyncNotify <- st.FsyncIndex
 	}
 }
