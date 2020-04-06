@@ -596,19 +596,19 @@ func (node *Node)Info() string {
 /* ############################################# */
 
 func (node *Node)send(msg *Message){
-	msg.Src = node.Id()
-	msg.Term = node.Term()
-	if msg.PrevTerm == 0 && msg.Type != MessageTypeAppendEntry {
-		msg.PrevTerm = node.logs.LastTerm
-		msg.PrevIndex = node.logs.LastIndex
+	new_msg := *msg // copy
+	new_msg.Src = node.Id()
+	new_msg.Term = node.Term()
+	if new_msg.PrevTerm == 0 && new_msg.Type != MessageTypeAppendEntry {
+		new_msg.PrevTerm = node.logs.LastTerm
+		new_msg.PrevIndex = node.logs.LastIndex
 	}
-	node.send_c <- msg
+	node.send_c <- &new_msg
 }
 
 func (node *Node)broadcast(msg *Message){
 	for _, m := range node.Members {
-		new_msg := *msg // copy
-		new_msg.Dst = m.Id
-		node.send(&new_msg)
+		msg.Dst = m.Id
+		node.send(msg)
 	}
 }
