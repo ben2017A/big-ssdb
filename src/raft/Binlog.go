@@ -6,23 +6,23 @@ import (
 
 type Binlog struct{
 	node *Node
-	Service Service
+	service Service
 
 	// volatile
-	LastTerm int32
-	LastIndex int64
+	lastTerm int32
+	lastIndex int64
 	entries map[int64]*Entry
 
 	// persistent
-	FsyncIndex int64 // 本地日志持久化的进度
-	FsyncNotify chan int64 // 当有日志在本地持久化时
+	fsyncIndex int64 // 本地日志持久化的进度
+	fsyncNotify chan int64 // 当有日志在本地持久化时
 }
 
 func NewBinlog(node *Node) *Binlog {
 	st := new(Binlog)
 	st.node = node
 	st.entries = make(map[int64]*Entry)
-	st.FsyncNotify = make(chan int64, 10)
+	st.fsyncNotify = make(chan int64, 10)
 	return st
 }
 
@@ -37,7 +37,7 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry{
 	ent := new(Entry)
 	ent.Type = type_
 	ent.Term = st.node.Term()
-	ent.Index = st.LastIndex + 1
+	ent.Index = st.lastIndex + 1
 	// ent.Commit = st.node.CommitIndex
 	ent.Data = data
 
@@ -50,16 +50,16 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry{
 func (st *Binlog)WriteEntry(ent Entry){
 	st.entries[ent.Index] = &ent
 
-	// 找出连续的 entries, 更新 LastTerm 和 LastIndex,
+	// 找出连续的 entries, 更新 lastTerm 和 lastIndex,
 	for{
-		ent := st.GetEntry(st.LastIndex + 1)
+		ent := st.GetEntry(st.lastIndex + 1)
 		if ent == nil {
 			break;
 		}
-		st.LastTerm = ent.Term
-		st.LastIndex = ent.Index
+		st.lastTerm = ent.Term
+		st.lastIndex = ent.Index
 
-		st.FsyncIndex = st.LastIndex
-		st.FsyncNotify <- st.FsyncIndex
+		st.fsyncIndex = st.lastIndex
+		st.fsyncNotify <- st.fsyncIndex
 	}
 }

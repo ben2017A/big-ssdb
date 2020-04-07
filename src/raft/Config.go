@@ -36,23 +36,7 @@ func NewConfig(id string, addr string, members map[string]string) *Config {
 
 func (c *Config)Init(node *Node) {
 	c.node = node
-	c.node.Members = c.members
-}
-
-func (c *Config)Id() string {
-	return c.id
-}
-
-func (c *Config)Addr() string {
-	return c.addr
-}
-
-func (c *Config)Term() int32 {
-	return c.term
-}
-
-func (c *Config)VoteFor() string {
-	return c.voteFor
+	c.node.members = c.members
 }
 
 func (c *Config)NewTerm() {
@@ -77,7 +61,7 @@ func (c *Config)SaveState(term int32, voteFor string) {
 // 	}
 // 	m := NewMember(nodeId, nodeAddr)
 // 	c.members[m.Id] = m
-// 	c.node.Members = c.members
+// 	c.node.members = c.members
 // }
 
 // func (c *Config)DelMember(nodeId string) {
@@ -88,7 +72,7 @@ func (c *Config)SaveState(term int32, voteFor string) {
 // 		return
 // 	}
 // 	delete(c.members, nodeId)
-// 	c.node.Members = c.members
+// 	c.node.members = c.members
 // }
 
 

@@ -29,9 +29,9 @@ func testSingleNode() {
 	members["8001"] = "127.0.0.1:8001"
 	conf := NewConfig("8001", members["8001"], members)
 	n := NewNode(conf)
-	n.Tick(5000)
+	n.Start()
 	
-	if n.Role != RoleLeader {
+	if n.role != RoleLeader {
 		log.Fatal("error")
 	}
 	n.Close()
@@ -56,7 +56,7 @@ func test2Node() {
 	n1.Tick(5000)
 	sleep(0.01)
 
-	if n1.Role != RoleLeader {
+	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
 

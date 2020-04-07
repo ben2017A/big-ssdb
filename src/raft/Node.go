@@ -32,8 +32,8 @@ const(
 )
 
 type Node struct{
-	Role RoleType
-	Members map[string]*Member // 由 Config 维护
+	role RoleType
+	members map[string]*Member // 由 Config 维护
 	votesReceived map[string]string
 	electionTimer int
 	commitIndex int64
@@ -51,7 +51,7 @@ type Node struct{
 
 func NewNode(conf *Config) *Node{
 	node := new(Node)
-	node.Role = RoleFollower
+	node.role = RoleFollower
 	node.conf = conf
 	node.logs = NewBinlog(node)
 	node.recv_c = make(chan *Message, 1)
@@ -63,15 +63,15 @@ func NewNode(conf *Config) *Node{
 }
 
 func (node *Node)Id() string {
-	return node.conf.Id()
+	return node.conf.id
 }
 
 func (node *Node)Term() int32 {
-	return node.conf.Term()
+	return node.conf.term
 }
 
 func (node *Node)VoteFor() string {
-	return node.conf.VoteFor()
+	return node.conf.voteFor
 }
 
 func (node *Node)RecvC() chan<- *Message {
@@ -85,6 +85,7 @@ func (node *Node)SendC() <-chan *Message {
 func (node *Node)Start(){
 	node.startTicker()
 	node.startNetwork()
+	node.Tick(0)
 }
 
 func (node *Node)Close(){
@@ -117,9 +118,9 @@ func (node *Node)startNetwork(){
 
 func (node *Node)handleEvent() {
 	select{
-	case <-node.logs.FsyncNotify:
+	case <-node.logs.fsyncNotify:
 		node.mux.Lock()
-		if node.Role == RoleLeader {
+		if node.role == RoleLeader {
 			node.replicateAllMembers()
 		}
 		node.mux.Unlock()
@@ -142,9 +143,9 @@ func (node *Node)Tick(timeElapseMs int){
 	node.mux.Lock()
 	defer node.mux.Unlock()
 
-	if node.Role == RoleFollower || node.Role == RoleCandidate {
+	if node.role == RoleFollower || node.role == RoleCandidate {
 		// 单节点运行
-		if len(node.Members) == 0 {
+		if len(node.members) == 0 {
 			log.Println("start Election")
 			node.startElection()
 			node.checkVoteResult()
@@ -155,8 +156,8 @@ func (node *Node)Tick(timeElapseMs int){
 				node.startPreVote()
 			}
 		}
-	} else if node.Role == RoleLeader {
-		for _, m := range node.Members {
+	} else if node.role == RoleLeader {
+		for _, m := range node.members {
 			m.ReceiveTimeout += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
@@ -180,20 +181,20 @@ func (node *Node)Tick(timeElapseMs int){
 
 // prepare ping all members, will actually ping in Tick()
 func (node *Node)preparePingAllMembers(){
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		m.HeartbeatTimer = HeartbeatTimeout
 	}
 }
 
 func (node *Node)startPreVote(){
-	node.Role = RoleFollower
+	node.role = RoleFollower
 	node.electionTimer = 0
 	node.votesReceived = make(map[string]string)
 	node.broadcast(NewPreVoteMsg())
 }
 
 func (node *Node)startElection(){
-	node.Role = RoleCandidate
+	node.role = RoleCandidate
 	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
 	node.resetMembers()
@@ -202,13 +203,13 @@ func (node *Node)startElection(){
 }
 
 func (node *Node)becomeFollower(){
-	node.Role = RoleFollower
+	node.role = RoleFollower
 	node.electionTimer = 0	
 	node.resetMembers()
 }
 
 func (node *Node)becomeLeader(){
-	node.Role = RoleLeader
+	node.role = RoleLeader
 	node.electionTimer = 0
 	node.resetMembers()
 
@@ -220,14 +221,14 @@ func (node *Node)becomeLeader(){
 /* ############################################# */
 
 func (node *Node)resetMembers() {
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		m.Reset()
-		m.NextIndex = node.logs.LastIndex + 1
+		m.NextIndex = node.logs.lastIndex + 1
 	}
 }
 
 func (node *Node)pingAllMember(){
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		node.pingMember(m)
 	}
 }
@@ -235,13 +236,13 @@ func (node *Node)pingAllMember(){
 func (node *Node)pingMember(m *Member){
 	m.HeartbeatTimer = 0
 	
-	prev := node.logs.GetEntry(node.logs.LastIndex)
+	prev := node.logs.GetEntry(node.logs.lastIndex)
 	ent := NewPingEntry(node.commitIndex)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
 func (node *Node)replicateAllMembers(){
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		node.replicateMember(m)
 	}
 }
@@ -274,9 +275,9 @@ func (node *Node)replicateMember(m *Member){
 /* ############################################# */
 
 func (node *Node)handleRaftMessage(msg *Message){
-	m := node.Members[msg.Src]
+	m := node.members[msg.Src]
 	if msg.Dst != node.Id() || m == nil {
-		log.Println(node.Id(), "drop message from unknown src", msg.Src, "dst", msg.Dst, "members: ", node.Members)
+		log.Println(node.Id(), "drop message from unknown src", msg.Src, "dst", msg.Dst, "members: ", node.members)
 		return
 	}
 	m.ReceiveTimeout = 0
@@ -292,7 +293,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 	if msg.Term > node.Term() {
 		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term())
 		node.conf.SaveState(msg.Term, "")
-		if node.Role != RoleFollower {
+		if node.role != RoleFollower {
 			log.Printf("Node %s became follower", node.Id())
 			node.becomeFollower()
 		}
@@ -302,7 +303,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		return
 	}
 
-	if node.Role == RoleLeader {
+	if node.role == RoleLeader {
 		if msg.Type == MessageTypeAppendEntryAck {
 			node.handleAppendEntryAck(msg)
 		} else if msg.Type == MessageTypePreVote {
@@ -312,7 +313,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		return
 	}
-	if node.Role == RoleCandidate {
+	if node.role == RoleCandidate {
 		if msg.Type == MessageTypeRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		} else {
@@ -320,7 +321,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		return
 	}
-	if node.Role == RoleFollower {
+	if node.role == RoleFollower {
 		if msg.Type == MessageTypeRequestVote {
 			node.handleRequestVote(msg)
 		} else if msg.Type == MessageTypeAppendEntry {
@@ -337,10 +338,10 @@ func (node *Node)handleRaftMessage(msg *Message){
 }
 
 func (node *Node)handlePreVote(msg *Message){
-	if node.Role == RoleLeader {
-		arr := make([]int, 0, len(node.Members) + 1)
+	if node.role == RoleLeader {
+		arr := make([]int, 0, len(node.members) + 1)
 		arr = append(arr, 0) // self
-		for _, m := range node.Members {
+		for _, m := range node.members {
 			arr = append(arr, m.ReceiveTimeout)
 		}
 		sort.Ints(arr)
@@ -351,7 +352,7 @@ func (node *Node)handlePreVote(msg *Message){
 			return
 		}
 	}
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		if m.Role == RoleLeader && m.ReceiveTimeout < ReceiveTimeout {
 			log.Printf("leader %s is still active, ignore PreVote from %s", m.Id, msg.Src)
 			return
@@ -363,7 +364,7 @@ func (node *Node)handlePreVote(msg *Message){
 func (node *Node)handlePreVoteAck(msg *Message){
 	log.Printf("receive %s from %s", msg.Type, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
-	if len(node.votesReceived) + 1 > (len(node.Members) + 1)/2 {
+	if len(node.votesReceived) + 1 > (len(node.members) + 1)/2 {
 		node.startElection()
 	}
 }
@@ -376,9 +377,9 @@ func (node *Node)handleRequestVote(msg *Message){
 	}
 	
 	granted := false
-	if msg.PrevTerm > node.logs.LastTerm {
+	if msg.PrevTerm > node.logs.lastTerm {
 		granted = true
-	} else if msg.PrevTerm == node.logs.LastTerm && msg.PrevIndex >= node.logs.LastIndex {
+	} else if msg.PrevTerm == node.logs.lastTerm && msg.PrevIndex >= node.logs.lastIndex {
 		granted = true
 	} else {
 		// we've got newer log, reject
@@ -410,20 +411,20 @@ func (node *Node)checkVoteResult(){
 			reject ++
 		}
 	}
-	if grant > (len(node.Members) + 1)/2 {
+	if grant > (len(node.members) + 1)/2 {
 		node.becomeLeader()
-	} else if reject > len(node.Members)/2 {
-		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.Members)+1)
+	} else if reject > len(node.members)/2 {
+		log.Printf("grant: %d, reject: %d, total: %d", grant, reject, len(node.members)+1)
 		node.becomeFollower()
 	}
 }
 
 func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	var prev *Entry
-	if msg.PrevIndex < node.logs.LastIndex {
+	if msg.PrevIndex < node.logs.lastIndex {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
 	} else {
-		prev = node.logs.GetEntry(node.logs.LastIndex)
+		prev = node.logs.GetEntry(node.logs.lastIndex)
 	}
 	
 	ack := NewAppendEntryAck(msg.Src, false)
@@ -436,7 +437,7 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		if m.Id == msg.Src {
 			m.Role = RoleLeader
 		} else {
@@ -446,8 +447,8 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
 
 	if msg.PrevIndex > node.commitIndex {
-		if msg.PrevIndex != node.logs.LastIndex {
-			log.Printf("gap between entry, msg.prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.logs.LastIndex)
+		if msg.PrevIndex != node.logs.lastIndex {
+			log.Printf("gap between entry, msg.prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.logs.lastIndex)
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
@@ -489,12 +490,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex)
+	commitIndex := util.MinInt64(ent.Commit, node.logs.lastIndex)
 	node.commitEntry(commitIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
-	m := node.Members[msg.Src]
+	m := node.members[msg.Src]
 
 	if msg.Data == "false" {
 		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
@@ -517,9 +518,9 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 
 func (node *Node)proceedCommitIndex() {
 	// sort matchIndex[] in descend order
-	matchIndex := make([]int64, 0, len(node.Members) + 1)
-	matchIndex = append(matchIndex, node.logs.LastIndex) // self
-	for _, m := range node.Members {
+	matchIndex := make([]int64, 0, len(node.members) + 1)
+	matchIndex = append(matchIndex, node.logs.lastIndex) // self
+	for _, m := range node.members {
 		matchIndex = append(matchIndex, m.MatchIndex)
 	}
 	sort.Slice(matchIndex, func(i, j int) bool{
@@ -528,7 +529,7 @@ func (node *Node)proceedCommitIndex() {
 	commitIndex := matchIndex[len(matchIndex)/2]
 	log.Println("match[] =", matchIndex, " major matchIndex", commitIndex)
 
-	commitIndex = util.MinInt64(commitIndex, node.logs.LastIndex)
+	commitIndex = util.MinInt64(commitIndex, node.logs.lastIndex)
 	if commitIndex > node.commitIndex {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
@@ -563,7 +564,7 @@ func (node *Node)Propose(data string) (int32, int64) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
-	if node.Role != RoleLeader {
+	if node.role != RoleLeader {
 		log.Println("error: not leader")
 		return -1, -1
 	}
@@ -578,16 +579,16 @@ func (node *Node)Info() string {
 	
 	var ret string
 	ret += fmt.Sprintf("id: %s\n", node.Id())
-	ret += fmt.Sprintf("addr: %s\n", node.conf.Addr())
-	ret += fmt.Sprintf("role: %s\n", node.Role)
+	ret += fmt.Sprintf("addr: %s\n", node.conf.addr)
+	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.Term())
 	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor())
 	ret += fmt.Sprintf("lastApplied: %d\n", node.conf.LastApplied())
 	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
-	ret += fmt.Sprintf("lastTerm: %d\n", node.logs.LastTerm)
-	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.LastIndex)
+	ret += fmt.Sprintf("lastTerm: %d\n", node.logs.lastTerm)
+	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.lastIndex)
 	ret += fmt.Sprintf("electionTimer: %d\n", node.electionTimer)
-	b, _ := json.Marshal(node.Members)
+	b, _ := json.Marshal(node.members)
 	ret += fmt.Sprintf("members: %s\n", string(b))
 
 	return ret
@@ -600,14 +601,14 @@ func (node *Node)send(msg *Message){
 	new_msg.Src = node.Id()
 	new_msg.Term = node.Term()
 	if new_msg.PrevTerm == 0 && new_msg.Type != MessageTypeAppendEntry {
-		new_msg.PrevTerm = node.logs.LastTerm
-		new_msg.PrevIndex = node.logs.LastIndex
+		new_msg.PrevTerm = node.logs.lastTerm
+		new_msg.PrevIndex = node.logs.lastIndex
 	}
 	node.send_c <- &new_msg
 }
 
 func (node *Node)broadcast(msg *Message){
-	for _, m := range node.Members {
+	for _, m := range node.members {
 		msg.Dst = m.Id
 		node.send(msg)
 	}
