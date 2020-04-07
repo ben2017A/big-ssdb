@@ -40,7 +40,7 @@ func (c *Config)Init(node *Node) {
 }
 
 func (c *Config)NewTerm() {
-	c.SaveState(c.term + 1, c.node.Id())
+	c.SaveState(c.term + 1, c.id)
 }
 
 func (c *Config)SetVoteFor(voteFor string) {
