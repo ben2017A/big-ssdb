@@ -19,7 +19,8 @@ type Config struct {
 	node *Node
 }
 
-func NewConfig(id string, addr string, members map[string]string) *Config {
+// 用新的配置启动, 如果指定的路径存在配置信息, 则返回 nil.
+func NewConfig(id string, addr string, members map[string]string/*, db_path string*/) *Config {
 	c := new(Config)
 	c.id = id
 	c.addr = addr
@@ -32,6 +33,11 @@ func NewConfig(id string, addr string, members map[string]string) *Config {
 		c.members[nodeId] = m
 	}
 	return c
+}
+
+// 如果指定路径无配置, 返回 nil.
+func OpenConfig(db_path string) *Config {
+	return nil
 }
 
 func (c *Config)Init(node *Node) {
