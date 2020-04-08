@@ -14,14 +14,14 @@ import (
 
 type client_t struct {
 	addr *net.UDPAddr
+
 	send_seq uint32
 
-	recv_seq uint32
-	recv_num uint16
-	recv_idx uint16
+	recv_seq uint32 // 并不要求连续
+	recv_num uint16 // 分段数量
+	recv_idx uint16 // 当前分段号(从 1 开始)
 }
 
-// TODO: 支持大报文
 type UdpTransport struct{
 	addr string
 	c chan *Message
@@ -59,7 +59,7 @@ func (tp *UdpTransport)start(){
 	go func(){
 		recv_buf := new(bytes.Buffer)
 		buf := make([]byte, 64*1024)
-		
+
 		for{
 			cnt, uaddr, _ := tp.conn.ReadFromUDP(buf)
 			client := tp.addr_clients[uaddr.String()]
