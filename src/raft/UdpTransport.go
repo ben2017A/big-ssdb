@@ -35,6 +35,8 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	s := fmt.Sprintf("%s:%d", ip, port)
 	addr, _ := net.ResolveUDPAddr("udp", s)
 	conn, _ := net.ListenUDP("udp", addr)
+	conn.SetReadBuffer(1 * 1024 * 1024)
+	conn.SetWriteBuffer(1 * 1024 * 1024)
 
 	tp := new(UdpTransport)
 	tp.addr = fmt.Sprintf("%s:%d", ip, port)
@@ -162,7 +164,7 @@ func (tp *UdpTransport)Send(msg *Message) bool{
 		return false
 	}
 
-	const PacketSize = 60 * 1024
+	const PacketSize = 8 * 1024
 	send_buf := new(bytes.Buffer)
 	client.send_seq ++
 
