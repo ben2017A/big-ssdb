@@ -58,67 +58,7 @@ func (tp *UdpTransport)Addr() string {
 }
 
 func (tp *UdpTransport)start(){
-	go func(){
-		recv_buf := new(bytes.Buffer)
-		buf := make([]byte, 64*1024)
-
-		for{
-			cnt, uaddr, _ := tp.conn.ReadFromUDP(buf)
-			client := tp.addr_clients[uaddr.String()]
-			if client == nil {
-				log.Println("receive from unknown addr", uaddr.String())
-				continue
-			}
-			if cnt <= 8 {
-				log.Println("bad packet len =", cnt)
-				continue
-			}
-
-			s := binary.BigEndian.Uint32(buf[0:4])
-			n := binary.BigEndian.Uint16(buf[4:6])
-			i := binary.BigEndian.Uint16(buf[6:8])
-			// log.Println(s, n, i)
-			if n == 0 || i == 0 {
-				log.Printf("bad packet n=%d, i=%d", n, i)
-				continue
-			}
-			if client.recv_num == 0 || client.recv_seq != s || client.recv_num != n {
-				client.recv_seq = s
-				client.recv_num = n
-				client.recv_idx = 0
-				recv_buf.Reset()
-			}
-			if client.recv_idx != i - 1 { // miss order
-				log.Println("miss order packet")
-				client.recv_num = 0
-				continue
-			}
-
-			var str string
-
-			if n == 1 && i == 1 {
-				client.recv_num = 0 // finish
-				str = string(buf[8:cnt])
-			} else {
-				client.recv_idx = i
-				recv_buf.Write(buf[8:cnt])
-				if client.recv_idx == client.recv_num {
-					client.recv_num = 0 // finish
-					str = string(recv_buf.Bytes())
-				}
-			}
-
-			if len(str) > 0 {
-				msg := DecodeMessage(str);
-				if msg == nil {
-					log.Println("decode error:", str)
-				} else {
-					log.Printf(" receive < %s\n", str)
-					tp.c <- msg
-				}
-			}
-		}
-	}()
+	go tp.Recv()
 }
 
 func (tp *UdpTransport)Close(){
@@ -130,14 +70,16 @@ func (tp *UdpTransport)Connect(nodeId, addr string){
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 
-	uaddr, _ := net.ResolveUDPAddr("udp", addr)
-	client := new(client_t)
-	client.addr = uaddr
-	client.send_seq = 1
-	client.recv_num = 0
+	if tp.addr_clients[addr] == nil {
+		uaddr, _ := net.ResolveUDPAddr("udp", addr)
+		client := new(client_t)
+		client.addr = uaddr
+		client.send_seq = 1
+		client.recv_num = 0
+		tp.addr_clients[addr] = client
+	}
 
-	tp.id_clients[nodeId] = client
-	tp.addr_clients[addr] = client
+	tp.id_clients[nodeId] = tp.addr_clients[addr]
 }
 
 func (tp *UdpTransport)Disconnect(nodeId string){
@@ -148,25 +90,34 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 	if client == nil {
 		return
 	}
-
-	delete(tp.addr_clients, client.addr.String())
 	delete(tp.id_clients, nodeId)
+
+	has_ref := false
+	for _, c := range tp.id_clients {
+		if c == client {
+			has_ref = true
+			break
+		}
+	}
+	if !has_ref {
+		delete(tp.addr_clients, client.addr.String())
+	}
 }
 
 // thread safe
 func (tp *UdpTransport)Send(msg *Message) bool{
 	tp.mux.Lock()
-	client := tp.id_clients[msg.Dst]
-	tp.mux.Unlock()
+	defer tp.mux.Unlock()
 
+	client := tp.id_clients[msg.Dst]
 	if client == nil {
 		log.Printf("dst: %s not connected", msg.Dst)
 		return false
 	}
+	client.send_seq ++
 
 	const PacketSize = 8 * 1024
 	send_buf := new(bytes.Buffer)
-	client.send_seq ++
 
 	str := msg.Encode()
 	num := uint16(math.Ceil(float64(len(str)) / PacketSize))
@@ -182,6 +133,7 @@ func (tp *UdpTransport)Send(msg *Message) bool{
 
 		_, err := tp.conn.WriteToUDP(send_buf.Bytes(), client.addr)
 		if err != nil {
+			log.Println(err)
 			return false
 		}
 	}
@@ -190,4 +142,66 @@ func (tp *UdpTransport)Send(msg *Message) bool{
 	// n, _ := tp.conn.WriteToUDP(buf, addr)
 	log.Printf("    send > %s\n", strings.Trim(str, "\r\n"))
 	return true
+}
+
+func (tp *UdpTransport)Recv() {
+	recv_buf := new(bytes.Buffer)
+	buf := make([]byte, 64*1024)
+
+	for{
+		cnt, uaddr, _ := tp.conn.ReadFromUDP(buf)
+		client := tp.addr_clients[uaddr.String()]
+		if client == nil {
+			log.Println("receive from unknown addr", uaddr.String())
+			continue
+		}
+		if cnt <= 8 {
+			log.Println("bad packet len =", cnt)
+			continue
+		}
+
+		s := binary.BigEndian.Uint32(buf[0:4])
+		n := binary.BigEndian.Uint16(buf[4:6])
+		i := binary.BigEndian.Uint16(buf[6:8])
+		// log.Println(s, n, i)
+		if n == 0 || i == 0 {
+			log.Printf("bad packet n=%d, i=%d", n, i)
+			continue
+		}
+		if client.recv_num == 0 || client.recv_seq != s || client.recv_num != n {
+			client.recv_seq = s
+			client.recv_num = n
+			client.recv_idx = 0
+			recv_buf.Reset()
+		}
+		if client.recv_idx != i - 1 { // miss order
+			log.Println("miss order packet")
+			client.recv_num = 0
+			continue
+		}
+
+		var str string
+
+		if n == 1 && i == 1 {
+			client.recv_num = 0 // finish
+			str = string(buf[8:cnt])
+		} else {
+			client.recv_idx = i
+			recv_buf.Write(buf[8:cnt])
+			if client.recv_idx == client.recv_num {
+				client.recv_num = 0 // finish
+				str = string(recv_buf.Bytes())
+			}
+		}
+
+		if len(str) > 0 {
+			msg := DecodeMessage(str);
+			if msg == nil {
+				log.Println("decode error:", str)
+			} else {
+				log.Printf(" receive < %s\n", str)
+				tp.c <- msg
+			}
+		}
+	}
 }

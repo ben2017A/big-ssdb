@@ -33,16 +33,21 @@ func main(){
 	// svc := server.NewService(base_dir, node, svc_xport)
 	// defer svc.Close()
 
-	members := make(map[string]string)
-	members["8001"] = "127.0.0.1:8001"
-	members["8002"] = "127.0.0.1:8002"
+	id_addr := make(map[string]string)
+	id_addr["8001"] = "127.0.0.1:8001"
+	id_addr["8002"] = "127.0.0.1:8002"
 
-	conf := raft.NewConfig(nodeId, "addr", members)
+	members := make([]string, 0)
+	for k, _ := range id_addr {
+		members = append(members, k)
+	}
+
+	conf := raft.NewConfig(nodeId, members)
 	node := raft.NewNode(conf)
 	node.Start()
 
 	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
-	for k, v := range members {
+	for k, v := range id_addr {
 		raft_xport.Connect(k, v)
 	}
 

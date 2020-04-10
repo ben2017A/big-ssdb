@@ -2,7 +2,6 @@ package raft
 
 type Member struct{
 	Id string
-	Addr string
 	Role RoleType
 
 	// sliding window
@@ -15,11 +14,10 @@ type Member struct{
 	ReceiveTimeout int // increase on tick(), reset on ApplyEntryAck
 }
 
-func NewMember(id, addr string) *Member{
+func NewMember(id string) *Member{
 	ret := new(Member)
 	ret.Role = RoleFollower
 	ret.Id = id
-	ret.Addr = addr
 	ret.Reset()
 	return ret
 }

@@ -25,9 +25,8 @@ func TestNode(t *testing.T){
 }
 
 func testSingleNode() {
-	members := make(map[string]string)
-	members["8001"] = "127.0.0.1:8001"
-	conf := NewConfig("8001", members["8001"], members)
+	members := []string{"8001"}
+	conf := NewConfig("8001", members)
 	n := NewNode(conf)
 	n.Start()
 	
@@ -38,14 +37,12 @@ func testSingleNode() {
 }
 
 func test2Node() {
-	members := make(map[string]string)
-	members["n1"] = "127.0.0.1:8001"
-	members["n2"] = "127.0.0.1:8002"
+	members := []string{"n1", "n2"}
 
-	conf1 := NewConfig("n1", members["n1"], members)
+	conf1 := NewConfig("n1", members)
 	n1 = NewNode(conf1)
 
-	conf2 := NewConfig("n2", members["n2"], members)
+	conf2 := NewConfig("n2", members)
 	n2 = NewNode(conf2)
 
 	n1.Start()
