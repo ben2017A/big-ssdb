@@ -45,6 +45,7 @@ type Node struct{
 	recv_c chan *Message
 	// messages to be sent to other node
 	send_c chan *Message
+	stop_c chan int
 	
 	mux sync.Mutex
 }
@@ -56,10 +57,11 @@ func NewNode(conf *Config) *Node{
 	node.logs = NewBinlog(node)
 	node.recv_c = make(chan *Message, 1)
 	node.send_c = make(chan *Message, SendChannelSize)
+	node.stop_c = make(chan int)
 	node.electionTimer = 3 * 1000
 
 	node.conf.node = node
-	
+
 	return node
 }
 
@@ -84,61 +86,57 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
+	log.Printf("Start %s, tick interval: %d", node.Id(), TickerInterval)
 	node.startTicker()
-	node.startNetwork()
 	node.Tick(0)
 }
 
 func (node *Node)Close(){
 	node.mux.Lock()
-	defer node.mux.Unlock()
 	node.logs.Close()
+	node.mux.Unlock()
+
+	log.Printf("Stop %s", node.Id())
+	node.stop_c <- 0
+	<- node.stop_c
 }
 
 func (node *Node)startTicker(){
-	log.Println("start ticker, interval:", TickerInterval)
 	go func() {
 		ticker := time.NewTicker(TickerInterval * time.Millisecond)
 		defer ticker.Stop()
 
-		for {
-			<- ticker.C
-			node.Tick(TickerInterval)
+		stop := false
+		for !stop {
+			select{
+			case <- node.stop_c:
+				stop = true
+			case <- ticker.C:
+				node.Tick(TickerInterval)
+			case <-node.logs.fsyncNotify:
+				node.mux.Lock()
+				if node.role == RoleLeader {
+					node.replicateAllMembers()
+				}
+				node.mux.Unlock()
+			case msg := <-node.recv_c:
+				node.mux.Lock()
+				node.handleRaftMessage(msg)
+				node.mux.Unlock()
+			}
 		}
+
+		node.stop_c <- 1
 	}()
 }
 
-func (node *Node)startNetwork(){
-	log.Println("start networking")
-	go func() {
-		for{
-			node.handleEvent()
-		}
-	}()
-}
-
-func (node *Node)handleEvent() {
-	select{
-	case <-node.logs.fsyncNotify:
-		node.mux.Lock()
-		if node.role == RoleLeader {
-			node.replicateAllMembers()
-		}
-		node.mux.Unlock()
-	case msg := <-node.recv_c:
-		node.mux.Lock()
-		node.handleRaftMessage(msg)
-		node.mux.Unlock()
-	}
-}
-
-// for testing
-func (node *Node)Step() {
-	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
-	for {
-		node.handleEvent()
-	}
-}
+// // for testing
+// func (node *Node)Step() {
+// 	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
+// 	for {
+// 		node.handleEvent()
+// 	}
+// }
 
 func (node *Node)Tick(timeElapseMs int){
 	node.mux.Lock()
@@ -243,6 +241,11 @@ func (node *Node)pingMember(m *Member){
 }
 
 func (node *Node)replicateAllMembers(){
+	// 单节点运行
+	if len(node.conf.members) == 0 {
+		node.proceedCommitIndex()
+	}
+
 	for _, m := range node.conf.members {
 		node.replicateMember(m)
 	}
@@ -544,7 +547,7 @@ func (node *Node)commitEntry(commitIndex int64) {
 	if commitIndex <= node.commitIndex {
 		return
 	}
-	log.Printf("commit %d => %d", node.commitIndex, commitIndex)
+	log.Printf("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
 	node.commitIndex = commitIndex
 
 	// synchronously apply to Config
@@ -562,6 +565,10 @@ func (node *Node)commitEntry(commitIndex int64) {
 /* ###################### Methods ####################### */
 
 func (node *Node)Propose(data string) (int32, int64) {
+	return node._propose(EntryTypeData, data)
+}
+
+func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	node.mux.Lock()
 	defer node.mux.Unlock()
 	
@@ -570,16 +577,18 @@ func (node *Node)Propose(data string) (int32, int64) {
 		return -1, -1
 	}
 	
-	ent := node.logs.AppendEntry(EntryTypeData, data)
+	ent := node.logs.AppendEntry(etype, data)
 	return ent.Term, ent.Index
 }
 
 func (node *Node)ProposeAddMember(nodeId string) (int32, int64) {
-	return -1, -1
+	data := fmt.Sprintf("add_member %s", nodeId)
+	return node._propose(EntryTypeConf, data)
 }
 
 func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
-	return -1, -1
+	data := fmt.Sprintf("del_member %s", nodeId)
+	return node._propose(EntryTypeConf, data)
 }
 
 

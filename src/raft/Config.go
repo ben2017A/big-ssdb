@@ -2,7 +2,7 @@ package raft
 
 import (
 	"log"
-	// "strings"
+	"strings"
 )
 
 // 负责 Raft 配置的持久化
@@ -51,6 +51,11 @@ func (c *Config)SaveState(term int32, voteFor string) {
 	c.voteFor = voteFor
 }
 
+func (c *Config)addMember(nodeId string) {
+	m := NewMember(nodeId)
+	c.members[nodeId] = m
+}
+
 /* ###################### Service interface ####################### */
 
 func (c *Config)LastApplied() int64{
@@ -62,5 +67,13 @@ func (c *Config)ApplyEntry(ent *Entry){
 
 	if ent.Type == EntryTypeConf {
 		log.Println("[Apply]", ent.Encode())
+		ps := strings.Split(ent.Data, " ")
+		cmd := ps[0]
+		if cmd == "add_member" {
+			nodeId := ps[1]
+			c.addMember(nodeId)
+		} else if cmd == "del_member" {
+			//
+		}
 	}
 }
