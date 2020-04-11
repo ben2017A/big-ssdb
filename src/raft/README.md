@@ -17,6 +17,6 @@ TODO: leader lease
 
 ### NOs
 
-Does not implement something that is strongly considered as not part of a log replication protocol.
+Does not implement something that is strongly considered as not part of a consensus protocol.
 
 * Log compaction

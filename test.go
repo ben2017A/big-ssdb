@@ -11,7 +11,7 @@ import (
 
 	"link"
 	"raft"
-	"server"
+	"raft/server"
 )
 
 func main(){
