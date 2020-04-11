@@ -15,25 +15,35 @@ type Binlog struct{
 
 	// persistent
 	fsyncIndex int64 // 本地日志持久化的进度
-	fsyncNotify chan int64 // 当有日志在本地持久化时
+	fsyncReadyC chan int64 // 当有日志在本地持久化时
 }
 
 func NewBinlog(node *Node) *Binlog {
 	st := new(Binlog)
 	st.node = node
 	st.entries = make(map[int64]*Entry)
-	st.fsyncNotify = make(chan int64, 10)
+	st.fsyncReadyC = make(chan int64, 10)
 	return st
 }
 
-func (st *Binlog)Close(){
+// func OpenBinlog(node *Node, db_path string) *Binlog {
+// }
+
+func (st *Binlog)Close() {
 }
 
-func (st *Binlog)GetEntry(index int64) *Entry{
+func (st *Binlog)CleanAll() {
+	st.lastTerm = 0
+	st.lastIndex = 0
+	st.fsyncIndex = 0
+	st.entries = make(map[int64]*Entry)
+}
+
+func (st *Binlog)GetEntry(index int64) *Entry {
 	return st.entries[index]
 }
 
-func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry{
+func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 	ent := new(Entry)
 	ent.Type = type_
 	ent.Term = st.node.Term()
@@ -60,6 +70,6 @@ func (st *Binlog)WriteEntry(ent Entry){
 		st.lastIndex = ent.Index
 
 		st.fsyncIndex = st.lastIndex
-		st.fsyncNotify <- st.fsyncIndex
+		st.fsyncReadyC <- st.fsyncIndex
 	}
 }

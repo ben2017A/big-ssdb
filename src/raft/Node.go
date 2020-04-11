@@ -93,12 +93,26 @@ func (node *Node)Start(){
 
 func (node *Node)Close(){
 	node.mux.Lock()
+	node.conf.Close()
 	node.logs.Close()
 	node.mux.Unlock()
 
 	log.Printf("Stop %s", node.Id())
 	node.stop_c <- 0
 	<- node.stop_c
+}
+
+// reset persistent and volatile states
+func (node *Node)CleanAll(){
+	node.mux.Lock()
+	defer node.mux.Unlock()
+
+	node.commitIndex = 0
+	node.electionTimer = 0	
+	node.votesReceived = make(map[string]string)
+
+	node.conf.CleanAll()
+	node.logs.CleanAll()
 }
 
 func (node *Node)startTicker(){
@@ -113,7 +127,7 @@ func (node *Node)startTicker(){
 				stop = true
 			case <- ticker.C:
 				node.Tick(TickerInterval)
-			case <-node.logs.fsyncNotify:
+			case <-node.logs.fsyncReadyC:
 				node.mux.Lock()
 				if node.role == RoleLeader {
 					node.replicateAllMembers()
@@ -349,7 +363,7 @@ func (node *Node)handlePreVote(msg *Message){
 			arr = append(arr, m.ReceiveTimeout)
 		}
 		sort.Ints(arr)
-		log.Println("    receive timeouts =", arr)
+		log.Println("    receive timeouts[] =", arr)
 		timer := arr[len(arr)/2]
 		if timer < ReceiveTimeout {
 			log.Println("    major followers are still reachable, ignore")
@@ -450,12 +464,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	}
 	node.electionTimer = 0
 
-	if msg.PrevIndex > node.commitIndex {
-		if msg.PrevIndex != node.logs.lastIndex {
-			log.Printf("gap between entry, msg.prevIndex: %d, lastIndex: %d", msg.PrevIndex, node.logs.lastIndex)
-			node.sendDuplicatedAckToMessage(msg)
-			return
-		}
+	if msg.PrevIndex > 0 {
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
@@ -499,15 +508,25 @@ func (node *Node)handleAppendEntry(msg *Message){
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
-	m := node.conf.members[msg.Src]
+	// if msg.PrevIndex < node.logs.firstIndex {
+	// 	// send InstallSnapshot
+	// 	return
+	// }
+	if msg.PrevIndex > node.logs.lastIndex {
+		log.Printf("bad msg.PrevIndex: %d from: %s", msg.PrevIndex, msg.Src)
+		return
+	}
 
+	m := node.conf.members[msg.Src]
 	if msg.Data == "false" {
-		log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
-		m.MatchIndex = msg.PrevIndex
-		m.NextIndex  = m.MatchIndex + 1
+		if m.NextIndex != msg.PrevIndex + 1 {
+			log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+			m.MatchIndex = msg.PrevIndex
+			m.NextIndex  = msg.PrevIndex + 1
+		}
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
-		m.NextIndex  = util.MaxInt64(m.NextIndex, m.MatchIndex + 1)
+		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.commitIndex {
 			oldI := node.commitIndex
 			node.proceedCommitIndex()
@@ -582,15 +601,14 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 }
 
 func (node *Node)ProposeAddMember(nodeId string) (int32, int64) {
-	data := fmt.Sprintf("add_member %s", nodeId)
+	data := fmt.Sprintf("AddMember %s", nodeId)
 	return node._propose(EntryTypeConf, data)
 }
 
 func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
-	data := fmt.Sprintf("del_member %s", nodeId)
+	data := fmt.Sprintf("DelMember %s", nodeId)
 	return node._propose(EntryTypeConf, data)
 }
-
 
 func (node *Node)Info() string {
 	node.mux.Lock()

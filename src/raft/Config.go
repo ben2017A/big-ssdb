@@ -24,18 +24,23 @@ func NewConfig(id string, members []string/*, db_path string*/) *Config {
 	c.id = id
 	c.members = make(map[string]*Member)
 	for _, nodeId := range members {
-		if nodeId == c.id {
-			continue
-		}
-		m := NewMember(nodeId)
-		c.members[nodeId] = m
+		c.AddMember(nodeId)
 	}
 	return c
 }
 
-// 如果指定路径无配置, 返回 nil.
-func OpenConfig(db_path string) *Config {
-	return nil
+// // 如果指定路径无配置, 返回 nil.
+// func OpenConfig(db_path string) *Config {
+// 	return nil
+// }
+
+func (c *Config)Close() {
+}
+
+func (c *Config)CleanAll() {
+	c.lastApplied = 0
+	c.members = make(map[string]*Member)
+	c.SaveState(1, "")
 }
 
 func (c *Config)NewTerm() {
@@ -51,9 +56,19 @@ func (c *Config)SaveState(term int32, voteFor string) {
 	c.voteFor = voteFor
 }
 
-func (c *Config)addMember(nodeId string) {
+func (c *Config)AddMember(nodeId string) {
+	if nodeId == c.id {
+		return
+	}
 	m := NewMember(nodeId)
 	c.members[nodeId] = m
+}
+
+func (c *Config)DelMember(nodeId string) {
+	if nodeId == c.id {
+		return
+	}
+	delete(c.members, nodeId)
 }
 
 /* ###################### Service interface ####################### */
@@ -69,11 +84,12 @@ func (c *Config)ApplyEntry(ent *Entry){
 		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
-		if cmd == "add_member" {
+		if cmd == "AddMember" {
 			nodeId := ps[1]
-			c.addMember(nodeId)
-		} else if cmd == "del_member" {
-			//
+			c.AddMember(nodeId)
+		} else if cmd == "DelMember" {
+			nodeId := ps[1]
+			c.DelMember(nodeId)
 		}
 	}
 }

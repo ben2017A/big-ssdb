@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+var n1 *Node
+var n2 *Node
 var mutex sync.Mutex
 var nodes map[string]*Node
 
@@ -30,13 +32,15 @@ func TestNode(t *testing.T){
 	testJoin()
 	clean_nodes()
 
+	fmt.Printf("\n=========================================================\n")
+	testQuit()
+	clean_nodes()
+
 	sleep(0.01)
 	log.Println("end")
 }
 
 func testSingleNode() {
-	var n1 *Node
-
 	mutex.Lock()
 	{
 		n1 = NewNode(NewConfig("n1", []string{"n1"}))
@@ -45,14 +49,13 @@ func testSingleNode() {
 	mutex.Unlock()
 
 	n1.Start()
+	sleep(0.01) // wait startup
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
 }
 
 func test2Node() {
-	var n1 *Node
-	var n2 *Node
 	members := []string{"n1", "n2"}
 
 	mutex.Lock()
@@ -66,11 +69,15 @@ func test2Node() {
 
 	n1.Start()
 	n2.Start()
+	sleep(0.01) // wait startup
 
-	n1.Tick(5000)
-	sleep(0.01)
+	n1.Tick(HeartbeatTimeout) // n1 start election
+	sleep(0.01)   // wait network
 
 	if n1.role != RoleLeader {
+		log.Fatal("error")
+	}
+	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
 
@@ -78,25 +85,23 @@ func test2Node() {
 	log.Println("Propose", t, i)
 	t, i = n1.Propose("set b 2")
 	log.Println("Propose", t, i)
-	sleep(0.1) // wait Tick to send ping
+	sleep(0.01) // wait Tick to send ping
 	// log.Println("\n" + n1.Info() + "\n" + n2.Info())
 }
 
 func testJoin(){
-	var n1 *Node
-	var n2 *Node
-
 	mutex.Lock()
 	{
 		n1 = NewNode(NewConfig("n1", []string{"n1"}))
-		n2 = NewNode(NewConfig("n2", []string{"n2"}))
 		nodes[n1.Id()] = n1
-		nodes[n2.Id()] = n2
 	}
 	mutex.Unlock()
 
 	n1.Start()
-	n2.Start()
+	sleep(0.01) // wait startup
+	if n1.role != RoleLeader {
+		log.Fatal("error")
+	}
 
 	var t int32
 	var i int64
@@ -108,11 +113,56 @@ func testJoin(){
 		log.Println("error")
 	}
 
-	n1.Tick(5000) // send ping
-	log.Printf(n1.Info())
+	n1.Tick(HeartbeatTimeout) // send ping
 
+	// n2 startup and join group
+	mutex.Lock()
+	{
+		n2 = NewNode(NewConfig("n2", []string{"n1", "n2"}))
+		nodes[n2.Id()] = n2
+	}
+	mutex.Unlock()
+
+	n2.Start()
+	sleep(0.01) // wait startup
+	if n2.role != RoleFollower {
+		log.Fatal("error")
+	}
+	
+	n2.Tick(ElectionTimeout) // send prevote
+	sleep(0.01)
+	if n2.role != RoleFollower {
+		log.Fatal("error")
+	}
+
+	n1.Tick(HeartbeatTimeout) // send ping
+	sleep(0.01)
+	n1.Tick(HeartbeatTimeout) // send ping
+	sleep(0.01)
 }
 
+func testQuit() {
+	test2Node()
+
+	n1.ProposeDelMember("n2")
+	sleep(0.01)
+	if n1.conf.members["n2"] != nil {
+		log.Fatal("error")
+	}
+
+	n2.Tick(ElectionTimeout) // start election
+	if n2.role != RoleFollower {
+		log.Fatal("error")
+	}
+	log.Println("")
+
+	mutex.Lock()
+	defer mutex.Unlock()
+	n2.CleanAll() // clean all data
+	n2.Close()
+	log.Printf("%s stopped", n2.Id())
+	delete(nodes, n2.Id())
+}
 //////////////////////////////////////////////////////////////////
 
 func sleep(second float32){

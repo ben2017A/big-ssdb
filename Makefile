@@ -7,7 +7,9 @@ all:
 test:
 	# 需要设置环境变量, 在项目根目录运行 export GOPATH=`pwd`
 	export set GOPATH=`pwd`
-	cd src/xna; go test -run Redolog; cd
+	go test -cover -run Redolog
+	# to test -coverprofile coverage.out -run Test
+	# go tool cover -html=coverage.out -o coverage.html
 
 clean:
 	go clean
