@@ -1,4 +1,8 @@
-package raft
+package server
+
+import (
+	"raft"
+)
 
 // 各节点之间的通信是全异步的, 而不是请求响应模式
 type Transport interface{
@@ -8,7 +12,7 @@ type Transport interface{
 	Connect(nodeId string, addr string)
 	Disconnect(nodeId string)
 
-	C() chan *Message
+	C() chan *raft.Message
 	// thread safe
-	Send(msg *Message) bool
+	Send(msg *raft.Message) bool
 }

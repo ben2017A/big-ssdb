@@ -9,8 +9,9 @@ import (
 	// "bytes"
 	// "encoding/binary"
 
-	"raft"
 	"link"
+	"raft"
+	"server"
 )
 
 func main(){
@@ -46,7 +47,7 @@ func main(){
 	node := raft.NewNode(conf)
 	node.Start()
 
-	raft_xport := raft.NewUdpTransport("127.0.0.1", port)
+	raft_xport := server.NewUdpTransport("127.0.0.1", port)
 	for k, v := range id_addr {
 		raft_xport.Connect(k, v)
 	}
@@ -54,7 +55,7 @@ func main(){
 	for{
 		select{
 		case req := <-svc_xport.C:
-			t, i := node.Propose(req.Cmd())
+			t, i := node.Propose(req.Encode())
 			log.Println("Propose", t, i)
 		case msg := <-raft_xport.C():
 			node.RecvC() <- msg

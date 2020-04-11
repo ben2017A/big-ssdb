@@ -1,4 +1,4 @@
-package raft
+package server
 
 import (
 	"fmt"
@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"math"
 	"encoding/binary"
+
+	"raft"
 	"util"
 )
 
@@ -24,7 +26,7 @@ type client_t struct {
 
 type UdpTransport struct{
 	addr string
-	c chan *Message
+	c chan *raft.Message
 	conn *net.UDPConn
 	id_clients map[string]*client_t
 	addr_clients map[string]*client_t
@@ -41,7 +43,7 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	tp := new(UdpTransport)
 	tp.addr = fmt.Sprintf("%s:%d", ip, port)
 	tp.conn = conn
-	tp.c = make(chan *Message, 8)
+	tp.c = make(chan *raft.Message, 8)
 	tp.id_clients = make(map[string]*client_t)
 	tp.addr_clients = make(map[string]*client_t)
 
@@ -49,7 +51,7 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	return tp
 }
 
-func (tp *UdpTransport)C() chan *Message {
+func (tp *UdpTransport)C() chan *raft.Message {
 	return tp.c
 }
 
@@ -105,7 +107,7 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 }
 
 // thread safe
-func (tp *UdpTransport)Send(msg *Message) bool{
+func (tp *UdpTransport)Send(msg *raft.Message) bool{
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 
@@ -195,7 +197,7 @@ func (tp *UdpTransport)Recv() {
 		}
 
 		if len(str) > 0 {
-			msg := DecodeMessage(str);
+			msg := raft.DecodeMessage(str);
 			if msg == nil {
 				log.Println("decode error:", str)
 			} else {

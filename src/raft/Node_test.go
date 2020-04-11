@@ -213,16 +213,4 @@ func networking() {
 
 		sleep(0.001)
 	}
-	// go func(n *Node){
-	// 	for {
-	// 		n.Tick(100)
-	// 		sleep(0.1)
-	// 	}
-	// }(n)
-	// go func(n *Node){
-	// 	for {
-	// 		n.Step()
-	// 		sleep(0.001)
-	// 	}
-	// }(n)
 }
