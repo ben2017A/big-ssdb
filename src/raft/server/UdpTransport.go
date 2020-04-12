@@ -41,13 +41,13 @@ func NewUdpTransport(ip string, port int) (*UdpTransport){
 	conn.SetWriteBuffer(1 * 1024 * 1024)
 
 	tp := new(UdpTransport)
-	tp.addr = fmt.Sprintf("%s:%d", ip, port)
+	tp.addr = addr.String()
 	tp.conn = conn
 	tp.c = make(chan *raft.Message, 8)
 	tp.id_clients = make(map[string]*client_t)
 	tp.addr_clients = make(map[string]*client_t)
 
-	tp.start()
+	go tp.Recv()
 	return tp
 }
 
@@ -59,28 +59,23 @@ func (tp *UdpTransport)Addr() string {
 	return tp.addr
 }
 
-func (tp *UdpTransport)start(){
-	go tp.Recv()
-}
-
 func (tp *UdpTransport)Close(){
 	tp.conn.Close()
-	close(tp.c)
 }
 
 func (tp *UdpTransport)Connect(nodeId, addr string){
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 
+	uaddr, _ := net.ResolveUDPAddr("udp", addr)
+	addr = uaddr.String() // re format addr
 	if tp.addr_clients[addr] == nil {
-		uaddr, _ := net.ResolveUDPAddr("udp", addr)
 		client := new(client_t)
 		client.addr = uaddr
 		client.send_seq = 1
 		client.recv_num = 0
 		tp.addr_clients[addr] = client
 	}
-
 	tp.id_clients[nodeId] = tp.addr_clients[addr]
 }
 
@@ -132,9 +127,13 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool{
 		binary.Write(send_buf, binary.BigEndian, num)
 		binary.Write(send_buf, binary.BigEndian, idx + 1)
 		send_buf.WriteString(str[s : e])
+		// log.Println("send fragment:", str[s:e])
 
-		_, err := tp.conn.WriteToUDP(send_buf.Bytes(), client.addr)
-		if err != nil {
+		cnt, err := tp.conn.WriteToUDP(send_buf.Bytes(), client.addr)
+		if cnt == 0 { // closed in other thread
+			return false
+		}
+		if err != nil { // socket error
 			log.Println(err)
 			return false
 		}
@@ -151,14 +150,21 @@ func (tp *UdpTransport)Recv() {
 	buf := make([]byte, 64*1024)
 
 	for{
-		cnt, uaddr, _ := tp.conn.ReadFromUDP(buf)
-		client := tp.addr_clients[uaddr.String()]
-		if client == nil {
-			log.Println("receive from unknown addr", uaddr.String())
-			continue
+		cnt, uaddr, err := tp.conn.ReadFromUDP(buf)
+		if cnt == 0 { // closed in other thread
+			break
+		}
+		if err != nil { // socket error
+			log.Println(err)
+			break
 		}
 		if cnt <= 8 {
 			log.Println("bad packet len =", cnt)
+			continue
+		}
+		client := tp.addr_clients[uaddr.String()]
+		if client == nil {
+			log.Println("receive from unknown addr", uaddr.String())
 			continue
 		}
 
@@ -206,4 +212,7 @@ func (tp *UdpTransport)Recv() {
 			}
 		}
 	}
+
+	// close received msg queue
+	close(tp.c)
 }
