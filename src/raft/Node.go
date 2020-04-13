@@ -53,13 +53,13 @@ type Node struct{
 func NewNode(conf *Config) *Node{
 	node := new(Node)
 	node.role = RoleFollower
-	node.conf = conf
-	node.logs = NewBinlog(node)
 	node.recv_c = make(chan *Message, 1)
 	node.send_c = make(chan *Message, SendChannelSize)
 	node.stop_c = make(chan int)
 	node.electionTimer = 3 * 1000
 
+	node.conf = conf
+	node.logs = NewBinlog(node)
 	node.conf.node = node
 
 	return node
@@ -144,14 +144,6 @@ func (node *Node)startTicker(){
 	}()
 }
 
-// // for testing
-// func (node *Node)Step() {
-// 	// fmt.Printf("\n------------------ %s Step ------------------\n", node.Id())
-// 	for {
-// 		node.handleEvent()
-// 	}
-// }
-
 func (node *Node)Tick(timeElapseMs int){
 	node.mux.Lock()
 	defer node.mux.Unlock()
@@ -216,19 +208,26 @@ func (node *Node)startElection(){
 }
 
 func (node *Node)becomeFollower(){
+	log.Printf("Node %s became follower", node.Id())
 	node.role = RoleFollower
 	node.electionTimer = 0	
 	node.resetMembers()
 }
 
 func (node *Node)becomeLeader(){
+	log.Printf("Node %s became leader", node.Id())
 	node.role = RoleLeader
 	node.electionTimer = 0
 	node.resetMembers()
 
-	// write noop entry with currentTerm to implictly commit previous term's log
-	node.logs.AppendEntry(EntryTypeNoop, "")
-	log.Printf("Node %s became leader", node.Id())
+	if node.Term() == 1 { // 初始化集群成员列表
+		node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", node.Id()))
+		for _, m := range node.conf.members {
+			node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", m.Id))
+		}
+	} else {
+		node.logs.AppendEntry(EntryTypeNoop, "")
+	}
 }
 
 /* ############################################# */
@@ -257,7 +256,7 @@ func (node *Node)pingMember(m *Member){
 func (node *Node)replicateAllMembers(){
 	// 单节点运行
 	if len(node.conf.members) == 0 {
-		node.proceedCommitIndex()
+		node.advanceCommitIndex()
 	}
 
 	for _, m := range node.conf.members {
@@ -529,7 +528,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.commitIndex {
 			oldI := node.commitIndex
-			node.proceedCommitIndex()
+			node.advanceCommitIndex()
 			newI := node.commitIndex
 			if oldI != newI {
 				node.preparePingAllMembers()
@@ -539,7 +538,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	node.replicateMember(m)
 }
 
-func (node *Node)proceedCommitIndex() {
+func (node *Node)advanceCommitIndex() {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.conf.members) + 1)
 	matchIndex = append(matchIndex, node.logs.lastIndex) // self

@@ -1,7 +1,7 @@
 package raft
 
 import (
-	// "log"
+	"log"
 )
 
 type Binlog struct{
@@ -58,6 +58,7 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 // 参数值拷贝
 func (st *Binlog)WriteEntry(ent Entry){
+	log.Println("[Write]", ent.Encode())
 	st.entries[ent.Index] = &ent
 
 	// 找出连续的 entries, 更新 lastTerm 和 lastIndex,
