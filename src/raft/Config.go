@@ -8,12 +8,12 @@ import (
 // 负责 Raft 配置的持久化
 type Config struct {
 	id string
-
 	term int32
 	voteFor string
-	members map[string]*Member // 不包含自己
-
 	lastApplied int64
+
+	isMember bool
+	members map[string]*Member // 不包含自己
 
 	node *Node
 }
@@ -38,9 +38,11 @@ func (c *Config)Close() {
 }
 
 func (c *Config)CleanAll() {
+	c.term = 0
+	c.voteFor = ""
 	c.lastApplied = 0
+	c.isMember = false
 	c.members = make(map[string]*Member)
-	c.SaveState(1, "")
 }
 
 func (c *Config)NewTerm() {
@@ -56,19 +58,33 @@ func (c *Config)SaveState(term int32, voteFor string) {
 	c.voteFor = voteFor
 }
 
+// 包含自己
+func (c *Config)Peers() []string {
+	ret := make([]string, 0)
+	if c.isMember {
+		ret = append(ret, c.id)
+	}
+	for id, _ := range c.members {
+		ret = append(ret, id)
+	}
+	return ret
+}
+
 func (c *Config)AddMember(nodeId string) {
 	if nodeId == c.id {
-		return
+		c.isMember = true
+	} else {
+		m := NewMember(nodeId)
+		c.members[nodeId] = m
 	}
-	m := NewMember(nodeId)
-	c.members[nodeId] = m
 }
 
 func (c *Config)DelMember(nodeId string) {
 	if nodeId == c.id {
-		return
+		c.isMember = false
+	} else {
+		delete(c.members, nodeId)
 	}
-	delete(c.members, nodeId)
 }
 
 /* ###################### Service interface ####################### */

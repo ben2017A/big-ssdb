@@ -31,7 +31,7 @@ const(
 	SendChannelSize = 10
 )
 
-// Node 轻量级的, 可以快速的创建和销毁
+// Node 是轻量级的, 可以快速的创建和销毁
 type Node struct{
 	role RoleType
 	votesReceived map[string]string
@@ -56,7 +56,7 @@ func NewNode(conf *Config) *Node{
 	node.recv_c = make(chan *Message, 1)
 	node.send_c = make(chan *Message, SendChannelSize)
 	node.stop_c = make(chan int)
-	node.electionTimer = 3 * 1000
+	node.electionTimer = 2 * 1000
 
 	node.conf = conf
 	node.logs = NewBinlog(node)
@@ -86,7 +86,9 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
-	log.Printf("Start %s, tick interval: %d", node.Id(), TickerInterval)
+	log.Printf("Start %s, peers: %s, term: %d, lastApplied: %d, lastTerm: %d, lastIndex: %d",
+			node.Id(), node.conf.Peers(), node.Term(), node.conf.lastApplied,
+			node.logs.lastTerm, node.logs.lastIndex)
 	node.startTicker()
 	node.Tick(0)
 }
@@ -149,16 +151,16 @@ func (node *Node)Tick(timeElapseMs int){
 	defer node.mux.Unlock()
 
 	if node.role == RoleFollower || node.role == RoleCandidate {
-		// 单节点运行
-		if len(node.conf.members) == 0 {
-			log.Println("start Election")
-			node.startElection()
-			node.checkVoteResult()
-		} else {
-			node.electionTimer += timeElapseMs
-			if node.electionTimer >= ElectionTimeout {
-				log.Println("start PreVote")
-				node.startPreVote()
+		if node.conf.isMember {
+			// 单节点运行
+			if len(node.conf.members) == 0 {
+				node.startElection()
+				node.checkVoteResult()
+			} else {
+				node.electionTimer += timeElapseMs
+				if node.electionTimer >= ElectionTimeout {
+					node.startPreVote()
+				}
 			}
 		}
 	} else if node.role == RoleLeader {
@@ -192,6 +194,7 @@ func (node *Node)preparePingAllMembers(){
 }
 
 func (node *Node)startPreVote(){
+	log.Printf("Start prevote at term %d", node.Term())
 	node.role = RoleFollower
 	node.electionTimer = 0
 	node.votesReceived = make(map[string]string)
@@ -205,22 +208,24 @@ func (node *Node)startElection(){
 	node.resetMembers()
 	node.conf.NewTerm()
 	node.broadcast(NewRequestVoteMsg())
+	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)becomeFollower(){
-	log.Printf("Node %s became follower", node.Id())
+	log.Printf("Node %s became follower at term %d", node.Id(), node.Term())
 	node.role = RoleFollower
 	node.electionTimer = 0	
 	node.resetMembers()
 }
 
 func (node *Node)becomeLeader(){
-	log.Printf("Node %s became leader", node.Id())
+	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
 	node.role = RoleLeader
 	node.electionTimer = 0
 	node.resetMembers()
 
-	if node.Term() == 1 { // 初始化集群成员列表
+	if node.Term() == 1 { 
+		// 初始化集群成员列表
 		node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", node.Id()))
 		for _, m := range node.conf.members {
 			node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", m.Id))

@@ -39,7 +39,7 @@ func TestNode(t *testing.T){
 func testStartup() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{}))
+		n1 = NewNode(NewConfig("n1", []string{"n1"}))
 		nodes[n1.Id()] = n1
 	}
 	mutex.Unlock()
@@ -58,7 +58,7 @@ func testStartup() {
 
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{"n1", "n2"}))
+		n2 = NewNode(NewConfig("n2", []string{"n1"}))
 		nodes[n2.Id()] = n2
 	}
 	mutex.Unlock()
@@ -75,6 +75,9 @@ func testStartup() {
 	if n1.conf.members["n2"].MatchIndex != 2 || n1.conf.members["n2"].NextIndex != 3 {
 		log.Fatal("error")	
 	}
+
+	n1.Propose("set a 1")
+	sleep(0.01)
 }
 
 func test2Node() {
