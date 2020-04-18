@@ -4,16 +4,15 @@
 
 * Leader election
 	* PreVote support
-* Membership changes
 * Log replication
-* Built-in log management
-	* Log persistency
-* Built-in RPC support
-* Pluggable Log management interface for log managments
-* Pluggable RPC interface for RPC implements
-* Log snapshot
+* Membership changes
+* Config snapshot
+* Built-in log storage
+* Built-in network support
 
-TODO: leader lease
+TODO:
+
+* leader lease
 
 ### NOs
 

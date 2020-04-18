@@ -458,15 +458,19 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	node.send(ack)
 }
 
-func (node *Node)handleAppendEntry(msg *Message){
+func (node *Node)setLeader(leaderId string){
 	for _, m := range node.conf.members {
-		if m.Id == msg.Src {
+		if m.Id == leaderId {
 			m.Role = RoleLeader
 		} else {
 			m.Role = RoleFollower
 		}
 	}
+}
+
+func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
+	node.setLeader(msg.Src)
 
 	if msg.PrevIndex > 0 {
 		prev := node.logs.GetEntry(msg.PrevIndex)

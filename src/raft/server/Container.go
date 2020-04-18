@@ -8,7 +8,7 @@ type Container struct {
 func (c *Container)NewGroup(groupId int) {
 }
 
-// 自主决定加入组(无 Raft), 并将组实例设置成正常服务状态
+// 自主决定加入组(无 Raft), 收到 leader 消息后, 将组实例设置成正常服务状态
 func (c *Container)JoinGroup(groupId int) {
 }
 
