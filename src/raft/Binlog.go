@@ -57,7 +57,6 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 	ent.Type = type_
 	ent.Term = st.node.Term()
 	ent.Index = st.LastIndex() + 1
-	// ent.Commit = st.node.CommitIndex
 	ent.Data = data
 
 	st.WriteEntry(*ent)
@@ -67,22 +66,31 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 // 参数值拷贝
 func (st *Binlog)WriteEntry(ent Entry) {
-	log.Println("[Write]", ent.Encode())
 	st.entries[ent.Index] = &ent
 
 	// TODO: 异步持久化
-	// 找出连续的 entries, 持久化, 然后更新 lastEntry
+	// 找出连续的 entries, 持久化, 更新 lastEntry
+	need_fsync := false
 	for{
+		var e *Entry = nil
 		// first entry
 		if st.LastIndex() == 0 {
-			st.lastEntry = &ent
+			e = &ent
 		} else {
-			e := st.GetEntry(st.LastIndex() + 1)
-			if e == nil {
-				break;
-			}
-			st.lastEntry = e
+			e = st.GetEntry(st.LastIndex() + 1)
 		}
+		if e == nil {
+			break;
+		}
+		st.lastEntry = e
+		need_fsync = true
+
+		// TODO: save
+		log.Println("[Write]", e.Encode())
+	}
+
+	if need_fsync {
+		st.Fsync()
 		st.fsyncIndex = st.LastIndex()
 		st.fsyncReadyC <- st.fsyncIndex
 	}
