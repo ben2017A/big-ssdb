@@ -10,9 +10,9 @@ type Config struct {
 	id string
 	term int32
 	voteFor string
-	lastApplied int64
+	applied int64
 
-	isMember bool
+	joined bool // 是否已加入组
 	members map[string]*Member // 不包含自己
 
 	node *Node
@@ -40,8 +40,8 @@ func (c *Config)Close() {
 func (c *Config)CleanAll() {
 	c.term = 0
 	c.voteFor = ""
-	c.lastApplied = 0
-	c.isMember = false
+	c.applied = 0
+	c.joined = false
 	c.members = make(map[string]*Member)
 }
 
@@ -61,7 +61,7 @@ func (c *Config)SaveState(term int32, voteFor string) {
 // 包含自己
 func (c *Config)Peers() []string {
 	ret := make([]string, 0)
-	if c.isMember {
+	if c.joined {
 		ret = append(ret, c.id)
 	}
 	for id, _ := range c.members {
@@ -72,7 +72,7 @@ func (c *Config)Peers() []string {
 
 func (c *Config)AddMember(nodeId string) {
 	if nodeId == c.id {
-		c.isMember = true
+		c.joined = true
 	} else {
 		m := NewMember(nodeId)
 		c.members[nodeId] = m
@@ -81,7 +81,7 @@ func (c *Config)AddMember(nodeId string) {
 
 func (c *Config)DelMember(nodeId string) {
 	if nodeId == c.id {
-		c.isMember = false
+		c.joined = false
 	} else {
 		delete(c.members, nodeId)
 	}
@@ -90,11 +90,11 @@ func (c *Config)DelMember(nodeId string) {
 /* ###################### Service interface ####################### */
 
 func (c *Config)LastApplied() int64{
-	return c.lastApplied
+	return c.applied
 }
 
 func (c *Config)ApplyEntry(ent *Entry){
-	c.lastApplied = ent.Index
+	c.applied = ent.Index
 
 	if ent.Type == EntryTypeConf {
 		log.Println("[Apply]", ent.Encode())

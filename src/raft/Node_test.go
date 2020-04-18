@@ -139,6 +139,7 @@ func testQuit() {
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
+	sleep(0.01)
 
 	mutex.Lock()
 	defer mutex.Unlock()

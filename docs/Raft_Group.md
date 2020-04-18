@@ -18,7 +18,7 @@
 ### 新节点启动
 
 * 以 members=[A] 启动 B
-* B 将认 A 为 leader(因为 B 的日志为空, 所以无法成为 leader)
+* 因为 B 的日志为空, 所以无法 B 成为 leader
 * B 从 A 同步 raft 日志
 
 

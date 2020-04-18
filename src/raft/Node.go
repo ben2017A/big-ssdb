@@ -20,6 +20,7 @@ const(
 	RoleCandidate = "candidate"
 )
 
+// NodeOption
 const(
 	TickerInterval   = 100
 	ElectionTimeout  = 5 * 1000
@@ -86,20 +87,20 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
-	log.Printf("Start %s, peers: %s, term: %d, lastApplied: %d, lastTerm: %d, lastIndex: %d",
-			node.Id(), node.conf.Peers(), node.Term(), node.conf.lastApplied,
+	log.Printf("Start %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
+			node.conf.id, node.conf.Peers(), node.conf.term, node.conf.applied,
 			node.logs.lastTerm, node.logs.lastIndex)
 	node.startTicker()
 	node.Tick(0)
 }
 
 func (node *Node)Close(){
+	log.Printf("Stop %s", node.Id())
 	node.mux.Lock()
 	node.conf.Close()
 	node.logs.Close()
 	node.mux.Unlock()
 
-	log.Printf("Stop %s", node.Id())
 	node.stop_c <- 0
 	<- node.stop_c
 }
@@ -151,7 +152,7 @@ func (node *Node)Tick(timeElapseMs int){
 	defer node.mux.Unlock()
 
 	if node.role == RoleFollower || node.role == RoleCandidate {
-		if node.conf.isMember {
+		if node.conf.joined {
 			// 单节点运行
 			if len(node.conf.members) == 0 {
 				node.startElection()
@@ -194,11 +195,11 @@ func (node *Node)preparePingAllMembers(){
 }
 
 func (node *Node)startPreVote(){
-	log.Printf("Start prevote at term %d", node.Term())
 	node.role = RoleFollower
 	node.electionTimer = 0
 	node.votesReceived = make(map[string]string)
 	node.broadcast(NewPreVoteMsg())
+	log.Printf("Node %s start prevote at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)startElection(){
@@ -299,7 +300,7 @@ func (node *Node)replicateMember(m *Member){
 func (node *Node)handleRaftMessage(msg *Message){
 	m := node.conf.members[msg.Src]
 	if msg.Dst != node.Id() || m == nil {
-		log.Println(node.Id(), "drop message from unknown src", msg.Src, "dst", msg.Dst, "members: ", node.conf.members)
+		log.Printf("%s drop message from %s, peers: %s", node.Id(), msg.Src, node.conf.Peers())
 		return
 	}
 	m.ReceiveTimeout = 0
@@ -313,10 +314,9 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
-		log.Printf("receive greater msg.term: %d, node.term: %d", msg.Term, node.Term())
+		log.Printf("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
 		node.conf.SaveState(msg.Term, "")
 		if node.role != RoleFollower {
-			log.Printf("Node %s became follower", node.Id())
 			node.becomeFollower()
 		}
 		// continue processing msg
@@ -409,9 +409,9 @@ func (node *Node)handleRequestVote(msg *Message){
 
 	if granted {
 		node.electionTimer = 0
-		log.Println("vote for", msg.Src)
 		node.conf.SetVoteFor(msg.Src)
 		node.send(NewRequestVoteAck(msg.Src, true))
+		log.Printf("Node %s vote for %s at term %d", node.Id(), msg.Src, node.Term())
 	} else {
 		node.send(NewRequestVoteAck(msg.Src, false))
 	}
@@ -524,7 +524,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 	m := node.conf.members[msg.Src]
 	if msg.Data == "false" {
 		if m.NextIndex != msg.PrevIndex + 1 {
-			log.Printf("node %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+			log.Printf("member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 			m.MatchIndex = msg.PrevIndex
 			m.NextIndex  = msg.PrevIndex + 1
 		}
@@ -622,12 +622,11 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.Term())
-	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor())
-	ret += fmt.Sprintf("lastApplied: %d\n", node.conf.LastApplied())
-	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
+	ret += fmt.Sprintf("applied: %d\n", node.conf.applied)
 	ret += fmt.Sprintf("lastTerm: %d\n", node.logs.lastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.lastIndex)
-	ret += fmt.Sprintf("electionTimer: %d\n", node.electionTimer)
+	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
+	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor())
 	b, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(b))
 
