@@ -215,9 +215,8 @@ func (node *Node)becomeLeader(){
 
 	if node.Term() == 1 { 
 		// 初始化集群成员列表
-		node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", node.Id()))
-		for _, m := range node.conf.members {
-			node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", m.Id))
+		for _, id := range node.conf.peers {
+			node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", id))
 		}
 	} else {
 		node.logs.AppendEntry(EntryTypeNoop, "")
@@ -252,7 +251,6 @@ func (node *Node)replicateAllMembers(){
 	if len(node.conf.members) == 0 {
 		node.advanceCommitIndex()
 	}
-
 	for _, m := range node.conf.members {
 		node.replicateMember(m)
 	}
@@ -288,7 +286,7 @@ func (node *Node)replicateMember(m *Member){
 func (node *Node)handleRaftMessage(msg *Message){
 	m := node.conf.members[msg.Src]
 	if msg.Dst != node.Id() || m == nil {
-		log.Printf("%s drop message from %s, peers: %s", node.Id(), msg.Src, node.conf.peers)
+		log.Printf("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
 		return
 	}
 	m.ReceiveTimeout = 0
@@ -297,7 +295,6 @@ func (node *Node)handleRaftMessage(msg *Message){
 	if msg.Term < node.Term() {
 		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
 		node.send(NewGossipMsg(msg.Src))
-		// finish processing msg
 		return
 	}
 	// MUST: node.Term is set to be larger msg.Term
@@ -366,16 +363,17 @@ func (node *Node)handlePreVote(msg *Message){
 	}
 	for _, m := range node.conf.members {
 		if m.Role == RoleLeader && m.ReceiveTimeout < ReceiveTimeout {
-			log.Printf("leader %s is still active, ignore PreVote from %s", m.Id, msg.Src)
+			log.Printf("leader %s is still reachable, ignore PreVote from %s", m.Id, msg.Src)
 			return
 		}
 	}
+	log.Printf("Node %s grant prevote to %s", node.Id(), msg.Src)
 	node.send(NewPreVoteAck(msg.Src))
 }
 
 func (node *Node)handlePreVoteAck(msg *Message){
-	log.Printf("receive %s from %s", msg.Type, msg.Src)
-	node.votesReceived[msg.Src] = msg.Data
+	log.Printf("Node %s receive prevote ack from %s", node.Id(), msg.Src)
+	node.votesReceived[msg.Src] = "grant"
 	if len(node.votesReceived) + 1 > (len(node.conf.members) + 1)/2 {
 		node.startElection()
 	}
@@ -408,7 +406,7 @@ func (node *Node)handleRequestVote(msg *Message){
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	log.Printf("receive %s from %s", msg.Type, msg.Src)
+	log.Printf("Node %s receive %s vote ack from %s", node.Id(), msg.Data, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
 	node.checkVoteResult()
 }

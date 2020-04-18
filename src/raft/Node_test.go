@@ -170,7 +170,7 @@ func clean_nodes(){
 	for id, n := range nodes {
 		n.Close()
 		delete(nodes, id)
-		log.Printf("%s stopped", id)
+		// log.Printf("%s stopped", id)
 	}
 }
 
@@ -190,7 +190,7 @@ func dispatch(id string){
 	log.Println("    send > " + msg.Encode())
 
 	if nodes[msg.Dst] != nil {
-		log.Println("    recv < " + msg.Encode())
+		// log.Println("    recv < " + msg.Encode())
 		nodes[msg.Dst].RecvC() <- msg
 	}
 }
