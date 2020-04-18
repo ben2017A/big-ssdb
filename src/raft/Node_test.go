@@ -8,6 +8,11 @@ import (
 	"sync"
 )
 
+/*
+测试思路:
+等待集群各节点同步后, 观察各节点的 commitIndex 是否相同, 若相同则认为各状态机是一致的.
+*/
+
 var n1 *Node
 var n2 *Node
 var mutex sync.Mutex
@@ -22,15 +27,8 @@ func TestNode(t *testing.T){
 
 	fmt.Printf("\n=========================================================\n")
 	testOneNode()
-	clean_nodes()
-
-	fmt.Printf("\n=========================================================\n")
-	testTwoNodes()
-	clean_nodes()
-
-	fmt.Printf("\n=========================================================\n")
-	testOneNode()
 	testJoin()
+	testQuit()
 	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
@@ -42,21 +40,10 @@ func TestNode(t *testing.T){
 	testSnapshot()
 	clean_nodes()
 
-	sleep(0.01)
 	log.Println("end")
 }
 
-func testSnapshot() {
-	testOneNode()
-	n1.Propose("a")
-	n1.Propose("b")
-	// n1.Propose("c")
-	sleep(0.01)
-
-	testJoin()
-	sleep(0.01)
-}
-
+// 单节点集群
 func testOneNode() {
 	mutex.Lock()
 	{
@@ -66,15 +53,17 @@ func testOneNode() {
 	mutex.Unlock()
 
 	n1.Start()
-	sleep(0.01) // wait startup
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
+
+	sleep(0.01) // wait commit
 	if n1.commitIndex != 1 {
 		log.Fatal("error")
 	}
 }
 
+// 以相同的配置启动双节点集群
 func testTwoNodes() {
 	mutex.Lock()
 	{
@@ -88,15 +77,16 @@ func testTwoNodes() {
 
 	n1.Start()
 	n2.Start()
-	sleep(0.01) // wait startup
-
 	n1.Tick(ElectionTimeout) // n1 start election
-	sleep(0.02)   // wait network
-
+	
+	sleep(0.02) // wait log replication
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
 	if n2.role != RoleFollower {
+		log.Fatal("error")
+	}
+	if n1.commitIndex != 2 {
 		log.Fatal("error")
 	}
 	if n1.commitIndex != n2.commitIndex {
@@ -104,6 +94,7 @@ func testTwoNodes() {
 	}
 }
 
+// 新节点加入集群
 func testJoin() {
 	n1.ProposeAddMember("n2")
 	sleep(0.01)
@@ -119,19 +110,19 @@ func testJoin() {
 	mutex.Unlock()
 
 	n2.Start()
-	sleep(0.01) // wait startup
+	n1.Tick(HeartbeatTimeout) // leader send ping
+	
+	sleep(0.01) // wait repication
+
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-
-	n1.Tick(HeartbeatTimeout) // send ping
-	sleep(0.01)
-
 	if n1.commitIndex != n2.commitIndex {
 		log.Fatal("error")	
 	}
 }
 
+// 退出集群
 func testQuit() {
 	n1.ProposeDelMember("n2")
 	sleep(0.01)
@@ -140,11 +131,30 @@ func testQuit() {
 	}
 
 	n2.Tick(ElectionTimeout) // start election
+	sleep(0.01)
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-	sleep(0.01)
 }
+
+// 落后太多时, 同步 Raft 快照
+func testSnapshot() {
+	testOneNode()
+	n1.Propose("a")
+	n1.Propose("b")
+
+	testJoin()
+
+	idx := n2.commitIndex
+	n1.Propose("c")
+
+	sleep(0.01) // wait replication
+
+	if n2.commitIndex != idx + 1 {
+		log.Fatal("error")	
+	}
+}
+
 //////////////////////////////////////////////////////////////////
 
 func sleep(second float32){
@@ -180,6 +190,7 @@ func dispatch(id string){
 	log.Println("    send > " + msg.Encode())
 
 	if nodes[msg.Dst] != nil {
+		log.Println("    recv < " + msg.Encode())
 		nodes[msg.Dst].RecvC() <- msg
 	}
 }

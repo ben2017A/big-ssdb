@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// 负责 Raft 配置的持久化
+// 负责 Raft 配置的持久化(区别于 Option)
 type Config struct {
 	id string
 	term int32

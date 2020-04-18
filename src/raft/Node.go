@@ -583,6 +583,7 @@ func (node *Node)commitEntry(commitIndex int64) {
 
 func (node *Node)handleInstallSnapshot(msg *Message) {
 	node.loadSnapshot(msg.Data)
+	node.send(NewAppendEntryAck(msg.Src, true))
 }
 
 /* ###################### Methods ####################### */
