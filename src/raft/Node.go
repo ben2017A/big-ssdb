@@ -88,9 +88,10 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
+	last := node.logs.LastEntry()
 	log.Printf("Start %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
 			node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
-			node.logs.lastTerm, node.logs.lastIndex)
+			last.Term, last.Index)
 	node.startTicker()
 	node.Tick(0)
 }
@@ -226,9 +227,10 @@ func (node *Node)becomeLeader(){
 /* ############################################# */
 
 func (node *Node)resetMembers() {
+	nextIndex := node.logs.LastIndex() + 1
 	for _, m := range node.conf.members {
 		m.Reset()
-		m.NextIndex = node.logs.lastIndex + 1
+		m.NextIndex = nextIndex
 	}
 }
 
@@ -241,7 +243,7 @@ func (node *Node)pingAllMember(){
 func (node *Node)pingMember(m *Member){
 	m.HeartbeatTimer = 0
 	
-	prev := node.logs.GetEntry(node.logs.lastIndex)
+	prev := node.logs.LastEntry()
 	ent := NewPingEntry(node.commitIndex)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
@@ -386,10 +388,11 @@ func (node *Node)handleRequestVote(msg *Message){
 		return
 	}
 	
+	last := node.logs.LastEntry()
 	granted := false
-	if msg.PrevTerm > node.logs.lastTerm {
+	if msg.PrevTerm > last.Term {
 		granted = true
-	} else if msg.PrevTerm == node.logs.lastTerm && msg.PrevIndex >= node.logs.lastIndex {
+	} else if msg.PrevTerm == last.Term && msg.PrevIndex >= last.Index {
 		granted = true
 	} else {
 		// we've got newer log, reject
@@ -431,10 +434,10 @@ func (node *Node)checkVoteResult(){
 
 func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	var prev *Entry
-	if msg.PrevIndex < node.logs.lastIndex {
+	if msg.PrevIndex < node.logs.LastIndex() {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
 	} else {
-		prev = node.logs.GetEntry(node.logs.lastIndex)
+		prev = node.logs.LastEntry()
 	}
 	
 	ack := NewAppendEntryAck(msg.Src, false)
@@ -499,18 +502,18 @@ func (node *Node)handleAppendEntry(msg *Message){
 		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
-	commitIndex := util.MinInt64(ent.Commit, node.logs.lastIndex)
+	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
 	node.commitEntry(commitIndex)
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
-	if node.logs.lastIndex - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
+	if node.logs.LastIndex() - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
 		data := node.makeSnapshot()
 		resp := NewInstallSnapshotMsg(msg.Src, data)
 		node.send(resp)
 		return
 	}
-	if msg.PrevIndex > node.logs.lastIndex {
+	if msg.PrevIndex > node.logs.LastIndex() {
 		log.Printf("bad msg.PrevIndex: %d from: %s", msg.PrevIndex, msg.Src)
 		return
 	}
@@ -540,7 +543,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 func (node *Node)advanceCommitIndex() {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.conf.members) + 1)
-	matchIndex = append(matchIndex, node.logs.lastIndex) // self
+	matchIndex = append(matchIndex, node.logs.LastIndex()) // self
 	for _, m := range node.conf.members {
 		matchIndex = append(matchIndex, m.MatchIndex)
 	}
@@ -550,7 +553,7 @@ func (node *Node)advanceCommitIndex() {
 	commitIndex := matchIndex[len(matchIndex)/2]
 	log.Println("match[] =", matchIndex, " major matchIndex", commitIndex)
 
-	commitIndex = util.MinInt64(commitIndex, node.logs.lastIndex)
+	commitIndex = util.MinInt64(commitIndex, node.logs.LastIndex())
 	if commitIndex > node.commitIndex {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
@@ -616,14 +619,16 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 func (node *Node)Info() string {
 	node.mux.Lock()
 	defer node.mux.Unlock()
+
+	last := node.logs.LastEntry()
 	
 	var ret string
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
 	ret += fmt.Sprintf("applied: %d\n", node.conf.applied)
-	ret += fmt.Sprintf("lastTerm: %d\n", node.logs.lastTerm)
-	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.lastIndex)
+	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
+	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
 	ret += fmt.Sprintf("voteFor: %s\n", node.conf.voteFor)
 	bs, _ := json.Marshal(node.conf.members)
@@ -639,8 +644,9 @@ func (node *Node)send(msg *Message){
 	new_msg.Src = node.Id()
 	new_msg.Term = node.Term()
 	if new_msg.PrevTerm == 0 && new_msg.Type != MessageTypeAppendEntry {
-		new_msg.PrevTerm = node.logs.lastTerm
-		new_msg.PrevIndex = node.logs.lastIndex
+		last := node.logs.LastEntry()
+		new_msg.PrevTerm = last.Term
+		new_msg.PrevIndex = last.Index
 	}
 	node.send_c <- &new_msg
 }
@@ -676,9 +682,10 @@ func (node *Node)loadSnapshot(data string) {
 	node.conf.ResetFromSnapshot(sn)
 	node.logs.ResetFromSnapshot(sn)
 
+	last := node.logs.LastEntry()
 	log.Printf("Reset %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
 		node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
-		node.logs.lastTerm, node.logs.lastIndex)
+		last.Term, last.Index)
 
 	log.Printf("Done")
 }

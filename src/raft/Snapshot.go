@@ -25,7 +25,8 @@ func MakeSnapshot(node *Node) *Snapshot {
 	sn.peers = node.conf.peers
 	sn.entries = make([]Entry, 0)
 
-	for idx := node.logs.lastIndex - 1; idx <= node.logs.lastIndex; idx ++ {
+	last := node.logs.LastEntry()
+	for idx := last.Index - 1; idx > 0 && idx <= last.Index; idx ++ {
 		ent := node.logs.GetEntry(idx)
 		sn.entries = append(sn.entries, *ent)
 	}

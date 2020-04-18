@@ -46,7 +46,7 @@ func (c *Config)Fsync() {
 		c.peers = append(c.peers, id)
 	}
 
-	// TODO: save
+	// TODO: persist data
 }
 
 func (c *Config)CleanAll() {
@@ -122,4 +122,5 @@ func (c *Config)ResetFromSnapshot(sn *Snapshot) {
 	c.term = sn.term
 	c.applied = sn.applied
 	c.SetPeers(sn.peers)
+	c.Fsync()
 }
