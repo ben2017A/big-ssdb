@@ -20,25 +20,27 @@ func TestNode(t *testing.T){
 
 	go networking()
 
-	testSnapshot()
+	fmt.Printf("\n=========================================================\n")
+	testOneNode()
+	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
-	// testOneNode()
-	// clean_nodes()
+	testTwoNodes()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testTwoNodes()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testOneNode()
+	testJoin()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testOneNode()
-	// testJoin()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testTwoNodes()
+	testQuit()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testTwoNodes()
-	// testQuit()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testSnapshot()
+	clean_nodes()
 
 	sleep(0.01)
 	log.Println("end")
@@ -88,8 +90,8 @@ func testTwoNodes() {
 	n2.Start()
 	sleep(0.01) // wait startup
 
-	n1.Tick(HeartbeatTimeout) // n1 start election
-	sleep(0.01)   // wait network
+	n1.Tick(ElectionTimeout) // n1 start election
+	sleep(0.02)   // wait network
 
 	if n1.role != RoleLeader {
 		log.Fatal("error")

@@ -59,7 +59,6 @@ func NewNode(conf *Config) *Node{
 	node.recv_c = make(chan *Message, 1)
 	node.send_c = make(chan *Message, SendChannelSize)
 	node.stop_c = make(chan int)
-	node.electionTimer = 2 * 1000
 
 	node.conf = conf
 	node.logs = NewBinlog(node)
