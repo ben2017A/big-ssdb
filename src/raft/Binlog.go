@@ -4,7 +4,7 @@ import (
 	"log"
 )
 
-type Binlog struct{
+type Binlog struct {
 	node *Node
 	service Service
 
@@ -32,6 +32,9 @@ func NewBinlog(node *Node) *Binlog {
 func (st *Binlog)Close() {
 }
 
+func (st *Binlog)Fsync() {
+}
+
 func (st *Binlog)CleanAll() {
 	st.lastTerm = 0
 	st.lastIndex = 0
@@ -57,7 +60,7 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 
 // 如果存在空洞, 仅仅先缓存 entry, 不更新 lastTerm 和 lastIndex
 // 参数值拷贝
-func (st *Binlog)WriteEntry(ent Entry){
+func (st *Binlog)WriteEntry(ent Entry) {
 	log.Println("[Write]", ent.Encode())
 	st.entries[ent.Index] = &ent
 
@@ -66,6 +69,7 @@ func (st *Binlog)WriteEntry(ent Entry){
 		st.lastIndex = ent.Index - 1
 	}
 
+	// TODO: 异步持久化
 	// 找出连续的 entries, 更新 lastTerm 和 lastIndex,
 	for{
 		ent := st.GetEntry(st.lastIndex + 1)
@@ -78,4 +82,12 @@ func (st *Binlog)WriteEntry(ent Entry){
 		st.fsyncIndex = st.lastIndex
 		st.fsyncReadyC <- st.fsyncIndex
 	}
+}
+
+func (st *Binlog)ResetFromSnapshot(sn *Snapshot) {
+	st.CleanAll()
+	for _, ent := range sn.entries {
+		st.WriteEntry(ent)
+	}
+	st.Fsync()
 }

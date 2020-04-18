@@ -195,7 +195,7 @@ func (node *Node)startElection(){
 	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
 	node.resetMembers()
-	node.conf.NewTerm()
+	node.conf.SetRound(node.Term() + 1, node.Id())
 	node.broadcast(NewRequestVoteMsg())
 	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
 }
@@ -300,7 +300,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
 		log.Printf("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
-		node.conf.SaveState(msg.Term, "")
+		node.conf.SetRound(msg.Term, "")
 		if node.role != RoleFollower {
 			node.becomeFollower()
 		}
@@ -397,7 +397,7 @@ func (node *Node)handleRequestVote(msg *Message){
 
 	if granted {
 		node.electionTimer = 0
-		node.conf.SetVoteFor(msg.Src)
+		node.conf.SetRound(node.Term(), msg.Src)
 		node.send(NewRequestVoteAck(msg.Src, true))
 		log.Printf("Node %s vote for %s at term %d", node.Id(), msg.Src, node.Term())
 	} else {
@@ -568,7 +568,7 @@ func (node *Node)commitEntry(commitIndex int64) {
 	node.commitIndex = commitIndex
 
 	// synchronously apply to Config
-	for index := node.conf.LastApplied() + 1; index <= node.commitIndex; index ++ {
+	for index := node.conf.applied + 1; index <= node.commitIndex; index ++ {
 		ent := node.logs.GetEntry(index)
 		if ent == nil {
 			log.Fatalf("Lost entry@%d", index)
@@ -620,12 +620,12 @@ func (node *Node)Info() string {
 	var ret string
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
-	ret += fmt.Sprintf("term: %d\n", node.Term())
+	ret += fmt.Sprintf("term: %d\n", node.conf.term)
 	ret += fmt.Sprintf("applied: %d\n", node.conf.applied)
 	ret += fmt.Sprintf("lastTerm: %d\n", node.logs.lastTerm)
 	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.lastIndex)
 	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
-	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor())
+	ret += fmt.Sprintf("voteFor: %s\n", node.conf.voteFor)
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 
@@ -669,22 +669,12 @@ func (node *Node)loadSnapshot(data string) {
 	}
 
 	node.role = RoleFollower
-	node.commitIndex = 0
 	node.electionTimer = 0	
 	node.votesReceived = make(map[string]string)
-
-	node.conf.CleanAll()
-	node.logs.CleanAll()
-
-	node.conf.term = sn.term
-	node.conf.applied = sn.applied
 	node.commitIndex = sn.commitIndex
-	for _, id := range sn.peers {
-		node.conf.AddMember(id)
-	}
-	for _, ent := range sn.entries {
-		node.logs.WriteEntry(ent)
-	}
+
+	node.conf.ResetFromSnapshot(sn)
+	node.logs.ResetFromSnapshot(sn)
 
 	log.Printf("Reset %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
 		node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
