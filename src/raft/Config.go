@@ -13,7 +13,8 @@ type Config struct {
 	applied int64
 
 	joined bool // 是否已加入组
-	members map[string]*Member // 不包含自己
+	peers []string // 包括自己
+	members map[string]*Member // 不包括自己
 
 	node *Node
 }
@@ -22,6 +23,7 @@ type Config struct {
 func NewConfig(id string, members []string/*, db_path string*/) *Config {
 	c := new(Config)
 	c.id = id
+	c.peers = make([]string, 0)
 	c.members = make(map[string]*Member)
 	for _, nodeId := range members {
 		c.AddMember(nodeId)
@@ -42,6 +44,7 @@ func (c *Config)CleanAll() {
 	c.voteFor = ""
 	c.applied = 0
 	c.joined = false
+	c.peers = make([]string, 0)
 	c.members = make(map[string]*Member)
 }
 
@@ -58,16 +61,14 @@ func (c *Config)SaveState(term int32, voteFor string) {
 	c.voteFor = voteFor
 }
 
-// 包含自己
-func (c *Config)Peers() []string {
-	ret := make([]string, 0)
+func (c *Config)updatePeers() {
+	c.peers = make([]string, 0)
 	if c.joined {
-		ret = append(ret, c.id)
+		c.peers = append(c.peers, c.id)
 	}
 	for id, _ := range c.members {
-		ret = append(ret, id)
+		c.peers = append(c.peers, id)
 	}
-	return ret
 }
 
 func (c *Config)AddMember(nodeId string) {
@@ -77,6 +78,7 @@ func (c *Config)AddMember(nodeId string) {
 		m := NewMember(nodeId)
 		c.members[nodeId] = m
 	}
+	c.updatePeers()
 }
 
 func (c *Config)DelMember(nodeId string) {
@@ -85,9 +87,10 @@ func (c *Config)DelMember(nodeId string) {
 	} else {
 		delete(c.members, nodeId)
 	}
+	c.updatePeers()
 }
 
-/* ###################### Service interface ####################### */
+/* ###################### Log Apply ####################### */
 
 func (c *Config)LastApplied() int64{
 	return c.applied

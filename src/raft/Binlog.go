@@ -61,6 +61,11 @@ func (st *Binlog)WriteEntry(ent Entry){
 	log.Println("[Write]", ent.Encode())
 	st.entries[ent.Index] = &ent
 
+	// first entry
+	if st.lastIndex == 0 {
+		st.lastIndex = ent.Index - 1
+	}
+
 	// 找出连续的 entries, 更新 lastTerm 和 lastIndex,
 	for{
 		ent := st.GetEntry(st.lastIndex + 1)

@@ -30,6 +30,8 @@ const(
 
 	SendWindowSize  = 3
 	SendChannelSize = 10
+
+	MaxLogBehindToInstallSnapshot = 3
 )
 
 // Node 是轻量级的, 可以快速的创建和销毁
@@ -88,7 +90,7 @@ func (node *Node)SendC() <-chan *Message {
 
 func (node *Node)Start(){
 	log.Printf("Start %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.Peers(), node.conf.term, node.conf.applied,
+			node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
 			node.logs.lastTerm, node.logs.lastIndex)
 	node.startTicker()
 	node.Tick(0)
@@ -103,19 +105,6 @@ func (node *Node)Close(){
 
 	node.stop_c <- 0
 	<- node.stop_c
-}
-
-// reset persistent and volatile states
-func (node *Node)CleanAll(){
-	node.mux.Lock()
-	defer node.mux.Unlock()
-
-	node.commitIndex = 0
-	node.electionTimer = 0	
-	node.votesReceived = make(map[string]string)
-
-	node.conf.CleanAll()
-	node.logs.CleanAll()
 }
 
 func (node *Node)startTicker(){
@@ -300,7 +289,7 @@ func (node *Node)replicateMember(m *Member){
 func (node *Node)handleRaftMessage(msg *Message){
 	m := node.conf.members[msg.Src]
 	if msg.Dst != node.Id() || m == nil {
-		log.Printf("%s drop message from %s, peers: %s", node.Id(), msg.Src, node.conf.Peers())
+		log.Printf("%s drop message from %s, peers: %s", node.Id(), msg.Src, node.conf.peers)
 		return
 	}
 	m.ReceiveTimeout = 0
@@ -352,6 +341,8 @@ func (node *Node)handleRaftMessage(msg *Message){
 			node.handlePreVote(msg)
 		} else if msg.Type == MessageTypePreVoteAck {
 			node.handlePreVoteAck(msg)
+		} else if msg.Type == MessageTypeInstallSnapshot {
+			node.handleInstallSnapshot(msg)
 		} else {
 			log.Println("drop message", msg.Encode())
 		}
@@ -516,10 +507,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message){
-	// if msg.PrevIndex < node.logs.firstIndex {
-	// 	// send InstallSnapshot
-	// 	return
-	// }
+	if node.logs.lastIndex - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
+		data := node.makeSnapshot()
+		resp := NewInstallSnapshotMsg(msg.Src, data)
+		node.send(resp)
+		return
+	}
 	if msg.PrevIndex > node.logs.lastIndex {
 		log.Printf("bad msg.PrevIndex: %d from: %s", msg.PrevIndex, msg.Src)
 		return
@@ -589,6 +582,10 @@ func (node *Node)commitEntry(commitIndex int64) {
 	// TODO: asynchronously apply to Service
 }
 
+func (node *Node)handleInstallSnapshot(msg *Message) {
+	node.loadSnapshot(msg.Data)
+}
+
 /* ###################### Methods ####################### */
 
 func (node *Node)Propose(data string) (int32, int64) {
@@ -631,8 +628,8 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("lastIndex: %d\n", node.logs.lastIndex)
 	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
 	ret += fmt.Sprintf("voteFor: %s\n", node.VoteFor())
-	b, _ := json.Marshal(node.conf.members)
-	ret += fmt.Sprintf("members: %s\n", string(b))
+	bs, _ := json.Marshal(node.conf.members)
+	ret += fmt.Sprintf("members: %s\n", string(bs))
 
 	return ret
 }
@@ -655,4 +652,41 @@ func (node *Node)broadcast(msg *Message){
 		msg.Dst = m.Id
 		node.send(msg)
 	}
+}
+
+/* ###################### Snapshot ####################### */
+
+func (node *Node)makeSnapshot() string {
+	sn := MakeSnapshot(node)
+	return sn.Encode()
+}
+
+func (node *Node)loadSnapshot(data string) {
+	log.Printf("Node %s installing snapshot", node.Id())
+	sn := new(Snapshot)
+	sn.Decode(data)
+
+	node.role = RoleFollower
+	node.commitIndex = 0
+	node.electionTimer = 0	
+	node.votesReceived = make(map[string]string)
+
+	node.conf.CleanAll()
+	node.logs.CleanAll()
+
+	node.conf.term = sn.term
+	node.conf.applied = sn.applied
+	node.commitIndex = sn.commitIndex
+	for _, id := range sn.peers {
+		node.conf.AddMember(id)
+	}
+	for _, ent := range sn.entries {
+		node.logs.WriteEntry(ent)
+	}
+
+	log.Printf("Reset %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
+		node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
+		node.logs.lastTerm, node.logs.lastIndex)
+
+	log.Printf("Done")
 }

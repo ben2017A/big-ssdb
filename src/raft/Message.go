@@ -127,9 +127,10 @@ func NewAppendEntryAck(dst string, success bool) *Message{
 	return msg
 }
 
-func NewInstallSnapshotMsg(dst string) *Message{
+func NewInstallSnapshotMsg(dst string, data string) *Message{
 	msg := new(Message)
 	msg.Type = MessageTypeInstallSnapshot
 	msg.Dst = dst
+	msg.Data = data
 	return msg
 }
