@@ -663,7 +663,11 @@ func (node *Node)makeSnapshot() string {
 func (node *Node)loadSnapshot(data string) {
 	log.Printf("Node %s installing snapshot", node.Id())
 	sn := new(Snapshot)
-	sn.Decode(data)
+	if sn.Decode(data) == false {
+		log.Println("decode snapshot error")
+		util.Sleep(1)
+		return
+	}
 
 	node.role = RoleFollower
 	node.commitIndex = 0
