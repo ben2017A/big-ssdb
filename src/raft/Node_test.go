@@ -26,13 +26,19 @@ func TestNode(t *testing.T){
 	go networking()
 
 	fmt.Printf("\n=========================================================\n")
+	testOrphanNode()
+
+	fmt.Printf("\n=========================================================\n")
 	testOneNode()
+	fmt.Printf("\n")
 	testJoin()
+	fmt.Printf("\n")
 	testQuit()
 	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
 	testTwoNodes()
+	fmt.Printf("\n")
 	testQuit()
 	clean_nodes()
 
@@ -43,16 +49,45 @@ func TestNode(t *testing.T){
 	log.Println("end")
 }
 
+func testOrphanNode() {
+	// 启动 leader
+	testOneNode()
+
+	// 启动孤儿节点
+	mutex.Lock()
+	{
+		n2 = NewNode(NewConfig("n2", []string{}))
+		nodes[n2.Id()] = n2
+		n2.Start()
+	}
+	mutex.Unlock()
+
+	// 集群接受 n2
+	n1.ProposeAddMember("n2")
+	sleep(0.01)
+
+	n1.Tick(HeartbeatTimeout)
+	sleep(0.01)
+
+	// 集群的消息会被 n2 丢弃
+	if len(n2.conf.peers) != 0 {
+		log.Fatal("error")
+	}
+	if n2.commitIndex != 0 {
+		log.Fatal("error")
+	}
+}
+
 // 单节点集群
 func testOneNode() {
 	mutex.Lock()
 	{
 		n1 = NewNode(NewConfig("n1", []string{"n1"}))
 		nodes[n1.Id()] = n1
+		n1.Start()
 	}
 	mutex.Unlock()
 
-	n1.Start()
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
@@ -72,11 +107,11 @@ func testTwoNodes() {
 		n2 = NewNode(NewConfig("n2", members))
 		nodes[n1.Id()] = n1
 		nodes[n2.Id()] = n2
+		n1.Start()
+		n2.Start()
 	}
 	mutex.Unlock()
 
-	n1.Start()
-	n2.Start()
 	n1.Tick(ElectionTimeout) // n1 start election
 	
 	sleep(0.02) // wait log replication
@@ -106,10 +141,10 @@ func testJoin() {
 	{
 		n2 = NewNode(NewConfig("n2", []string{"n1"}))
 		nodes[n2.Id()] = n2
+		n2.Start()
 	}
 	mutex.Unlock()
 
-	n2.Start()
 	n1.Tick(HeartbeatTimeout) // leader send ping
 	
 	sleep(0.01) // wait repication
