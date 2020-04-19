@@ -170,14 +170,14 @@ func (node *Node)Tick(timeElapseMs int){
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// log.Println("Heartbeat timeout for node", m.Id)
-				node.pingMember(m)
+				node.beatMember(m)
 			}
 		}
 	}
 }
 
 // prepare ping all members, will actually ping in Tick()
-func (node *Node)preparePingAllMembers(){
+func (node *Node)prepareBeatAllMembers(){
 	for _, m := range node.conf.members {
 		m.HeartbeatTimer = HeartbeatTimeout
 	}
@@ -234,17 +234,11 @@ func (node *Node)resetMembers() {
 	}
 }
 
-func (node *Node)pingAllMember(){
-	for _, m := range node.conf.members {
-		node.pingMember(m)
-	}
-}
-
-func (node *Node)pingMember(m *Member){
+func (node *Node)beatMember(m *Member){
 	m.HeartbeatTimer = 0
 	
 	prev := node.logs.LastEntry()
-	ent := NewPingEntry(node.commitIndex)
+	ent := NewBeatEntry(node.commitIndex)
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -259,6 +253,9 @@ func (node *Node)replicateAllMembers(){
 }
 
 func (node *Node)replicateMember(m *Member){
+	if m.NextIndex == 0 {
+		return
+	}
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > SendWindowSize {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
@@ -268,7 +265,6 @@ func (node *Node)replicateMember(m *Member){
 	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + SendWindowSize)
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
-		// log.Println(node.Id(), m.Id, m.NextIndex, ent)
 		if ent == nil {
 			break
 		}
@@ -432,7 +428,7 @@ func (node *Node)checkVoteResult(){
 	}
 }
 
-func (node *Node)sendDuplicatedAckToMessage(msg *Message){
+func (node *Node)sendDuplicatedAckByMessage(msg *Message){
 	var prev *Entry
 	if msg.PrevIndex < node.logs.LastIndex() {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
@@ -445,7 +441,6 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 		ack.PrevTerm = prev.Term
 		ack.PrevIndex = prev.Index
 	}
-
 	node.send(ack)
 }
 
@@ -467,24 +462,24 @@ func (node *Node)handleAppendEntry(msg *Message){
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			node.sendDuplicatedAckToMessage(msg)
+			node.sendDuplicatedAckByMessage(msg)
 			return
 		}
 		if prev.Term != msg.PrevTerm {
 			log.Printf("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
-			node.sendDuplicatedAckToMessage(msg)
+			node.sendDuplicatedAckByMessage(msg)
 			return
 		}
 	}
 
 	ent := DecodeEntry(msg.Data)
 
-	if ent.Type == EntryTypePing {
+	if ent.Type == EntryTypeBeat {
 		node.send(NewAppendEntryAck(msg.Src, true))
 	} else {
 		if ent.Index < node.commitIndex {
 			log.Printf("entry: %d before committed: %d", ent.Index, node.commitIndex)
-			node.sendDuplicatedAckToMessage(msg)
+			node.sendDuplicatedAckByMessage(msg)
 			return
 		}
 
@@ -508,20 +503,19 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(msg *Message){
 	if node.logs.LastIndex() - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
-		data := node.makeSnapshot()
-		resp := NewInstallSnapshotMsg(msg.Src, data)
-		node.send(resp)
+		node.sendSnapshot(msg.Src)
+		log.Printf("Member %s fall behind too much, send snapshot", msg.Src)
 		return
 	}
 	if msg.PrevIndex > node.logs.LastIndex() {
-		log.Printf("bad msg.PrevIndex: %d from: %s", msg.PrevIndex, msg.Src)
+		log.Printf("Member %s prevIndex %d > lastIndex %d", msg.Src, msg.PrevIndex, node.logs.LastIndex())
 		return
 	}
 
 	m := node.conf.members[msg.Src]
 	if msg.Data == "false" {
 		if m.NextIndex != msg.PrevIndex + 1 {
-			log.Printf("member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+			log.Printf("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 			m.MatchIndex = msg.PrevIndex
 			m.NextIndex  = msg.PrevIndex + 1
 		}
@@ -533,7 +527,7 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			node.advanceCommitIndex()
 			newI := node.commitIndex
 			if oldI != newI {
-				node.preparePingAllMembers()
+				node.prepareBeatAllMembers()
 			}
 		}
 	}
@@ -656,6 +650,12 @@ func (node *Node)broadcast(msg *Message){
 		msg.Dst = m.Id
 		node.send(msg)
 	}
+}
+
+func (node *Node)sendSnapshot(dst string){
+	data := node.makeSnapshot()
+	resp := NewInstallSnapshotMsg(dst, data)
+	node.send(resp)
 }
 
 /* ###################### Snapshot ####################### */

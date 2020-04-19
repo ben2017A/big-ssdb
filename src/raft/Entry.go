@@ -10,7 +10,7 @@ import (
 type EntryType string
 
 const(
-	EntryTypePing      = "Ping"
+	EntryTypeBeat      = "Beat"
 	EntryTypeNoop      = "Noop"
 	EntryTypeConf      = "Conf"
 	EntryTypeData      = "Data"
@@ -52,9 +52,9 @@ func (e *Entry)Decode(buf string) bool{
 	return true
 }
 
-func NewPingEntry(commitIndex int64) *Entry{
+func NewBeatEntry(commitIndex int64) *Entry{
 	ent := new(Entry)
-	ent.Type = EntryTypePing
+	ent.Type = EntryTypeBeat
 	ent.Term = 0
 	ent.Index = 0
 	ent.Commit = commitIndex
