@@ -1,12 +1,12 @@
-package link
+package redis
 
 import (
 	"testing"
 	"fmt"
 )
 
-func TestServer(t *testing.T){
-	tcp := NewServer("127.0.0.1", 9000)
+func TestTransport(t *testing.T){
+	tcp := NewTransport("127.0.0.1", 9000)
 	defer tcp.Close()
 
 	for {

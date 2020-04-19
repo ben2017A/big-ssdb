@@ -17,9 +17,9 @@ func (c *Container)QuitGroup(groupId int) {
 }
 
 // 走 Raft 流程改变组配置, 要求当前节点是指定组的 leader
-func (c *Container)AddMember(groupId int, nodeId string) {
+func (c *Container)ProposeAddMember(groupId int, nodeId string) {
 }
 
 // 走 Raft 流程改变组配置, 要求当前节点是指定组的 leader
-func (c *Container)DelMember(groupId int, nodeId string) {
+func (c *Container)ProposeDelMember(groupId int, nodeId string) {
 }

@@ -1,8 +1,12 @@
 package raft
 
 import (
+	"os"
 	"log"
 	"strings"
+	"store"
+	"util"
+	"encoding/json"
 )
 
 // 负责 Raft 配置的持久化(区别于 Option)
@@ -10,31 +14,90 @@ type Config struct {
 	// ## 持久化, 且必须原子性操作 ##
 	id string
 	term int32
-	voteFor string
 	applied int64
 	peers []string // 包括自己
 
 	// ## 非持久化 ##
+	vote string
 	joined bool // 是否已加入组
 	members map[string]*Member // 不包括自己
 
 	node *Node
+	wal *store.WalFile
 }
 
-// 用新的配置启动, 如果指定的路径存在配置信息, 则返回 nil.
-func NewConfig(id string, peers []string/*, db_path string*/) *Config {
+// 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
+func OpenConfig(dir string) *Config {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("Failed to make dir %s, %s", dir, err)
+		return nil
+	}
+	fn := dir + "/config.wal"
+	wal := store.OpenWalFile(fn)
+	if wal == nil {
+		log.Printf("Failed to open wal file: %s", fn)
+		return nil
+	}
+
 	c := new(Config)
-	c.id = id
-	c.SetPeers(peers)
+	c.wal = wal
+	// don't vote for any one after a restart using previous term
+	c.vote = c.id
+
+	data := c.wal.ReadLast()
+	if len(data) > 0 {
+		c.decode(data)
+	}
+
 	return c
 }
 
-// // 如果指定路径无配置, 返回 nil.
-// func OpenConfig(db_path string) *Config {
-// 	return nil
-// }
+func (c *Config)Init(id string, peers []string) {
+	c.id = id
+	c.SetPeers(peers)
+	c.Fsync()
+}
 
 func (c *Config)Close() {
+	c.wal.Close()
+}
+
+func (c *Config)IsNew() bool {
+	return len(c.peers) == 0
+}
+
+func (c *Config)encode() string {
+	arr := map[string]string{
+		"id": c.id,
+		"term": util.I32toa(c.term),
+		"applied": util.I64toa(c.applied),
+	}
+	ps := ""
+	for _, p := range c.peers {
+		if len(ps) > 0 {
+			ps += ","
+		}
+		ps += p
+	}
+	arr["peers"] = ps
+	bs, _ := json.Marshal(arr)
+	return string(bs)
+}
+
+func (c *Config)decode(data string) {
+	var arr map[string]string
+	err := json.Unmarshal([]byte(data), &arr)
+	if err != nil {
+		log.Fatal("bad data:", data)
+	}
+
+	c.id = arr["id"]
+	c.term = util.Atoi32(arr["term"])
+	c.applied = util.Atoi64(arr["applied"])
+	if len(arr["peers"]) > 0 {
+		ps := strings.Split(arr["peers"], ",")
+		c.SetPeers(ps)
+	}
 }
 
 func (c *Config)Fsync() {
@@ -46,12 +109,15 @@ func (c *Config)Fsync() {
 		c.peers = append(c.peers, id)
 	}
 
-	// TODO: persist data
+	// persist data
+	s := c.encode()
+	c.wal.Append(s)
+	c.wal.Fsync()
 }
 
 func (c *Config)CleanAll() {
 	c.term = 0
-	c.voteFor = ""
+	c.vote = ""
 	c.applied = 0
 	c.joined = false
 	c.peers = make([]string, 0)
@@ -59,9 +125,9 @@ func (c *Config)CleanAll() {
 	c.Fsync()
 }
 
-func (c *Config)SetRound(term int32, voteFor string) {
+func (c *Config)SetRound(term int32, vote string) {
 	c.term = term
-	c.voteFor = voteFor
+	c.vote = vote
 	c.Fsync()
 }
 

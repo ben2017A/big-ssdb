@@ -40,8 +40,8 @@ func DecodeMessage(buf string) *Message{
 }
 
 func (m *Message)Encode() string{
-	ps := []string{string(m.Type), m.Src, m.Dst, util.Itoa32(m.Term),
-		util.Itoa32(m.PrevTerm), util.I64toa(m.PrevIndex), m.Data}
+	ps := []string{string(m.Type), m.Src, m.Dst, util.I32toa(m.Term),
+		util.I32toa(m.PrevTerm), util.I64toa(m.PrevIndex), m.Data}
 	return strings.Join(ps, " ")
 }
 

@@ -1,4 +1,4 @@
-package link
+package redis
 
 import (
 	"net"
@@ -13,7 +13,7 @@ import (
 TODO: 请求响应模式, 一个连接如果有一个请求在处理时, 则不再解析报文, 等响应后再解析下一个报文.
 */
 
-type Server struct {
+type Transport struct {
 	C chan *Message
 	
 	lastClientId int
@@ -22,49 +22,49 @@ type Server struct {
 	mux sync.Mutex
 }
 
-func NewServer(ip string, port int) *Server {
+func NewTransport(ip string, port int) *Transport {
 	addr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ip, port))
 	conn, _ := net.ListenTCP("tcp", addr)
 
-	tcp := new(Server)
-	tcp.C = make(chan *Message)
-	tcp.lastClientId = 0
-	tcp.conn = conn
-	tcp.clients = make(map[int]net.Conn)
+	tp := new(Transport)
+	tp.C = make(chan *Message)
+	tp.lastClientId = 0
+	tp.conn = conn
+	tp.clients = make(map[int]net.Conn)
 
-	tcp.start()
-	return tcp
+	tp.start()
+	return tp
 }
 
-func (tcp *Server)Close(){
-	tcp.conn.Close()
-	close(tcp.C)
+func (tp *Transport)Close(){
+	tp.conn.Close()
+	close(tp.C)
 } 
 
-func (tcp *Server)start() {
+func (tp *Transport)start() {
 	go func(){
 		for {
-			conn, err := tcp.conn.Accept()
+			conn, err := tp.conn.Accept()
 			if err != nil {
 				log.Fatal(err)
 			}
-			tcp.lastClientId ++
-			log.Println("Accept connection", tcp.lastClientId, conn.RemoteAddr().String())
-			go tcp.handleClient(tcp.lastClientId, conn)
+			tp.lastClientId ++
+			log.Println("Accept connection", tp.lastClientId, conn.RemoteAddr().String())
+			go tp.handleClient(tp.lastClientId, conn)
 		}
 	}()
 }
 
-func (tcp *Server)handleClient(clientId int, conn net.Conn) {
-	tcp.mux.Lock()
-	tcp.clients[clientId] = conn
-	tcp.mux.Unlock()
+func (tp *Transport)handleClient(clientId int, conn net.Conn) {
+	tp.mux.Lock()
+	tp.clients[clientId] = conn
+	tp.mux.Unlock()
 
 	defer func() {
 		log.Println("Close connection", clientId, conn.RemoteAddr().String())
-		tcp.mux.Lock()
-		delete(tcp.clients, clientId)
-		tcp.mux.Unlock()
+		tp.mux.Lock()
+		delete(tp.clients, clientId)
+		tp.mux.Unlock()
 		conn.Close()	
 	}()
 
@@ -85,7 +85,7 @@ func (tcp *Server)handleClient(clientId int, conn net.Conn) {
 			}
 			buf.Next(n)
 			msg.Src = clientId
-			tcp.C <- msg
+			tp.C <- msg
 			msg = new(Message)
 		}
 		
@@ -98,10 +98,10 @@ func (tcp *Server)handleClient(clientId int, conn net.Conn) {
 	}
 }
 
-func (tcp *Server)Send(msg *Message) {
-	tcp.mux.Lock()
-	conn := tcp.clients[msg.Src]
-	tcp.mux.Unlock()
+func (tp *Transport)Send(msg *Message) {
+	tp.mux.Lock()
+	conn := tp.clients[msg.Src]
+	tp.mux.Unlock()
 
 	if conn == nil {
 		log.Println("connection not found:", msg.Src)

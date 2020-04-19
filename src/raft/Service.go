@@ -2,7 +2,7 @@ package raft
 
 type Service interface{
 	// Last checkpoint of applied entries within service
-	LastApplied() int64
+	LastIndex() int64
 	// If entry is not idempotent, service must apply entry
 	// and update lastApplied in a transaction for atomicity
 	ApplyEntry(ent *Entry)

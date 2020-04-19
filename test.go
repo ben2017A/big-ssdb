@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"strconv"
 	// "path/filepath"
-	// "bytes"
 	// "encoding/binary"
 
-	"link"
 	"raft"
-	"raft/server"
+	"redis"
+	"server"
 )
 
 func main(){
@@ -30,9 +31,9 @@ func main(){
 	// node := raft.NewNode(nodeId, raft_xport.Addr(), db)
 
 	log.Println("Service server started at", port+1000)
-	svc_xport := link.NewServer("127.0.0.1", port+1000)
+	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
+	defer svc_xport.Close()
 	// svc := server.NewService(base_dir, node, svc_xport)
-	// defer svc.Close()
 
 	id_addr := make(map[string]string)
 	id_addr["8001"] = "127.0.0.1:8001"
@@ -43,17 +44,28 @@ func main(){
 		members = append(members, k)
 	}
 
-	conf := raft.NewConfig(nodeId, members)
+	conf := raft.OpenConfig("./tmp/" + nodeId)
+	if conf.IsNew() {
+		conf.Init(nodeId, members)
+	}
 	node := raft.NewNode(conf)
 	node.Start()
+	defer node.Close()
 
 	raft_xport := server.NewUdpTransport("127.0.0.1", port)
 	for k, v := range id_addr {
 		raft_xport.Connect(k, v)
 	}
+	defer raft_xport.Close()
 
-	for{
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	
+	quit := false
+	for !quit {
 		select{
+		case <- c:
+			quit = true
 		case req := <-svc_xport.C:
 			t, i := node.Propose(req.Encode())
 			log.Println("Propose", t, i)

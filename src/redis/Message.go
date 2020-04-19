@@ -1,4 +1,4 @@
-package link
+package redis
 
 import (
 	"log"
@@ -9,60 +9,40 @@ import (
 
 type Message struct {
 	Src int
-	ps []string
+	arr []string
 }
 
-func NewMessage(ps []string) *Message {
+func NewMessage(arr []string) *Message {
 	ret := new(Message)
-	ret.ps = ps
-	return ret
-}
-
-func NewResponse(src int, ps []string) *Message {
-	ret := new(Message)
-	ret.Src = src
-	ret.ps = ps
-	return ret
-}
-
-func NewErrorResponse(src int, desc string) *Message {
-	ret := new(Message)
-	ret.Src = src
-	ret.ps = []string{"error", desc}
+	ret.arr = arr
 	return ret
 }
 
 func (m *Message)Array() []string {
-	return m.ps
+	return m.arr
 }
 
 func (m *Message)Cmd() string {
-	if len(m.ps) > 0 {
-		return m.ps[0]
+	if len(m.arr) > 0 {
+		return m.arr[0]
 	}
 	return ""
 }
 
-func (m *Message)Code() string {
-	return m.Cmd()
-}
-
 func (m *Message)Args() []string {
-	if len(m.ps) > 0 {
-		return m.ps[1 : ]
+	if len(m.arr) > 0 {
+		return m.arr[1 : ]
 	}
-	return make([]string, 0)
+	return []string{}
 }
 
 func (m *Message)Encode() string {
 	var buf bytes.Buffer
-	count := len(m.ps)
-	if count > 1 {
-		buf.WriteString("*")
-		buf.WriteString(strconv.Itoa(count))
-		buf.WriteString("\r\n")
-	}
-	for _, p := range m.ps {
+	count := len(m.arr)
+	buf.WriteString("*")
+	buf.WriteString(strconv.Itoa(count))
+	buf.WriteString("\r\n")
+	for _, p := range m.arr {
 		buf.WriteString("$")
 		buf.WriteString(strconv.Itoa(len(p)))
 		buf.WriteString("\r\n")
@@ -79,7 +59,7 @@ func (msg *Message)Decode(bs []byte) int {
 	}
 
 	s := 0
-	// skip leading spaces
+	// skip leading white spaces
 	for bs[s] == ' ' || bs[s] == '\t' || bs[s] == '\r' || bs[s] == '\n' {
 		s ++
 		if s == total {
@@ -88,7 +68,7 @@ func (msg *Message)Decode(bs []byte) int {
 	}
 
 	var parsed int = 0
-	msg.ps = make([]string, 0)
+	msg.arr = make([]string, 0)
 
 	if bs[s] >= '0' && bs[s] <= '9' {
 		// ssdb
@@ -146,7 +126,7 @@ func (msg *Message)parseSSDBMessage(bs []byte) int {
 			return -1
 		} else {
 			p := string(bs[s : s + size])
-			msg.ps = append(msg.ps, p)
+			msg.arr = append(msg.arr, p)
 			s = end + 1
 			// log.Printf("> data %d %d [%s]\n", start, size, p);
 		}
@@ -227,7 +207,7 @@ func (msg *Message)parseRedisMessage(bs []byte) int {
 			return -1
 		} else {
 			p := string(bs[s : s + size])
-			msg.ps = append(msg.ps, p)
+			msg.arr = append(msg.arr, p)
 		}
 
 		s = end + 1
@@ -249,6 +229,6 @@ func (msg *Message)parseSplitMessage(bs []byte) int {
 	if size > 0 && bs[size-1] == '\r' {
 		size -= 1
 	}
-	msg.ps = strings.Split(string(bs[0 : size]), " ")
+	msg.arr = strings.Split(string(bs[0 : size]), " ")
 	return idx + 1
 }

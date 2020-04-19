@@ -75,8 +75,8 @@ func (node *Node)Term() int32 {
 	return node.conf.term
 }
 
-func (node *Node)VoteFor() string {
-	return node.conf.voteFor
+func (node *Node)Vote() string {
+	return node.conf.vote
 }
 
 func (node *Node)RecvC() chan<- *Message {
@@ -378,9 +378,11 @@ func (node *Node)handlePreVoteAck(msg *Message){
 }
 
 func (node *Node)handleRequestVote(msg *Message){
-	if node.VoteFor() != "" && node.VoteFor() != msg.Src {
+	// only vote once at one term, if the candidate does not receive ack,
+	// it should start a new election
+	if node.Vote() != "" /*&& node.Vote() != msg.Src*/ {
 		// just ignore
-		log.Println("already vote for", node.VoteFor(), "ignore", msg.Src)
+		log.Println("already vote for", node.Vote(), "ignore", msg.Src)
 		return
 	}
 	
@@ -624,7 +626,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
 	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
-	ret += fmt.Sprintf("voteFor: %s\n", node.conf.voteFor)
+	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 

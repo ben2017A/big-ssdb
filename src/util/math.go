@@ -15,7 +15,7 @@ func Atoi32(s string) int32{
 	return int32(n)
 }
 
-func Itoa32(u int32) string{
+func I32toa(u int32) string{
 	return fmt.Sprintf("%d", u)
 }
 
