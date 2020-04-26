@@ -24,7 +24,11 @@ type Transport struct {
 
 func NewTransport(ip string, port int) *Transport {
 	addr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ip, port))
-	conn, _ := net.ListenTCP("tcp", addr)
+	conn, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
 
 	tp := new(Transport)
 	tp.C = make(chan *Message)

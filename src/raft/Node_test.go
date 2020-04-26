@@ -56,7 +56,7 @@ func testOrphanNode() {
 	// 启动孤儿节点
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{}))
+		n2 = NewNode(NewConfig("n2", []string{}, "./tmp/n2"))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -73,7 +73,7 @@ func testOrphanNode() {
 	if len(n2.conf.peers) != 0 {
 		log.Fatal("error")
 	}
-	if n2.commitIndex != 0 {
+	if n2.CommitIndex() != 0 {
 		log.Fatal("error")
 	}
 }
@@ -82,7 +82,7 @@ func testOrphanNode() {
 func testOneNode() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{"n1"}))
+		n1 = NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"))
 		nodes[n1.Id()] = n1
 		n1.Start()
 	}
@@ -93,7 +93,7 @@ func testOneNode() {
 	}
 
 	sleep(0.01) // wait commit
-	if n1.commitIndex != 1 {
+	if n1.CommitIndex() != 1 {
 		log.Fatal("error")
 	}
 }
@@ -103,8 +103,8 @@ func testTwoNodes() {
 	mutex.Lock()
 	{
 		members := []string{"n1", "n2"}
-		n1 = NewNode(NewConfig("n1", members))
-		n2 = NewNode(NewConfig("n2", members))
+		n1 = NewNode(NewConfig("n1", members, "./tmp/n1"))
+		n2 = NewNode(NewConfig("n2", members, "./tmp/n2"))
 		nodes[n1.Id()] = n1
 		nodes[n2.Id()] = n2
 		n1.Start()
@@ -121,10 +121,10 @@ func testTwoNodes() {
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-	if n1.commitIndex != 2 {
+	if n1.CommitIndex() != 2 {
 		log.Fatal("error")
 	}
-	if n1.commitIndex != n2.commitIndex {
+	if n1.CommitIndex() != n2.CommitIndex() {
 		log.Fatal("error")	
 	}
 }
@@ -139,7 +139,7 @@ func testJoin() {
 
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{"n1"}))
+		n2 = NewNode(NewConfig("n2", []string{"n1"}, "./tmp/n2"))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -152,7 +152,7 @@ func testJoin() {
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-	if n1.commitIndex != n2.commitIndex {
+	if n1.CommitIndex() != n2.CommitIndex() {
 		log.Fatal("error")	
 	}
 }
@@ -180,12 +180,12 @@ func testSnapshot() {
 
 	testJoin()
 
-	idx := n2.commitIndex
+	idx := n2.CommitIndex()
 	n1.Propose("c")
 
 	sleep(0.01) // wait replication
 
-	if n2.commitIndex != idx + 1 {
+	if n2.CommitIndex() != idx + 1 {
 		log.Fatal("error")	
 	}
 }

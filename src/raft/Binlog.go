@@ -21,14 +21,15 @@ func NewBinlog(node *Node) *Binlog {
 	st.node = node
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
-	st.fsyncReadyC = make(chan int64, 10)
+	st.fsyncReadyC = make(chan int64, 10) // TODO: channel of entries?
 	return st
 }
 
-// func OpenBinlog(node *Node, db_path string) *Binlog {
+// func OpenBinlog(dir string) *Binlog {
 // }
 
 func (st *Binlog)Close() {
+	close(st.fsyncReadyC)
 }
 
 func (st *Binlog)Fsync() {
@@ -36,7 +37,6 @@ func (st *Binlog)Fsync() {
 
 func (st *Binlog)CleanAll() {
 	st.fsyncIndex = 0
-	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
 }
 
@@ -44,6 +44,7 @@ func (st *Binlog)LastIndex() int64 {
 	return st.LastEntry().Index
 }
 
+// 最新一条持久化的日志
 func (st *Binlog)LastEntry() *Entry {
 	return st.lastEntry
 }
@@ -96,10 +97,8 @@ func (st *Binlog)WriteEntry(ent Entry) {
 	}
 }
 
-func (st *Binlog)ResetFromSnapshot(sn *Snapshot) {
+func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.CleanAll()
-	for _, ent := range sn.entries {
-		st.WriteEntry(ent)
-	}
+	st.WriteEntry(*sn.lastEntry)
 	st.Fsync()
 }

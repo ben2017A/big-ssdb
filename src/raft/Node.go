@@ -39,7 +39,6 @@ type Node struct{
 	role RoleType
 	votesReceived map[string]string
 	electionTimer int
-	commitIndex int64
 
 	conf *Config
 	logs *Binlog
@@ -53,7 +52,7 @@ type Node struct{
 	mux sync.Mutex
 }
 
-func NewNode(conf *Config) *Node{
+func NewNode(conf *Config) *Node {
 	node := new(Node)
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1)
@@ -61,8 +60,15 @@ func NewNode(conf *Config) *Node{
 	node.stop_c = make(chan int)
 
 	node.conf = conf
-	node.logs = NewBinlog(node)
 	node.conf.node = node
+
+	node.logs = NewBinlog(node)
+	node.logs.node = node
+
+	// validate persitent state
+	if node.conf.commit > node.logs.LastIndex() {
+		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.conf.commit, node.logs.LastIndex())
+	}
 
 	return node
 }
@@ -79,6 +85,10 @@ func (node *Node)Vote() string {
 	return node.conf.vote
 }
 
+func (node *Node)CommitIndex() int64 {
+	return node.conf.commit
+}
+
 func (node *Node)RecvC() chan<- *Message {
 	return node.recv_c
 }
@@ -89,8 +99,8 @@ func (node *Node)SendC() <-chan *Message {
 
 func (node *Node)Start(){
 	last := node.logs.LastEntry()
-	log.Printf("Start %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
+	log.Printf("Start %s, peers: %s, term: %d, commit: %d, applied: %d, lastTerm: %d, lastIndex: %d",
+			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit, node.conf.applied,
 			last.Term, last.Index)
 	node.startTicker()
 	node.Tick(0)
@@ -98,13 +108,13 @@ func (node *Node)Start(){
 
 func (node *Node)Close(){
 	log.Printf("Stop %s", node.Id())
+	node.stop_c <- 0
+	<- node.stop_c
+
 	node.mux.Lock()
 	node.conf.Close()
 	node.logs.Close()
 	node.mux.Unlock()
-
-	node.stop_c <- 0
-	<- node.stop_c
 }
 
 func (node *Node)startTicker(){
@@ -238,7 +248,7 @@ func (node *Node)beatMember(m *Member){
 	m.HeartbeatTimer = 0
 	
 	prev := node.logs.LastEntry()
-	ent := NewBeatEntry(node.commitIndex)
+	ent := NewBeatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -268,7 +278,7 @@ func (node *Node)replicateMember(m *Member){
 		if ent == nil {
 			break
 		}
-		ent.Commit = node.commitIndex
+		ent.Commit = node.CommitIndex()
 		
 		prev := node.logs.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
@@ -479,8 +489,8 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if ent.Type == EntryTypeBeat {
 		node.send(NewAppendEntryAck(msg.Src, true))
 	} else {
-		if ent.Index < node.commitIndex {
-			log.Printf("entry: %d before committed: %d", ent.Index, node.commitIndex)
+		if ent.Index <= node.CommitIndex() {
+			log.Printf("entry: %d not after commit: %d", ent.Index, node.CommitIndex())
 			node.sendDuplicatedAckByMessage(msg)
 			return
 		}
@@ -503,10 +513,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.commitEntry(commitIndex)
 }
 
-func (node *Node)handleAppendEntryAck(msg *Message){
+func (node *Node)handleAppendEntryAck(msg *Message) {
 	if node.logs.LastIndex() - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
 		node.sendSnapshot(msg.Src)
-		log.Printf("Member %s fall behind too much, send snapshot", msg.Src)
+		log.Printf("Member %s sync broken, send snapshot", msg.Src)
 		return
 	}
 	if msg.PrevIndex > node.logs.LastIndex() {
@@ -521,13 +531,14 @@ func (node *Node)handleAppendEntryAck(msg *Message){
 			m.MatchIndex = msg.PrevIndex
 			m.NextIndex  = msg.PrevIndex + 1
 		}
+		return
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
-		if m.MatchIndex > node.commitIndex {
-			oldI := node.commitIndex
+		if m.MatchIndex > node.CommitIndex() {
+			oldI := node.CommitIndex()
 			node.advanceCommitIndex()
-			newI := node.commitIndex
+			newI := node.CommitIndex()
 			if oldI != newI {
 				node.prepareBeatAllMembers()
 			}
@@ -550,7 +561,7 @@ func (node *Node)advanceCommitIndex() {
 	log.Println("match[] =", matchIndex, " major matchIndex", commitIndex)
 
 	commitIndex = util.MinInt64(commitIndex, node.logs.LastIndex())
-	if commitIndex > node.commitIndex {
+	if commitIndex > node.CommitIndex() {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
@@ -560,14 +571,14 @@ func (node *Node)advanceCommitIndex() {
 }
 
 func (node *Node)commitEntry(commitIndex int64) {
-	if commitIndex <= node.commitIndex {
+	if commitIndex <= node.CommitIndex() {
 		return
 	}
-	log.Printf("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
-	node.commitIndex = commitIndex
+	log.Printf("%s commit %d => %d", node.Id(), node.CommitIndex(), commitIndex)
+	node.conf.commit = commitIndex
 
 	// synchronously apply to Config
-	for index := node.conf.applied + 1; index <= node.commitIndex; index ++ {
+	for index := node.conf.applied + 1; index <= node.CommitIndex(); index ++ {
 		ent := node.logs.GetEntry(index)
 		if ent == nil {
 			log.Fatalf("Lost entry@%d", index)
@@ -622,10 +633,10 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
+	ret += fmt.Sprintf("commit: %d\n", node.conf.commit)
 	ret += fmt.Sprintf("applied: %d\n", node.conf.applied)
 	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
 	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
-	ret += fmt.Sprintf("commitIndex: %d\n", node.commitIndex)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
@@ -679,14 +690,13 @@ func (node *Node)loadSnapshot(data string) {
 	node.role = RoleFollower
 	node.electionTimer = 0	
 	node.votesReceived = make(map[string]string)
-	node.commitIndex = sn.commitIndex
 
-	node.conf.ResetFromSnapshot(sn)
-	node.logs.ResetFromSnapshot(sn)
+	node.conf.RecoverFromSnapshot(sn)
+	node.logs.RecoverFromSnapshot(sn)
 
 	last := node.logs.LastEntry()
-	log.Printf("Reset %s, peers: %s, term: %d, applied: %d, lastTerm: %d, lastIndex: %d",
-		node.conf.id, node.conf.peers, node.conf.term, node.conf.applied,
+	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, applied: %d, lastTerm: %d, lastIndex: %d",
+		node.conf.id, node.conf.peers, node.conf.term, node.conf.commit, node.conf.applied,
 		last.Term, last.Index)
 
 	log.Printf("Done")

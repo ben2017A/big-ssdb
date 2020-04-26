@@ -9,7 +9,9 @@ import (
 )
 
 func TestSnapshot(t *testing.T){
-	n1 := NewNode(NewConfig("n1", []string{"n1"}))
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
+	n1 := NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"))
 	n1.Start()
 	util.Sleep(0.1)
 	log.Println(n1.Info())

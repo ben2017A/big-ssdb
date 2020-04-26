@@ -5,8 +5,8 @@ import (
 	"log"
 	"strings"
 	"store"
-	"util"
 	"encoding/json"
+	"util"
 )
 
 // 负责 Raft 配置的持久化(区别于 Option)
@@ -14,6 +14,7 @@ type Config struct {
 	// ## 持久化, 且必须原子性操作 ##
 	id string
 	term int32
+	commit int64 // 事实上可以不持久化
 	applied int64
 	peers []string // 包括自己
 
@@ -24,6 +25,26 @@ type Config struct {
 
 	node *Node
 	wal *store.WalFile
+}
+
+// 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
+func NewConfig(id string, peers []string, dir string) *Config {
+	fn := dir + "/config.wal"
+	if util.FileExists(fn) {
+		err := os.Remove(fn)
+		if err != nil {
+			log.Printf("Failed to remove config file: %s", fn)
+			return nil
+		}
+	}
+	
+	c := OpenConfig(dir)
+	if c == nil {
+		return nil
+	}
+	c.Init(id, peers)
+	
+	return c
 }
 
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
@@ -59,6 +80,7 @@ func (c *Config)Init(id string, peers []string) {
 }
 
 func (c *Config)Close() {
+	c.Fsync()
 	c.wal.Close()
 }
 
@@ -70,6 +92,7 @@ func (c *Config)encode() string {
 	arr := map[string]string{
 		"id": c.id,
 		"term": util.I32toa(c.term),
+		"commit": util.I64toa(c.commit),
 		"applied": util.I64toa(c.applied),
 	}
 	ps := ""
@@ -93,6 +116,7 @@ func (c *Config)decode(data string) {
 
 	c.id = arr["id"]
 	c.term = util.Atoi32(arr["term"])
+	c.commit = util.Atoi64(arr["commit"])
 	c.applied = util.Atoi64(arr["applied"])
 	if len(arr["peers"]) > 0 {
 		ps := strings.Split(arr["peers"], ",")
@@ -118,6 +142,7 @@ func (c *Config)Fsync() {
 func (c *Config)CleanAll() {
 	c.term = 0
 	c.vote = ""
+	c.commit = 0
 	c.applied = 0
 	c.joined = false
 	c.peers = make([]string, 0)
@@ -151,7 +176,6 @@ func (c *Config)addMember(nodeId string) {
 		m := NewMember(nodeId)
 		c.members[nodeId] = m
 	}
-	c.Fsync()
 }
 
 func (c *Config)delMember(nodeId string) {
@@ -160,7 +184,6 @@ func (c *Config)delMember(nodeId string) {
 	} else {
 		delete(c.members, nodeId)
 	}
-	c.Fsync()
 }
 
 /* ###################### Log Apply ####################### */
@@ -181,12 +204,16 @@ func (c *Config)ApplyEntry(ent *Entry) {
 			c.delMember(nodeId)
 		}
 	}
+
+	// TODO: 优化
+	c.Fsync()
 }
 
-func (c *Config)ResetFromSnapshot(sn *Snapshot) {
+func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
 	c.CleanAll()
-	c.term = sn.term
-	c.applied = sn.applied
+	c.term = sn.LastTerm()
+	c.commit = sn.LastIndex()
+	c.applied = sn.LastIndex()
 	c.SetPeers(sn.peers)
 	c.Fsync()
 }

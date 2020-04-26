@@ -30,10 +30,12 @@ func main(){
 	// db := store.OpenKVStore(base_dir + "/raft")
 	// node := raft.NewNode(nodeId, raft_xport.Addr(), db)
 
-	log.Println("Service server started at", port+1000)
 	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
+	if svc_xport == nil {
+		return
+	}
 	defer svc_xport.Close()
-	// svc := server.NewService(base_dir, node, svc_xport)
+	log.Println("Redis server started at", port+1000)
 
 	id_addr := make(map[string]string)
 	id_addr["8001"] = "127.0.0.1:8001"
@@ -48,6 +50,7 @@ func main(){
 	if conf.IsNew() {
 		conf.Init(nodeId, members)
 	}
+	// conf := raft.NewConfig(nodeId, members, "./tmp/" + nodeId)
 	node := raft.NewNode(conf)
 	node.Start()
 	defer node.Close()
@@ -57,6 +60,7 @@ func main(){
 		raft_xport.Connect(k, v)
 	}
 	defer raft_xport.Close()
+	log.Println("Raft server started at", port+1000)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
