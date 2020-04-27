@@ -4,8 +4,9 @@ import (
 	"os"
 	"log"
 	"strings"
-	"store"
 	"encoding/json"
+
+	"store"
 	"util"
 )
 
@@ -49,10 +50,6 @@ func NewConfig(id string, peers []string, dir string) *Config {
 
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
 func OpenConfig(dir string) *Config {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Failed to make dir %s, %s", dir, err)
-		return nil
-	}
 	fn := dir + "/config.wal"
 	wal := store.OpenWalFile(fn)
 	if wal == nil {

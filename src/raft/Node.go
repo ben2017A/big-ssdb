@@ -52,7 +52,7 @@ type Node struct{
 	mux sync.Mutex
 }
 
-func NewNode(conf *Config) *Node {
+func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1)
@@ -62,7 +62,7 @@ func NewNode(conf *Config) *Node {
 	node.conf = conf
 	node.conf.node = node
 
-	node.logs = NewBinlog(node)
+	node.logs = logs
 	node.logs.node = node
 
 	// validate persitent state
@@ -622,6 +622,10 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 	data := fmt.Sprintf("DelMember %s", nodeId)
 	return node._propose(EntryTypeConf, data)
 }
+
+// // 获取集群的 ReadIndex, 这个函数将发起集群内的网络交互, 阻塞直到收到结果.
+// func (node *Node)ReadIndex() int64 {
+// }
 
 func (node *Node)Info() string {
 	node.mux.Lock()

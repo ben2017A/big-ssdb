@@ -2,6 +2,8 @@ package raft
 
 import (
 	"log"
+
+	"store"
 )
 
 type Binlog struct {
@@ -14,25 +16,34 @@ type Binlog struct {
 	// persistent
 	fsyncIndex int64 // 本地日志持久化的进度
 	fsyncReadyC chan int64 // 当有日志在本地持久化时
+
+	wal *store.WalFile
 }
 
-func NewBinlog(node *Node) *Binlog {
+func OpenBinlog(dir string) *Binlog {
+	fn := dir + "/binlog.wal"
+	wal := store.OpenWalFile(fn)
+	if wal == nil {
+		log.Printf("Failed to open wal file: %s", fn)
+		return nil
+	}
+
 	st := new(Binlog)
-	st.node = node
+	st.wal = wal
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
 	st.fsyncReadyC = make(chan int64, 10) // TODO: channel of entries?
 	return st
 }
 
-// func OpenBinlog(dir string) *Binlog {
-// }
-
 func (st *Binlog)Close() {
+	st.Fsync()
 	close(st.fsyncReadyC)
+	st.wal.Close()
 }
 
 func (st *Binlog)Fsync() {
+	st.wal.Fsync()
 }
 
 func (st *Binlog)CleanAll() {

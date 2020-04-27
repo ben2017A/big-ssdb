@@ -25,10 +25,18 @@ func main(){
 	nodeId := fmt.Sprintf("%d", port)
 
 	// /////////////////////////////////////
+	base_dir := "./tmp/" + nodeId
+	conf_dir := base_dir + "/config.wal"
+	logs_dir := base_dir + "/config.wal"
 
-	// log.Println("Raft server started at", port)
-	// db := store.OpenKVStore(base_dir + "/raft")
-	// node := raft.NewNode(nodeId, raft_xport.Addr(), db)
+	if err := os.MkdirAll(conf_dir, 0755); err != nil {
+		log.Printf("Failed to make dir %s, %s", conf_dir, err)
+		return nil
+	}
+	if err := os.MkdirAll(logs_dir, 0755); err != nil {
+		log.Printf("Failed to make dir %s, %s", logs_dir, err)
+		return nil
+	}
 
 	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
 	if svc_xport == nil {
