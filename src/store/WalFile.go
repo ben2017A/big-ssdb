@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"os"
-	"log"
 	"path"
 	"bufio"
 
@@ -17,7 +16,7 @@ type WalFile struct{
 }
 
 // create if not exists
-func OpenWalFile(filename string) *WalFile{
+func OpenWalFile(filename string) *WalFile {
 	dir := path.Dir(filename)
 	if !util.IsDir(dir) {
 		return nil
@@ -45,16 +44,17 @@ func (wal *WalFile)Close() {
 	wal.fp.Close()
 }
 
-func (wal *WalFile)Clean() {
+func (wal *WalFile)Clean() error {
 	if err := wal.fp.Truncate(0); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if _, err := wal.fp.Seek(0, os.SEEK_SET); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := wal.Fsync(); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 func (wal *WalFile)SeekToEnd() {
@@ -74,7 +74,6 @@ func (wal *WalFile)SeekTo(n int) bool {
 			return false
 		}
 	}
-
 	return true
 }
 

@@ -17,6 +17,8 @@ var n1 *Node
 var n2 *Node
 var mutex sync.Mutex
 var nodes map[string]*Node
+var dir1 string = "./tmp/n1"
+var dir2 string = "./tmp/n2"
 
 func TestNode(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
@@ -56,7 +58,7 @@ func testOrphanNode() {
 	// 启动孤儿节点
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{}, "./tmp/n2"), OpenBinlog("./tmp/n2"))
+		n2 = NewNode(NewConfig("n2", []string{}, dir2), OpenBinlog(dir2))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -82,7 +84,7 @@ func testOrphanNode() {
 func testOneNode() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"), OpenBinlog("./tmp/n1"))
+		n1 = NewNode(NewConfig("n1", []string{"n1"}, dir1), OpenBinlog(dir1))
 		nodes[n1.Id()] = n1
 		n1.Start()
 	}
@@ -103,8 +105,8 @@ func testTwoNodes() {
 	mutex.Lock()
 	{
 		members := []string{"n1", "n2"}
-		n1 = NewNode(NewConfig("n1", members, "./tmp/n1"), OpenBinlog("./tmp/n1"))
-		n2 = NewNode(NewConfig("n2", members, "./tmp/n2"), OpenBinlog("./tmp/n2"))
+		n1 = NewNode(NewConfig("n1", members, dir1), OpenBinlog(dir1))
+		n2 = NewNode(NewConfig("n2", members, dir2), OpenBinlog(dir2))
 		nodes[n1.Id()] = n1
 		nodes[n2.Id()] = n2
 		n1.Start()
@@ -139,7 +141,7 @@ func testJoin() {
 
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{"n1"}, "./tmp/n2"), OpenBinlog("./tmp/n2"))
+		n2 = NewNode(NewConfig("n2", []string{"n1"}, dir2), OpenBinlog(dir2))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}

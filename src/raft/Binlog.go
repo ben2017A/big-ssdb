@@ -46,10 +46,6 @@ func (st *Binlog)Fsync() {
 	}
 }
 
-func (st *Binlog)Clean() {
-	st.entries = make(map[int64]*Entry)
-}
-
 func (st *Binlog)LastIndex() int64 {
 	return st.LastEntry().Index
 }
@@ -103,6 +99,13 @@ func (st *Binlog)WriteEntry(ent Entry) {
 	if need_fsync {
 		st.Fsync()
 		st.ready_c <- st.LastIndex()
+	}
+}
+
+func (st *Binlog)Clean() {
+	st.entries = make(map[int64]*Entry)
+	if err := st.wal.Clean(); err != nil {
+		log.Fatal(err)
 	}
 }
 

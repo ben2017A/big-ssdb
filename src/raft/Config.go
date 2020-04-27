@@ -66,6 +66,10 @@ func (c *Config)Open(dir string) bool {
 	return true
 }
 
+func (c *Config)IsNew() bool {
+	return len(c.peers) == 0
+}
+
 func (c *Config)Init(id string, peers []string) {
 	c.id = id
 	c.SetPeers(peers)
@@ -77,8 +81,21 @@ func (c *Config)Close() {
 	c.wal.Close()
 }
 
-func (c *Config)IsNew() bool {
-	return len(c.peers) == 0
+func (c *Config)Fsync() {
+	c.peers = make([]string, 0)
+	if c.joined {
+		c.peers = append(c.peers, c.id)
+	}
+	for id, _ := range c.members {
+		c.peers = append(c.peers, id)
+	}
+
+	// persist data
+	s := c.encode()
+	c.wal.Append(s)
+	if err := c.wal.Fsync(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (c *Config)encode() string {
@@ -114,23 +131,6 @@ func (c *Config)decode(data string) {
 	if len(arr["peers"]) > 0 {
 		ps := strings.Split(arr["peers"], ",")
 		c.SetPeers(ps)
-	}
-}
-
-func (c *Config)Fsync() {
-	c.peers = make([]string, 0)
-	if c.joined {
-		c.peers = append(c.peers, c.id)
-	}
-	for id, _ := range c.members {
-		c.peers = append(c.peers, id)
-	}
-
-	// persist data
-	s := c.encode()
-	c.wal.Append(s)
-	if err := c.wal.Fsync(); err != nil {
-		log.Fatal(err)
 	}
 }
 
@@ -201,7 +201,9 @@ func (c *Config)Clean() {
 	c.joined = false
 	c.peers = make([]string, 0)
 	c.members = make(map[string]*Member)
-	c.wal.Clean()
+	if err := c.wal.Clean(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
