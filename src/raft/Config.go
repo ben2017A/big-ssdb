@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"os"
 	"log"
 	"strings"
 	"encoding/json"
@@ -30,34 +29,32 @@ type Config struct {
 
 // 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
 func NewConfig(id string, peers []string, dir string) *Config {
-	fn := dir + "/config.wal"
-	if util.FileExists(fn) {
-		err := os.Remove(fn)
-		if err != nil {
-			log.Printf("Failed to remove config file: %s", fn)
-			return nil
-		}
-	}
-	
-	c := OpenConfig(dir)
-	if c == nil {
+	c := new(Config)
+	if !c.Open(dir) {
 		return nil
 	}
+	c.Clean()
 	c.Init(id, peers)
-	
 	return c
 }
 
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
 func OpenConfig(dir string) *Config {
+	c := new(Config)
+	if !c.Open(dir) {
+		return nil
+	}
+	return c
+}
+
+func (c *Config)Open(dir string) bool {
 	fn := dir + "/config.wal"
 	wal := store.OpenWalFile(fn)
 	if wal == nil {
 		log.Printf("Failed to open wal file: %s", fn)
-		return nil
+		return false
 	}
 
-	c := new(Config)
 	c.wal = wal
 	// don't vote for any one after a restart using previous term
 	c.vote = c.id
@@ -66,8 +63,7 @@ func OpenConfig(dir string) *Config {
 	if len(data) > 0 {
 		c.decode(data)
 	}
-
-	return c
+	return true
 }
 
 func (c *Config)Init(id string, peers []string) {
@@ -133,18 +129,9 @@ func (c *Config)Fsync() {
 	// persist data
 	s := c.encode()
 	c.wal.Append(s)
-	c.wal.Fsync()
-}
-
-func (c *Config)CleanAll() {
-	c.term = 0
-	c.vote = ""
-	c.commit = 0
-	c.applied = 0
-	c.joined = false
-	c.peers = make([]string, 0)
-	c.members = make(map[string]*Member)
-	c.Fsync()
+	if err := c.wal.Fsync(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (c *Config)SetRound(term int32, vote string) {
@@ -189,8 +176,8 @@ func (c *Config)delMember(nodeId string) {
 func (c *Config)ApplyEntry(ent *Entry) {
 	c.applied = ent.Index
 
+	log.Println("[Apply]", ent.Encode())
 	if ent.Type == EntryTypeConf {
-		log.Println("[Apply]", ent.Encode())
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
 		if cmd == "AddMember" {
@@ -206,11 +193,21 @@ func (c *Config)ApplyEntry(ent *Entry) {
 	c.Fsync()
 }
 
+func (c *Config)Clean() {
+	c.term = 0
+	c.vote = ""
+	c.commit = 0
+	c.applied = 0
+	c.joined = false
+	c.peers = make([]string, 0)
+	c.members = make(map[string]*Member)
+	c.wal.Clean()
+}
+
 func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
-	c.CleanAll()
+	c.Clean()
 	c.term = sn.LastTerm()
 	c.commit = sn.LastIndex()
 	c.applied = sn.LastIndex()
 	c.SetPeers(sn.peers)
-	c.Fsync()
 }

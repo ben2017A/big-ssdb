@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"os"
+	"log"
 	"path"
 	"bufio"
 
@@ -40,8 +41,20 @@ func OpenWalFile(filename string) *WalFile{
 	return ret
 }
 
-func (wal *WalFile)Close(){
+func (wal *WalFile)Close() {
 	wal.fp.Close()
+}
+
+func (wal *WalFile)Clean() {
+	if err := wal.fp.Truncate(0); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := wal.fp.Seek(0, os.SEEK_SET); err != nil {
+		log.Fatal(err)
+	}
+	if err := wal.Fsync(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (wal *WalFile)SeekToEnd() {

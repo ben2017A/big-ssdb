@@ -129,7 +129,7 @@ func (node *Node)startTicker(){
 				stop = true
 			case <- ticker.C:
 				node.Tick(TickerInterval)
-			case <-node.logs.fsyncReadyC:
+			case <-node.logs.ready_c:
 				node.mux.Lock()
 				if node.role == RoleLeader {
 					node.replicateAllMembers()

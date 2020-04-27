@@ -13,9 +13,7 @@ type Binlog struct {
 	lastEntry *Entry // 最新一条持久的日志
 	entries map[int64]*Entry
 
-	// persistent
-	fsyncIndex int64 // 本地日志持久化的进度
-	fsyncReadyC chan int64 // 当有日志在本地持久化时
+	ready_c chan int64 // 当有日志在本地持久化时
 
 	wal *store.WalFile
 }
@@ -32,22 +30,23 @@ func OpenBinlog(dir string) *Binlog {
 	st.wal = wal
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
-	st.fsyncReadyC = make(chan int64, 10) // TODO: channel of entries?
+	st.ready_c = make(chan int64, 10) // TODO: channel of entries?
 	return st
 }
 
 func (st *Binlog)Close() {
+	close(st.ready_c)
 	st.Fsync()
-	close(st.fsyncReadyC)
 	st.wal.Close()
 }
 
 func (st *Binlog)Fsync() {
-	st.wal.Fsync()
+	if err := st.wal.Fsync(); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func (st *Binlog)CleanAll() {
-	st.fsyncIndex = 0
+func (st *Binlog)Clean() {
 	st.entries = make(map[int64]*Entry)
 }
 
@@ -98,18 +97,17 @@ func (st *Binlog)WriteEntry(ent Entry) {
 		need_fsync = true
 
 		// TODO: save
-		log.Println("[Write]", e.Encode())
+		log.Println("[Append]", e.Encode())
 	}
 
 	if need_fsync {
 		st.Fsync()
-		st.fsyncIndex = st.LastIndex()
-		st.fsyncReadyC <- st.fsyncIndex
+		st.ready_c <- st.LastIndex()
 	}
 }
 
 func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
-	st.CleanAll()
+	st.Clean()
 	st.WriteEntry(*sn.lastEntry)
 	st.Fsync()
 }

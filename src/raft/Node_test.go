@@ -56,7 +56,7 @@ func testOrphanNode() {
 	// 启动孤儿节点
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{}, "./tmp/n2"))
+		n2 = NewNode(NewConfig("n2", []string{}, "./tmp/n2"), OpenBinlog("./tmp/n2"))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -82,7 +82,7 @@ func testOrphanNode() {
 func testOneNode() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"))
+		n1 = NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"), OpenBinlog("./tmp/n1"))
 		nodes[n1.Id()] = n1
 		n1.Start()
 	}
@@ -103,8 +103,8 @@ func testTwoNodes() {
 	mutex.Lock()
 	{
 		members := []string{"n1", "n2"}
-		n1 = NewNode(NewConfig("n1", members, "./tmp/n1"))
-		n2 = NewNode(NewConfig("n2", members, "./tmp/n2"))
+		n1 = NewNode(NewConfig("n1", members, "./tmp/n1"), OpenBinlog("./tmp/n1"))
+		n2 = NewNode(NewConfig("n2", members, "./tmp/n2"), OpenBinlog("./tmp/n2"))
 		nodes[n1.Id()] = n1
 		nodes[n2.Id()] = n2
 		n1.Start()
@@ -139,7 +139,7 @@ func testJoin() {
 
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{"n1"}, "./tmp/n2"))
+		n2 = NewNode(NewConfig("n2", []string{"n1"}, "./tmp/n2"), OpenBinlog("./tmp/n2"))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -190,6 +190,9 @@ func testSnapshot() {
 	}
 }
 
+func testRestart() {
+}
+
 //////////////////////////////////////////////////////////////////
 
 func sleep(second float32){
@@ -203,6 +206,8 @@ func clean_nodes(){
 	defer mutex.Unlock()
 
 	for id, n := range nodes {
+		n.conf.Clean()
+		n.logs.Clean()
 		n.Close()
 		delete(nodes, id)
 		// log.Printf("%s stopped", id)
