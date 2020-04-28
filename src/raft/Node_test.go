@@ -26,6 +26,14 @@ func TestNode(t *testing.T){
 
 	os.MkdirAll(dir1, 0755)
 	os.MkdirAll(dir2, 0755)
+	{
+		b := OpenBinlog(dir1)
+		b.Clean()
+		b.Close()
+		c := OpenBinlog(dir2)
+		c.Clean()
+		c.Close()
+	}
 
 	nodes = make(map[string]*Node)
 
@@ -202,6 +210,27 @@ func testSnapshot() {
 }
 
 func testRestart() {
+	mutex.Lock()
+	{
+		n1 = NewNode(NewConfig("n1", []string{"n1"}, dir1), OpenBinlog(dir1))
+		nodes[n1.Id()] = n1
+		n1.Start()
+
+		n1.Propose("set a 1")
+
+		n1.Close()
+		delete(nodes, "n1")
+
+		n1 = NewNode(OpenConfig(dir1), OpenBinlog(dir1))
+		nodes[n1.Id()] = n1
+		n1.Start()
+	}
+	mutex.Unlock()
+
+	sleep(0.01) // wait noop applied
+	if n1.CommitIndex() != 3 {
+		log.Fatal("error")	
+	}
 }
 
 //////////////////////////////////////////////////////////////////

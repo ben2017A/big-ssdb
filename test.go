@@ -30,16 +30,15 @@ func main(){
 	logs_dir := base_dir + "/config.wal"
 
 	if err := os.MkdirAll(conf_dir, 0755); err != nil {
-		log.Printf("Failed to make dir %s, %s", conf_dir, err)
-		return nil
+		log.Fatalf("Failed to make dir %s, %s", conf_dir, err)
 	}
 	if err := os.MkdirAll(logs_dir, 0755); err != nil {
-		log.Printf("Failed to make dir %s, %s", logs_dir, err)
-		return nil
+		log.Fatalf("Failed to make dir %s, %s", logs_dir, err)
 	}
 
 	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
 	if svc_xport == nil {
+		log.Fatalf("Failed to start redis port")
 		return
 	}
 	defer svc_xport.Close()

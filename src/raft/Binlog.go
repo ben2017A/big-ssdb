@@ -101,11 +101,11 @@ func (st *Binlog)WriteEntry(ent Entry) {
 		if e == nil {
 			break;
 		}
-		st.lastEntry = e
-		need_fsync = true
 
 		log.Println("[Append]", e.Encode())
 		st.wal.Append(e.Encode())
+		st.lastEntry = e
+		need_fsync = true
 	}
 
 	if need_fsync {

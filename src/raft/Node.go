@@ -107,7 +107,6 @@ func (node *Node)Start(){
 }
 
 func (node *Node)Close(){
-	log.Printf("Stop %s", node.Id())
 	node.stop_c <- 0
 	<- node.stop_c
 
@@ -115,6 +114,7 @@ func (node *Node)Close(){
 	node.conf.Close()
 	node.logs.Close()
 	node.mux.Unlock()
+	log.Printf("Stop %s", node.Id())
 }
 
 func (node *Node)startTicker(){
