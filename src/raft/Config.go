@@ -78,7 +78,6 @@ func (c *Config)Init(id string, peers []string) {
 }
 
 func (c *Config)Close() {
-	c.Fsync()
 	c.wal.Close()
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 	"sync"
+	"os"
 )
 
 /*
@@ -23,12 +24,16 @@ var dir2 string = "./tmp/n2"
 func TestNode(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
+	os.MkdirAll(dir1, 0755)
+	os.MkdirAll(dir2, 0755)
+
 	nodes = make(map[string]*Node)
 
 	go networking()
 
 	fmt.Printf("\n=========================================================\n")
 	testOrphanNode()
+	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
 	testOneNode()
@@ -42,11 +47,15 @@ func TestNode(t *testing.T){
 	testTwoNodes()
 	fmt.Printf("\n")
 	testQuit()
-	// clean_nodes()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testSnapshot()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testSnapshot()
+	clean_nodes()
+
+	fmt.Printf("\n=========================================================\n")
+	testRestart()
+	clean_nodes()
 
 	log.Println("end")
 }
@@ -162,7 +171,7 @@ func testJoin() {
 // 退出集群
 func testQuit() {
 	n1.ProposeDelMember("n2")
-	sleep(0.01)
+	sleep(0.02)
 	if n1.conf.members["n2"] != nil {
 		log.Fatal("error")
 	}

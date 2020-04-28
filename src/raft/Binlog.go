@@ -31,12 +31,24 @@ func OpenBinlog(dir string) *Binlog {
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
 	st.ready_c = make(chan int64, 10) // TODO: channel of entries?
+
+	// TODO: 优化点
+	st.wal.SeekTo(0)
+	for st.wal.Next() {
+		r := wal.Item()
+		e := DecodeEntry(r)
+		if e == nil {
+			log.Fatalf("Failed to decode entry: %s", r)
+		}
+		st.entries[e.Index] = e
+		st.lastEntry = e
+	}
+
 	return st
 }
 
 func (st *Binlog)Close() {
 	close(st.ready_c)
-	st.Fsync()
 	st.wal.Close()
 }
 

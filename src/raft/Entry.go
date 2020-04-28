@@ -24,7 +24,7 @@ type Entry struct{
 	Data string
 }
 
-func DecodeEntry(buf string) *Entry{
+func DecodeEntry(buf string) *Entry {
 	m := new(Entry);
 	if m.Decode(buf) {
 		return m
@@ -33,11 +33,11 @@ func DecodeEntry(buf string) *Entry{
 	}
 }
 
-func (e *Entry)Encode() string{
+func (e *Entry)Encode() string{ 
 	return fmt.Sprintf("%d %d %d %s %s", e.Term, e.Index, e.Commit, e.Type, e.Data)
 }
 
-func (e *Entry)Decode(buf string) bool{
+func (e *Entry)Decode(buf string) bool {
 	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 5)
 	if len(ps) != 5 {
@@ -52,7 +52,7 @@ func (e *Entry)Decode(buf string) bool{
 	return true
 }
 
-func NewBeatEntry(commitIndex int64) *Entry{
+func NewBeatEntry(commitIndex int64) *Entry {
 	ent := new(Entry)
 	ent.Type = EntryTypeBeat
 	ent.Term = 0
