@@ -59,6 +59,7 @@ func (c *Config)Open(dir string) bool {
 	// don't vote for any one after a restart using previous term
 	c.vote = c.id
 
+	// TODO: 优化点
 	data := c.wal.ReadLast()
 	if len(data) > 0 {
 		c.decode(data)
@@ -92,6 +93,7 @@ func (c *Config)Fsync() {
 
 	// persist data
 	s := c.encode()
+	// TODO: 优化点
 	c.wal.Append(s)
 	if err := c.wal.Fsync(); err != nil {
 		log.Fatal(err)
@@ -189,7 +191,7 @@ func (c *Config)ApplyEntry(ent *Entry) {
 		}
 	}
 
-	// TODO: 优化
+	// TODO: 优化点, 不需要每次都 fsync
 	c.Fsync()
 }
 

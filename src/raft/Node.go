@@ -99,8 +99,8 @@ func (node *Node)SendC() <-chan *Message {
 
 func (node *Node)Start(){
 	last := node.logs.LastEntry()
-	log.Printf("Start %s, peers: %s, term: %d, commit: %d, applied: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit, node.conf.applied,
+	log.Printf("Start %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
+			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
 			last.Term, last.Index)
 	node.startTicker()
 	node.Tick(0)
@@ -638,7 +638,6 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
 	ret += fmt.Sprintf("commit: %d\n", node.conf.commit)
-	ret += fmt.Sprintf("applied: %d\n", node.conf.applied)
 	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
 	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
@@ -699,8 +698,8 @@ func (node *Node)loadSnapshot(data string) {
 	node.logs.RecoverFromSnapshot(sn)
 
 	last := node.logs.LastEntry()
-	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, applied: %d, lastTerm: %d, lastIndex: %d",
-		node.conf.id, node.conf.peers, node.conf.term, node.conf.commit, node.conf.applied,
+	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
+		node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
 		last.Term, last.Index)
 
 	log.Printf("Done")

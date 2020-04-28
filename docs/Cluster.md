@@ -2,7 +2,7 @@
 
 ## 副本/Replica
 
-Replica 管理着一个 Raft Node, 以同组的其它 Raft Node 交换共识.
+Replica 管理着一个 Raft Node, 与同组的其它 Raft Node 交换共识.
 
 状态:
 
@@ -18,9 +18,12 @@ Replica 管理着一个 Raft Node, 以同组的其它 Raft Node 交换共识.
 响应码:
 
 * OK: 正常
-* Redirect: 客户端请求的副本不在此处, 应该重新路由
-* Error: 处理请求过程出现错误
-* Unavailable: 组实例不可用(状态不是 Active)
+* Failed: 处理请求过程出现错误, 保证请求不会在未来成功
+* Pending: 请求在处理中, 其结果是未知的, 可能在未来成功, 也可能在未来失败
+* Redirect: 服务正常, 客户端请求的副本不在此处, 应该重新路由
+* Unavailable: 服务不可用, 客户端一般会将不可用的节点冷藏一段时间
+
+前 3 个响应码反映了处理结果是三态的, 不同于常见的二态结果(成功或者失败), 这三态是: 成功, 失败, 未知.
 
 ### 管理接口
 
