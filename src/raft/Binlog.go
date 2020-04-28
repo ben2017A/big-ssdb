@@ -92,8 +92,8 @@ func (st *Binlog)WriteEntry(ent Entry) {
 		st.lastEntry = e
 		need_fsync = true
 
-		// TODO: save
 		log.Println("[Append]", e.Encode())
+		st.wal.Append(e.Encode())
 	}
 
 	if need_fsync {

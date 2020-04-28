@@ -42,11 +42,11 @@ func TestNode(t *testing.T){
 	testTwoNodes()
 	fmt.Printf("\n")
 	testQuit()
-	clean_nodes()
+	// clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
-	testSnapshot()
-	clean_nodes()
+	// fmt.Printf("\n=========================================================\n")
+	// testSnapshot()
+	// clean_nodes()
 
 	log.Println("end")
 }
