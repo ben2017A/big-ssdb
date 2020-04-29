@@ -26,14 +26,9 @@ func main(){
 
 	// /////////////////////////////////////
 	base_dir := "./tmp/" + nodeId
-	conf_dir := base_dir + "/config.wal"
-	logs_dir := base_dir + "/config.wal"
 
-	if err := os.MkdirAll(conf_dir, 0755); err != nil {
-		log.Fatalf("Failed to make dir %s, %s", conf_dir, err)
-	}
-	if err := os.MkdirAll(logs_dir, 0755); err != nil {
-		log.Fatalf("Failed to make dir %s, %s", logs_dir, err)
+	if err := os.MkdirAll(base_dir, 0755); err != nil {
+		log.Fatalf("Failed to make dir %s, %s", base_dir, err)
 	}
 
 	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
@@ -53,12 +48,12 @@ func main(){
 		members = append(members, k)
 	}
 
-	conf := raft.OpenConfig("./tmp/" + nodeId)
+	conf := raft.OpenConfig(base_dir)
 	if conf.IsNew() {
 		conf.Init(nodeId, members)
 	}
-	// conf := raft.NewConfig(nodeId, members, "./tmp/" + nodeId)
-	node := raft.NewNode(conf)
+	logs := raft.OpenBinlog(base_dir)
+	node := raft.NewNode(conf, logs)
 	node.Start()
 	defer node.Close()
 
@@ -67,7 +62,7 @@ func main(){
 		raft_xport.Connect(k, v)
 	}
 	defer raft_xport.Close()
-	log.Println("Raft server started at", port+1000)
+	log.Println("Raft server started at", port)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
