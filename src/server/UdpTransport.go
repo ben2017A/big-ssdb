@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"log"
-	"strings"
 	"sync"
 	"bytes"
 	"math"
@@ -141,7 +140,7 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool{
 
 	// buf := []byte(str)
 	// n, _ := tp.conn.WriteToUDP(buf, addr)
-	log.Printf("    send > %s\n", strings.Trim(str, "\r\n"))
+	log.Printf("    send > %s\n", util.StringEscape(str))
 	return true
 }
 
@@ -207,7 +206,7 @@ func (tp *UdpTransport)Recv() {
 			if msg == nil {
 				log.Println("decode error:", str)
 			} else {
-				log.Printf(" receive < %s\n", str)
+				log.Printf(" receive < %s\n", util.StringEscape(str))
 				tp.c <- msg
 			}
 		}

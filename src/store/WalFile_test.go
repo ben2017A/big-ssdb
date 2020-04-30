@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 	"os"
+	"log"
 	"path"
 	"util"
 )
@@ -22,6 +23,7 @@ func TestWalFile(t *testing.T){
 	wal.Append("0")
 	wal.Append("1")
 	wal.Append("2")
+	wal.Append("a\r\nb c")
 
 	var s string
 	wal.SeekTo(1)
@@ -41,5 +43,7 @@ func TestWalFile(t *testing.T){
 	if s != "2" {
 		t.Fatal("")
 	}
+
+	log.Println(wal.Read())
 }
 

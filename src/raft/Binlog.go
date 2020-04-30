@@ -2,7 +2,7 @@ package raft
 
 import (
 	"log"
-
+	"util"
 	"store"
 )
 
@@ -76,6 +76,7 @@ func (st *Binlog)AppendEntry(type_ EntryType, data string) *Entry {
 	ent.Type = type_
 	ent.Term = st.node.Term()
 	ent.Index = st.LastIndex() + 1
+	ent.Commit = st.node.CommitIndex()
 	ent.Data = data
 
 	st.WriteEntry(*ent)
@@ -102,7 +103,7 @@ func (st *Binlog)WriteEntry(ent Entry) {
 			break;
 		}
 
-		log.Println("[Append]", e.Encode())
+		log.Println("[Append]", util.StringEscape(e.Encode()))
 		st.wal.Append(e.Encode())
 		st.lastEntry = e
 		need_fsync = true

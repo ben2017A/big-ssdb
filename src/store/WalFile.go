@@ -5,7 +5,6 @@ import (
 	"os"
 	"path"
 	"bufio"
-
 	"util"
 )
 
@@ -83,10 +82,11 @@ func (wal *WalFile)Next() bool{
 
 // must call Next() before calling Item()
 func (wal *WalFile)Item() string {
-	return wal.scanner.Text()
+	bs := decode([]byte(wal.scanner.Text()))
+	return string(bs)
 }
 
-func (wal *WalFile)Read() string{
+func (wal *WalFile)Read() string {
 	wal.Next()
 	return wal.Item()
 }
@@ -104,10 +104,18 @@ func (wal *WalFile)Fsync() error {
 	return wal.fp.Sync()
 }
 
-// record.indexOf('\n') == false
-func (wal *WalFile)Append(record string) bool{
-	record += "\n"
-	buf := []byte(record)
+func (wal *WalFile)Append(record string) bool {
+	buf := encode([]byte(record))
 	n, _ := wal.fp.Write(buf)
 	return n == len(buf)
+}
+
+func encode(s []byte) []byte {
+	buf := util.BytesEscape(s)
+	buf = append(buf, '\n')
+	return buf
+}
+
+func decode(s []byte) []byte {
+	return util.BytesUnescape(s)
 }
