@@ -155,6 +155,9 @@ func (c *Config)SetPeers(peers []string) {
 }
 
 func (c *Config)addMember(nodeId string) {
+	if c.members[nodeId] != nil {
+		return
+	}
 	if nodeId == c.id {
 		c.joined = true
 	} else {

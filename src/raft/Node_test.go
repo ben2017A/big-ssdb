@@ -134,6 +134,7 @@ func testTwoNodes() {
 	n1.Tick(ElectionTimeout) // n1 start election
 	
 	sleep(0.02) // wait log replication
+
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}

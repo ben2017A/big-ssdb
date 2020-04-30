@@ -8,7 +8,6 @@ import (
 	"time"
 	"sync"
 	"encoding/json"
-
 	"util"
 )
 
@@ -48,6 +47,7 @@ type Node struct{
 	// messages to be sent to other node
 	send_c chan *Message
 	stop_c chan int
+	commit_c chan int
 	
 	mux sync.Mutex
 }
@@ -58,6 +58,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.recv_c = make(chan *Message, 1)
 	node.send_c = make(chan *Message, SendChannelSize)
 	node.stop_c = make(chan int)
+	node.commit_c = make(chan int, 10)
 
 	node.conf = conf
 	node.conf.node = node
@@ -89,6 +90,15 @@ func (node *Node)CommitIndex() int64 {
 	return node.conf.commit
 }
 
+func (node *Node)Leader() string {
+	for _, m := range node.conf.members {
+		if m.Role == RoleLeader {
+			return m.Id
+		}
+	}
+	return ""
+}
+
 func (node *Node)RecvC() chan<- *Message {
 	return node.recv_c
 }
@@ -107,8 +117,8 @@ func (node *Node)Start(){
 }
 
 func (node *Node)Close(){
-	node.stop_c <- 0
-	<- node.stop_c
+	node.stop_c <- 0 // signal to stop
+	<- node.stop_c   // wait until stopped
 
 	node.mux.Lock()
 	node.conf.Close()
@@ -133,6 +143,18 @@ func (node *Node)startTicker(){
 				node.mux.Lock()
 				if node.role == RoleLeader {
 					node.replicateAllMembers()
+				} else {
+					node.sendAppendEntryAck()
+				}
+				node.mux.Unlock()
+			case <- node.commit_c:
+				node.mux.Lock()
+				if node.role == RoleLeader {
+					for _, m := range node.conf.members {
+						if m.NextIndex > node.logs.LastIndex() {
+							node.heartbeatMember(m)
+						}
+					}
 				}
 				node.mux.Unlock()
 			case msg := <-node.recv_c:
@@ -180,16 +202,9 @@ func (node *Node)Tick(timeElapseMs int){
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// log.Println("Heartbeat timeout for node", m.Id)
-				node.beatMember(m)
+				node.heartbeatMember(m)
 			}
 		}
-	}
-}
-
-// prepare ping all members, will actually ping in Tick()
-func (node *Node)prepareBeatAllMembers(){
-	for _, m := range node.conf.members {
-		m.HeartbeatTimer = HeartbeatTimeout
 	}
 }
 
@@ -244,15 +259,14 @@ func (node *Node)resetMembers() {
 	}
 }
 
-func (node *Node)beatMember(m *Member){
+func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
-	
 	prev := node.logs.LastEntry()
 	ent := NewBeatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
-func (node *Node)replicateAllMembers(){
+func (node *Node)replicateAllMembers() {
 	// 单节点运行
 	if len(node.conf.members) == 0 {
 		node.advanceCommitIndex()
@@ -262,7 +276,7 @@ func (node *Node)replicateAllMembers(){
 	}
 }
 
-func (node *Node)replicateMember(m *Member){
+func (node *Node)replicateMember(m *Member) {
 	if m.NextIndex == 0 {
 		return
 	}
@@ -287,7 +301,6 @@ func (node *Node)replicateMember(m *Member){
 		m.HeartbeatTimer = 0
 	}
 }
-
 
 /* ############################################# */
 
@@ -440,7 +453,7 @@ func (node *Node)checkVoteResult(){
 	}
 }
 
-func (node *Node)sendDuplicatedAckByMessage(msg *Message){
+func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	var prev *Entry
 	if msg.PrevIndex < node.logs.LastIndex() {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
@@ -474,12 +487,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Println("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			node.sendDuplicatedAckByMessage(msg)
+			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 		if prev.Term != msg.PrevTerm {
 			log.Printf("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
-			node.sendDuplicatedAckByMessage(msg)
+			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 	}
@@ -491,7 +504,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	} else {
 		if ent.Index <= node.CommitIndex() {
 			log.Printf("entry: %d not after commit: %d", ent.Index, node.CommitIndex())
-			node.sendDuplicatedAckByMessage(msg)
+			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 
@@ -505,8 +518,6 @@ func (node *Node)handleAppendEntry(msg *Message){
 			}
 		}
 		node.logs.WriteEntry(*ent)
-		// TODO: delay/batch ack
-		node.send(NewAppendEntryAck(msg.Src, true))
 	}
 
 	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
@@ -536,12 +547,7 @@ func (node *Node)handleAppendEntryAck(msg *Message) {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {
-			oldI := node.CommitIndex()
 			node.advanceCommitIndex()
-			newI := node.CommitIndex()
-			if oldI != newI {
-				node.prepareBeatAllMembers()
-			}
 		}
 	}
 	node.replicateMember(m)
@@ -566,6 +572,7 @@ func (node *Node)advanceCommitIndex() {
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
 			node.commitEntry(commitIndex)
+			node.commit_c <- 1
 		}
 	}
 }
@@ -665,6 +672,13 @@ func (node *Node)broadcast(msg *Message){
 	for _, m := range node.conf.members {
 		msg.Dst = m.Id
 		node.send(msg)
+	}
+}
+
+func (node *Node)sendAppendEntryAck() {
+	leader := node.Leader()
+	if leader != "" {
+		node.send(NewAppendEntryAck(leader, true))
 	}
 }
 
