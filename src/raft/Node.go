@@ -30,26 +30,25 @@ const(
 	SendWindowSize  = 3
 	SendChannelSize = 10
 
-	MaxLogBehindToInstallSnapshot = 3
+	MaxBinlogGapToInstallSnapshot = 5
 )
 
 // Node 是轻量级的, 可以快速的创建和销毁
 type Node struct{
 	role RoleType
-	votesReceived map[string]string
+	leader string // currently discovered leader
+	votesReceived map[string]string // nodeId => vote result
 	electionTimer int
 
 	conf *Config
 	logs *Binlog
 
-	// messages to be processed by raft
+	// messages to be processed by self
 	recv_c chan *Message
-	// messages to be sent to other node
+	// messages to be sent to other nodes
 	send_c chan *Message
 	stop_c chan bool
 	commit_c chan bool
-
-	leader string
 	
 	mux sync.Mutex
 }
@@ -527,7 +526,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 }
 
 func (node *Node)handleAppendEntryAck(msg *Message) {
-	if node.logs.LastIndex() - msg.PrevIndex > MaxLogBehindToInstallSnapshot {
+	if node.logs.LastIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
 		node.sendSnapshot(msg.Src)
 		log.Printf("Member %s sync broken, send snapshot", msg.Src)
 		return
@@ -706,6 +705,7 @@ func (node *Node)loadSnapshot(data string) {
 	}
 
 	node.role = RoleFollower
+	node.leader = ""
 	node.electionTimer = 0	
 	node.votesReceived = make(map[string]string)
 
