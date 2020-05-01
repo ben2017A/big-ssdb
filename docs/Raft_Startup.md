@@ -1,5 +1,7 @@
 # Raft 集群启动
 
+集群的第一条 binlog 是 AddMember, 不是 Noop.
+
 ## 启动节点
 
 * peers=[], 以空成员列表启动节点, 节点既不能自己 leader, 也无法加入其它集群, 成为"孤儿"节点

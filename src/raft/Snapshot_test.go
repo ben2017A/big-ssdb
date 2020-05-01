@@ -11,7 +11,11 @@ import (
 func TestSnapshot(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	n1 := NewNode(NewConfig("n1", []string{"n1"}, "./tmp/n1"), OpenBinlog("./tmp/n1"))
+	conf := OpenConfig("./tmp/n1")
+	conf.Clean()
+	conf.Init("n1", []string{"n1"})
+
+	n1 := NewNode(conf, OpenBinlog("./tmp/n1"))
 	defer n1.logs.Clean()
 	defer n1.Close()
 

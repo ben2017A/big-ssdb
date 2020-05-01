@@ -27,17 +27,6 @@ type Config struct {
 	wal *store.WalFile
 }
 
-// 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
-func NewConfig(id string, peers []string, dir string) *Config {
-	c := new(Config)
-	if !c.Open(dir) {
-		return nil
-	}
-	c.Clean()
-	c.Init(id, peers)
-	return c
-}
-
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
 func OpenConfig(dir string) *Config {
 	c := new(Config)
@@ -74,7 +63,6 @@ func (c *Config)IsNew() bool {
 func (c *Config)Init(id string, peers []string) {
 	c.id = id
 	c.SetPeers(peers)
-	c.Fsync()
 }
 
 func (c *Config)Close() {
@@ -151,7 +139,9 @@ func (c *Config)SetPeers(peers []string) {
 			c.members[nodeId] = m
 		}
 	}
-	c.Fsync()
+	if c.term > 0 {
+		c.Fsync()
+	}
 }
 
 func (c *Config)addMember(nodeId string) {

@@ -9,6 +9,20 @@ import (
 	"os"
 )
 
+// 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
+func newConfig(id string, peers []string, dir string) *Config {
+	c := OpenConfig(dir)
+	c.Clean()
+	c.Init(id, peers)
+	return c
+}
+
+func newBinlog(dir string) *Binlog {
+	b := OpenBinlog(dir)
+	b.Clean()
+	return b
+}
+
 /*
 测试思路:
 等待集群各节点同步后, 观察各节点的 commitIndex 是否相同, 若相同则认为各状态机是一致的.
@@ -27,10 +41,10 @@ func TestNode(t *testing.T){
 	os.MkdirAll(dir1, 0755)
 	os.MkdirAll(dir2, 0755)
 	{
-		b := OpenBinlog(dir1)
+		b := newBinlog(dir1)
 		b.Clean()
 		b.Close()
-		c := OpenBinlog(dir2)
+		c := newBinlog(dir2)
 		c.Clean()
 		c.Close()
 	}
@@ -75,7 +89,7 @@ func testOrphanNode() {
 	// 启动孤儿节点
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{}, dir2), OpenBinlog(dir2))
+		n2 = NewNode(newConfig("n2", []string{}, dir2), newBinlog(dir2))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -101,7 +115,7 @@ func testOrphanNode() {
 func testOneNode() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{"n1"}, dir1), OpenBinlog(dir1))
+		n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
 		nodes[n1.Id()] = n1
 		n1.Start()
 	}
@@ -122,8 +136,8 @@ func testTwoNodes() {
 	mutex.Lock()
 	{
 		members := []string{"n1", "n2"}
-		n1 = NewNode(NewConfig("n1", members, dir1), OpenBinlog(dir1))
-		n2 = NewNode(NewConfig("n2", members, dir2), OpenBinlog(dir2))
+		n1 = NewNode(newConfig("n1", members, dir1), newBinlog(dir1))
+		n2 = NewNode(newConfig("n2", members, dir2), newBinlog(dir2))
 		nodes[n1.Id()] = n1
 		nodes[n2.Id()] = n2
 		n1.Start()
@@ -159,7 +173,7 @@ func testJoin() {
 
 	mutex.Lock()
 	{
-		n2 = NewNode(NewConfig("n2", []string{"n1"}, dir2), OpenBinlog(dir2))
+		n2 = NewNode(newConfig("n2", []string{"n1"}, dir2), newBinlog(dir2))
 		nodes[n2.Id()] = n2
 		n2.Start()
 	}
@@ -213,11 +227,9 @@ func testSnapshot() {
 func testRestart() {
 	mutex.Lock()
 	{
-		n1 = NewNode(NewConfig("n1", []string{"n1"}, dir1), OpenBinlog(dir1))
+		n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
 		nodes[n1.Id()] = n1
 		n1.Start()
-
-		n1.Propose("set a 1")
 
 		n1.Close()
 		delete(nodes, "n1")
@@ -228,7 +240,9 @@ func testRestart() {
 	}
 	mutex.Unlock()
 
-	sleep(0.01) // wait noop applied
+	n1.Propose("set a 1")
+
+	sleep(0.01)
 	if n1.CommitIndex() != 3 {
 		log.Fatal("error")	
 	}
@@ -247,8 +261,6 @@ func clean_nodes(){
 	defer mutex.Unlock()
 
 	for id, n := range nodes {
-		n.conf.Clean()
-		n.logs.Clean()
 		n.Close()
 		delete(nodes, id)
 		// log.Printf("%s stopped", id)

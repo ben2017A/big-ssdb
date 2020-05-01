@@ -46,8 +46,10 @@ type Node struct{
 	recv_c chan *Message
 	// messages to be sent to other node
 	send_c chan *Message
-	stop_c chan int
-	commit_c chan int
+	stop_c chan bool
+	commit_c chan bool
+
+	leader string
 	
 	mux sync.Mutex
 }
@@ -55,10 +57,10 @@ type Node struct{
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.role = RoleFollower
-	node.recv_c = make(chan *Message, 1)
+	node.recv_c = make(chan *Message, 1) // TODO:
 	node.send_c = make(chan *Message, SendChannelSize)
-	node.stop_c = make(chan int)
-	node.commit_c = make(chan int, 10)
+	node.stop_c = make(chan bool)
+	node.commit_c = make(chan bool, 10)
 
 	node.conf = conf
 	node.conf.node = node
@@ -90,15 +92,6 @@ func (node *Node)CommitIndex() int64 {
 	return node.conf.commit
 }
 
-func (node *Node)Leader() string {
-	for _, m := range node.conf.members {
-		if m.Role == RoleLeader {
-			return m.Id
-		}
-	}
-	return ""
-}
-
 func (node *Node)RecvC() chan<- *Message {
 	return node.recv_c
 }
@@ -117,7 +110,7 @@ func (node *Node)Start(){
 }
 
 func (node *Node)Close(){
-	node.stop_c <- 0 // signal to stop
+	node.stop_c <- true // signal to stop
 	<- node.stop_c   // wait until stopped
 
 	node.mux.Lock()
@@ -140,6 +133,10 @@ func (node *Node)startTicker(){
 			case <- ticker.C:
 				node.Tick(TickerInterval)
 			case <-node.logs.ready_c:
+				// clear channel, multi signals are treated as one
+				for len(node.logs.ready_c) > 0 {
+					<- node.logs.ready_c
+				}
 				node.mux.Lock()
 				if node.role == RoleLeader {
 					node.replicateAllMembers()
@@ -148,6 +145,10 @@ func (node *Node)startTicker(){
 				}
 				node.mux.Unlock()
 			case <- node.commit_c:
+				// clear channel, multi signals are treated as one
+				for len(node.commit_c) > 0 {
+					<- node.commit_c
+				}
 				node.mux.Lock()
 				if node.role == RoleLeader {
 					for _, m := range node.conf.members {
@@ -164,7 +165,7 @@ func (node *Node)startTicker(){
 			}
 		}
 
-		node.stop_c <- 1
+		node.stop_c <- true
 	}()
 }
 
@@ -469,14 +470,15 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	node.send(ack)
 }
 
-func (node *Node)setLeader(leaderId string){
-	for _, m := range node.conf.members {
-		if m.Id == leaderId {
-			m.Role = RoleLeader
-		} else {
-			m.Role = RoleFollower
-		}
+func (node *Node)setLeader(leaderId string) {
+	if node.leader == leaderId {
+		return
 	}
+	if node.leader != "" {
+		node.conf.members[node.leader].Role = RoleFollower
+	}
+	node.leader = leaderId
+	node.conf.members[node.leader].Role = RoleLeader
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
@@ -517,7 +519,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 				log.Println("duplicated entry ", ent.Term, ent.Index)
 			}
 		}
-		node.logs.WriteEntry(*ent)
+		node.logs.WriteEntry(ent)
 	}
 
 	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
@@ -572,7 +574,7 @@ func (node *Node)advanceCommitIndex() {
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
 			node.commitEntry(commitIndex)
-			node.commit_c <- 1
+			node.commit_c <- true
 		}
 	}
 }
@@ -631,7 +633,7 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 }
 
 // // 获取集群的 ReadIndex, 这个函数将发起集群内的网络交互, 阻塞直到收到结果.
-// func (node *Node)ReadIndex() int64 {
+// func (node *Node)RaftReadIndex() int64 {
 // }
 
 func (node *Node)Info() string {
@@ -676,9 +678,8 @@ func (node *Node)broadcast(msg *Message){
 }
 
 func (node *Node)sendAppendEntryAck() {
-	leader := node.Leader()
-	if leader != "" {
-		node.send(NewAppendEntryAck(leader, true))
+	if node.leader != "" {
+		node.send(NewAppendEntryAck(node.leader, true))
 	}
 }
 
