@@ -30,11 +30,32 @@ func (m *Request)Cmd() string {
 	return ""
 }
 
+func (m *Request)Key() string {
+	if len(m.arr) > 1 {
+		return m.arr[1]
+	}
+	return ""
+}
+
+func (m *Request)Val() string {
+	if len(m.arr) > 2 {
+		return m.arr[2]
+	}
+	return ""
+}
+
 func (m *Request)Args() []string {
 	if len(m.arr) > 0 {
 		return m.arr[1 : ]
 	}
 	return []string{}
+}
+
+func (m *Request)Arg(n int) string {
+	if len(m.arr) > 1 {
+		return m.arr[1 + n]
+	}
+	return ""
 }
 
 func (m *Request)Encode() string {
