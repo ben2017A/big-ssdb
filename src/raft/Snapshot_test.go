@@ -15,8 +15,10 @@ func TestSnapshot(t *testing.T){
 	conf.Clean()
 	conf.Init("n1", []string{"n1"})
 
-	n1 := NewNode(conf, OpenBinlog("./tmp/n1"))
-	defer n1.logs.Clean()
+	logs := OpenBinlog("./tmp/n1")
+	logs.Clean()
+
+	n1 := NewNode(conf, logs)
 	defer n1.Close()
 
 	n1.Start()
@@ -35,5 +37,9 @@ func TestSnapshot(t *testing.T){
 	s2.Decode(enc)
 
 	log.Println(enc)
-	log.Println(s2)
+	log.Println(s2.Encode())
+
+	if enc != s2.Encode() {
+		t.Fatal("")
+	}
 }

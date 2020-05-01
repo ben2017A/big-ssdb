@@ -209,8 +209,9 @@ func testQuit() {
 // 落后太多时, 同步 Raft 快照
 func testSnapshot() {
 	testOneNode()
-	n1.Propose("a")
-	n1.Propose("b")
+	for i := 0; i < MaxBinlogGapToInstallSnapshot; i++ {
+		n1.Propose("a")
+	}
 
 	testJoin()
 
