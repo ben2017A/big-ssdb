@@ -10,10 +10,14 @@ import (
 	// "path/filepath"
 	// "encoding/binary"
 
+	"util"
 	"raft"
 	"redis"
 	"server"
 )
+
+var node *raft.Node
+var xport *redis.Transport
 
 func main(){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
@@ -31,12 +35,12 @@ func main(){
 		log.Fatalf("Failed to make dir %s, %s", base_dir, err)
 	}
 
-	svc_xport := redis.NewTransport("127.0.0.1", port+1000)
-	if svc_xport == nil {
+	xport = redis.NewTransport("127.0.0.1", port+1000)
+	if xport == nil {
 		log.Fatalf("Failed to start redis port")
 		return
 	}
-	defer svc_xport.Close()
+	defer xport.Close()
 	log.Println("Redis server started at", port+1000)
 
 	id_addr := make(map[string]string)
@@ -53,7 +57,7 @@ func main(){
 		conf.Init(nodeId, members)
 	}
 	logs := raft.OpenBinlog(base_dir)
-	node := raft.NewNode(conf, logs)
+	node = raft.NewNode(conf, logs)
 	node.Start()
 	defer node.Close()
 
@@ -66,19 +70,31 @@ func main(){
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	
+
 	quit := false
 	for !quit {
 		select{
 		case <- c:
 			quit = true
-		case req := <-svc_xport.C:
-			t, i := node.Propose(req.Encode())
-			log.Println("Propose", t, i)
-		case msg := <-raft_xport.C():
+		case req := <- xport.C:
+			Process(req)
+		case msg := <- raft_xport.C():
 			node.RecvC() <- msg
-		case msg := <-node.SendC():
+		case msg := <- node.SendC():
 			raft_xport.Send(msg)
 		}
 	}
+}
+
+func Process(req *redis.Request) {
+	resp := new(redis.Response)
+	resp.Dst = req.Src
+
+	t, i := node.Propose(req.Encode())
+	log.Println("Propose", t, i, util.StringEscape(req.Encode()))
+	if t == -1 {
+		resp.ReplyError("Propose failed")
+	}
+
+	xport.Send(resp)
 }

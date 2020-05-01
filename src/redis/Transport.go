@@ -14,7 +14,7 @@ TODO: 请求响应模式, 一个连接如果有一个请求在处理时, 则不�
 */
 
 type Transport struct {
-	C chan *Message
+	C chan *Request
 	
 	lastClientId int
 	conn *net.TCPListener
@@ -31,7 +31,7 @@ func NewTransport(ip string, port int) *Transport {
 	}
 
 	tp := new(Transport)
-	tp.C = make(chan *Message)
+	tp.C = make(chan *Request)
 	tp.lastClientId = 0
 	tp.conn = conn
 	tp.clients = make(map[int]net.Conn)
@@ -73,8 +73,8 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 	}()
 
 	var buf bytes.Buffer
-	var msg *Message
-	msg = new(Message)
+	var msg *Request
+	msg = new(Request)
 	tmp := make([]byte, 128*1024)
 
 	for {
@@ -90,7 +90,7 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 			buf.Next(n)
 			msg.Src = clientId
 			tp.C <- msg
-			msg = new(Message)
+			msg = new(Request)
 		}
 		
 		n, err := conn.Read(tmp)
@@ -98,21 +98,23 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 			break
 		}
 		buf.Write(tmp[0:n])
-		log.Printf("    receive > %d %s\n", clientId, util.ReplaceBytes(string(tmp[0:n]), []string{"\r", "\n"}, []string{"\\r", "\\n"}))
+		log.Printf("    receive > %d %s\n", clientId, util.StringEscape(string(tmp[0:n])))
 	}
 }
 
-func (tp *Transport)Send(msg *Message) {
-	tp.mux.Lock()
-	conn := tp.clients[msg.Src]
-	tp.mux.Unlock()
+func (tp *Transport)Send(resp *Response) {
+	dst := resp.Dst
+	data := resp.Encode()
 
+	tp.mux.Lock()
+	defer tp.mux.Unlock()
+
+	conn := tp.clients[dst]
 	if conn == nil {
-		log.Println("connection not found:", msg.Src)
+		log.Println("connection not found:", dst)
 		return
 	}
 	
-	s := msg.Encode()
-	log.Printf("    send > %d %s\n", msg.Src, util.ReplaceBytes(s, []string{"\r", "\n"}, []string{"\\r", "\\n"}))
-	conn.Write([]byte(s))
+	log.Printf("    send > %d %s\n", dst, util.StringEscape(data))
+	conn.Write([]byte(data))
 }

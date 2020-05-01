@@ -13,10 +13,10 @@ func escape(s string) string {
 	return s
 }
 
-func TestMessage(t *testing.T){
+func TestRequest(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	msg := new(Message)
+	msg := new(Request)
 	var buf bytes.Buffer
 
 	buf.WriteString("  \t2\nab\n\r\nget a\r\n")

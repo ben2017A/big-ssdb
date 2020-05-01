@@ -7,36 +7,37 @@ import (
 	"strconv"
 )
 
-type Message struct {
+type Request struct {
 	Src int
+	Dst int
 	arr []string
 }
 
-func NewMessage(arr []string) *Message {
-	ret := new(Message)
+func NewRequest(arr []string) *Request {
+	ret := new(Request)
 	ret.arr = arr
 	return ret
 }
 
-func (m *Message)Array() []string {
+func (m *Request)Array() []string {
 	return m.arr
 }
 
-func (m *Message)Cmd() string {
+func (m *Request)Cmd() string {
 	if len(m.arr) > 0 {
 		return m.arr[0]
 	}
 	return ""
 }
 
-func (m *Message)Args() []string {
+func (m *Request)Args() []string {
 	if len(m.arr) > 0 {
 		return m.arr[1 : ]
 	}
 	return []string{}
 }
 
-func (m *Message)Encode() string {
+func (m *Request)Encode() string {
 	var buf bytes.Buffer
 	count := len(m.arr)
 	buf.WriteString("*")
@@ -52,7 +53,7 @@ func (m *Message)Encode() string {
 	return buf.String()
 }
 
-func (msg *Message)Decode(bs []byte) int {
+func (msg *Request)Decode(bs []byte) int {
 	total := len(bs)
 	if total == 0 {
 		return 0
@@ -72,12 +73,12 @@ func (msg *Message)Decode(bs []byte) int {
 
 	if bs[s] >= '0' && bs[s] <= '9' {
 		// ssdb
-		parsed = msg.parseSSDBMessage(bs[s:])
+		parsed = msg.parseSSDBRequest(bs[s:])
 	} else if bs[s] == '*' || bs[s] == '$' {
 		// redis
-		parsed = msg.parseRedisMessage(bs[s:])
+		parsed = msg.parseRedisRequest(bs[s:])
 	} else {
-		parsed = msg.parseSplitMessage(bs[s:])
+		parsed = msg.parseSplitRequest(bs[s:])
 	}
 
 	if parsed == -1 {
@@ -86,7 +87,7 @@ func (msg *Message)Decode(bs []byte) int {
 	return s + parsed
 }
 
-func (msg *Message)parseSSDBMessage(bs []byte) int {
+func (msg *Request)parseSSDBRequest(bs []byte) int {
 	s := 0
 	total := len(bs)
 
@@ -134,7 +135,7 @@ func (msg *Message)parseSSDBMessage(bs []byte) int {
 	return 0
 }
 
-func (msg *Message)parseRedisMessage(bs []byte) int {
+func (msg *Request)parseRedisRequest(bs []byte) int {
 	if len(bs) < 2 {
 		return 0
 	}
@@ -220,7 +221,7 @@ func (msg *Message)parseRedisMessage(bs []byte) int {
 	return 0
 }
 
-func (msg *Message)parseSplitMessage(bs []byte) int {
+func (msg *Request)parseSplitRequest(bs []byte) int {
 	idx := bytes.IndexByte(bs, '\n')
 	if idx == -1 {
 		return 0

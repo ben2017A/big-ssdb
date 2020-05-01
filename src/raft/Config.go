@@ -30,6 +30,8 @@ type Config struct {
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
 func OpenConfig(dir string) *Config {
 	c := new(Config)
+	c.peers = make([]string, 0)
+	c.members = make(map[string]*Member)
 	if !c.Open(dir) {
 		return nil
 	}
@@ -70,14 +72,6 @@ func (c *Config)Close() {
 }
 
 func (c *Config)Fsync() {
-	c.peers = make([]string, 0)
-	if c.joined {
-		c.peers = append(c.peers, c.id)
-	}
-	for id, _ := range c.members {
-		c.peers = append(c.peers, id)
-	}
-
 	// persist data
 	s := c.encode()
 	// TODO: 优化点
@@ -132,15 +126,7 @@ func (c *Config)SetRound(term int32, vote string) {
 func (c *Config)SetPeers(peers []string) {
 	c.members = make(map[string]*Member)
 	for _, nodeId := range peers {
-		if nodeId == c.id {
-			c.joined = true
-		} else {
-			m := NewMember(nodeId)
-			c.members[nodeId] = m
-		}
-	}
-	if c.term > 0 {
-		c.Fsync()
+		c.addMember(nodeId)
 	}
 }
 
@@ -154,6 +140,7 @@ func (c *Config)addMember(nodeId string) {
 		m := NewMember(nodeId)
 		c.members[nodeId] = m
 	}
+	c.updatePeers()
 }
 
 func (c *Config)delMember(nodeId string) {
@@ -161,6 +148,17 @@ func (c *Config)delMember(nodeId string) {
 		c.joined = false
 	} else {
 		delete(c.members, nodeId)
+	}
+	c.updatePeers()
+}
+
+func (c *Config)updatePeers() {
+	c.peers = make([]string, 0)
+	if c.joined {
+		c.peers = append(c.peers, c.id)
+	}
+	for id, _ := range c.members {
+		c.peers = append(c.peers, id)
 	}
 }
 
@@ -206,4 +204,5 @@ func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
 	c.commit = sn.LastIndex()
 	c.applied = sn.LastIndex()
 	c.SetPeers(sn.peers)
+	c.Fsync()
 }

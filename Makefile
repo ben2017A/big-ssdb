@@ -2,7 +2,7 @@ export GOPATH=$(shell pwd)/
 
 all:
 	@echo export GOPATH=$(shell pwd)/
-	go build src/node-server.go
+	# go build src/container.go
 
 test:
 	# 需要设置环境变量, 在项目根目录运行 export GOPATH=`pwd`
