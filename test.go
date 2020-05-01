@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 	"strconv"
+	"strings"
 	// "path/filepath"
 	// "encoding/binary"
 
-	"util"
 	"raft"
 	"redis"
 	"server"
@@ -90,8 +90,10 @@ func Process(req *redis.Request) {
 	resp := new(redis.Response)
 	resp.Dst = req.Src
 
+	cmd := strings.ToLower(req.Cmd()) 
+
 	t, i := node.Propose(req.Encode())
-	log.Println("Propose", t, i, util.StringEscape(req.Encode()))
+	log.Println("Propose", t, i, cmd)
 	if t == -1 {
 		resp.ReplyError("Propose failed")
 	}
