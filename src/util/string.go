@@ -3,6 +3,7 @@ package util
 import (
 	"strings"
 	"bytes"
+	// "log"
 )
 
 func ReplaceBytes(s string, src []string, dst []string) string {
@@ -16,45 +17,73 @@ func StringEscape(s string) string {
 	return string(BytesEscape([]byte(s)))
 }
 
-func BytesEscape(s []byte) []byte {
+func StringUnescape(s string) string {
+	return string(BytesUnescape([]byte(s)))
+}
+
+func BytesEscape(bs []byte) []byte {
 	var buf bytes.Buffer
-	for _, c := range s {
+	var s int = 0
+	var e int = 0
+	var c byte
+	for e, c = range bs {
+		var d string
 		switch c {
 		case '\\':
-			buf.WriteString("\\\\")
+			d = "\\\\" 
 		case '\r':
-			buf.WriteString("\\r")
+			d = "\\r"
 		case '\n':
-			buf.WriteString("\\n")
+			d = "\\n"
 		default:
-			buf.WriteByte(c)
+			continue
 		}
+		buf.Write(bs[s : e])
+		buf.WriteString(d)
+		s = e + 1
+	}
+	if s == 0 && e == len(bs) - 1 {
+		return bs // no copy
+	}
+	if s <= e {
+		buf.Write(bs[s : e + 1])
 	}
 	return buf.Bytes()
 }
 
-func BytesUnescape(s []byte) []byte {
+func BytesUnescape(bs []byte) []byte {
 	var buf bytes.Buffer
+	var s int = 0
+	var e int = 0
 	var p byte = 0
-	for _, c := range s {
+	var c byte = 0
+	for e, c = range bs {
+		// log.Printf("%c", c)
 		if p == '\\' {
+			var d byte
 			switch c {
 			case '\\':
-				buf.WriteByte('\\')
+				d = '\\'
 			case 'r':
-				buf.WriteByte('\r')
+				d = '\r'
 			case 'n':
-				buf.WriteByte('\n')
+				d = '\n'
 			default:
-				buf.WriteByte(p)
-				buf.WriteByte(c)
+				p = c
+				continue
 			}
-		} else {
-			if c != '\\' {
-				buf.WriteByte(c)
-			}
+			// log.Println(s, e, len(bs))
+			buf.Write(bs[s : e - 1])
+			buf.WriteByte(d)
+			s = e + 1
 		}
 		p = c
+	}
+	if s == 0 && e == len(bs) - 1 {
+		return bs // no copy
+	}
+	if s <= e {
+		buf.Write(bs[s : e + 1])
 	}
 	return buf.Bytes()
 }
