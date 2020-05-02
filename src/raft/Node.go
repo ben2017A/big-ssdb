@@ -31,6 +31,7 @@ const(
 	SendChannelSize = 10
 
 	MaxBinlogGapToInstallSnapshot = 5
+	MaxPendingLogs = MaxBinlogGapToInstallSnapshot
 )
 
 // Node 是轻量级的, 可以快速的创建和销毁
@@ -48,6 +49,7 @@ type Node struct{
 	// messages to be sent to other nodes
 	send_c chan *Message
 	stop_c chan bool
+	stop_wait_c chan bool
 	commit_c chan bool
 	
 	mux sync.Mutex
@@ -59,7 +61,8 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.recv_c = make(chan *Message, 1) // TODO:
 	node.send_c = make(chan *Message, SendChannelSize)
 	node.stop_c = make(chan bool)
-	node.commit_c = make(chan bool, 10)
+	node.stop_wait_c = make(chan bool)
+	node.commit_c = make(chan bool, 3)
 
 	node.conf = conf
 	node.conf.node = node
@@ -70,6 +73,10 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	// validate persitent state
 	if node.conf.commit > node.logs.LastIndex() {
 		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.conf.commit, node.logs.LastIndex())
+	}
+	if node.conf.commit < node.logs.LastIndex() - MaxPendingLogs {
+		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
+			node.conf.commit, node.logs.LastIndex())
 	}
 
 	return node
@@ -104,26 +111,29 @@ func (node *Node)Start(){
 	log.Printf("Start %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
 			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
 			last.Term, last.Index)
-	node.startTicker()
+	node.startWorders()
 	node.Tick(0)
 }
 
 func (node *Node)Close(){
-	node.stop_c <- true // signal to stop
-	<- node.stop_c   // wait until stopped
+	log.Printf("Stopping %s...", node.Id())
+	for i := 0; i < 4; i++ {
+		// may or may not wake up all readers, so send n signals
+		node.stop_c <- true // signal to stop
+		<- node.stop_wait_c
+	}
 
 	node.mux.Lock()
 	node.conf.Close()
 	node.logs.Close()
 	node.mux.Unlock()
-	log.Printf("Stop %s", node.Id())
+	log.Printf("Stopped %s", node.Id())
 }
 
-func (node *Node)startTicker(){
+func (node *Node)startWorders(){
 	go func() {
 		ticker := time.NewTicker(TickerInterval * time.Millisecond)
 		defer ticker.Stop()
-
 		stop := false
 		for !stop {
 			select{
@@ -131,40 +141,73 @@ func (node *Node)startTicker(){
 				stop = true
 			case <- ticker.C:
 				node.Tick(TickerInterval)
+			}
+		}
+		node.stop_wait_c <- true
+	}()
+
+	go func() {
+		stop := false
+		for !stop {
+			select{
+			case <- node.stop_c:
+				stop = true
 			case <-node.logs.ready_c:
 				// clear channel, multi signals are treated as one
 				for len(node.logs.ready_c) > 0 {
 					<- node.logs.ready_c
 				}
-				node.mux.Lock()
+				// 单节点运行
+				if len(node.conf.members) == 0 {
+					node.advanceCommitIndex()
+					break
+				}
 				if node.role == RoleLeader {
+					node.mux.Lock()
 					node.replicateAllMembers()
+					node.mux.Unlock()
 				} else {
 					node.sendAppendEntryAck()
 				}
-				node.mux.Unlock()
+			}
+		}
+		node.stop_wait_c <- true
+	}()
+
+	go func() {
+		stop := false
+		for !stop {
+			select{
+			case <- node.stop_c:
+				stop = true
 			case <- node.commit_c:
 				// clear channel, multi signals are treated as one
 				for len(node.commit_c) > 0 {
 					<- node.commit_c
 				}
-				node.mux.Lock()
 				if node.role == RoleLeader {
-					for _, m := range node.conf.members {
-						if m.NextIndex > node.logs.LastIndex() {
-							node.heartbeatMember(m)
-						}
-					}
+					node.mux.Lock()
+					node.heartbeatAllMembers()
+					node.mux.Unlock()
 				}
-				node.mux.Unlock()
+			}
+		}
+		node.stop_wait_c <- true
+	}()
+
+	go func() {
+		stop := false
+		for !stop {
+			select{
+			case <- node.stop_c:
+				stop = true
 			case msg := <-node.recv_c:
 				node.mux.Lock()
 				node.handleRaftMessage(msg)
 				node.mux.Unlock()
 			}
 		}
-
-		node.stop_c <- true
+		node.stop_wait_c <- true
 	}()
 }
 
@@ -259,6 +302,14 @@ func (node *Node)resetMembers() {
 	}
 }
 
+func (node *Node)heartbeatAllMembers() {
+	for _, m := range node.conf.members {
+		if m.NextIndex > node.logs.LastIndex() {
+			node.heartbeatMember(m)
+		}
+	}
+}
+
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
 	prev := node.logs.LastEntry()
@@ -267,10 +318,6 @@ func (node *Node)heartbeatMember(m *Member){
 }
 
 func (node *Node)replicateAllMembers() {
-	// 单节点运行
-	if len(node.conf.members) == 0 {
-		node.advanceCommitIndex()
-	}
 	for _, m := range node.conf.members {
 		node.replicateMember(m)
 	}
@@ -280,6 +327,7 @@ func (node *Node)replicateMember(m *Member) {
 	if m.NextIndex == 0 {
 		return
 	}
+	// TODO: send snapshot?
 	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > SendWindowSize {
 		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
@@ -501,7 +549,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == EntryTypeBeat {
-		node.send(NewAppendEntryAck(msg.Src, true))
+		node.sendAppendEntryAck()
 	} else {
 		if ent.Index <= node.CommitIndex() {
 			log.Printf("entry: %d not after commit: %d", ent.Index, node.CommitIndex())
@@ -527,12 +575,13 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(msg *Message) {
 	if node.logs.LastIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
-		node.sendSnapshot(msg.Src)
-		log.Printf("Member %s sync broken, send snapshot", msg.Src)
+		log.Printf("Member %s sync broken, prevIndex %d, lastIndex %d, maxGap: %d",
+			msg.Src, msg.PrevIndex, node.logs.LastIndex(), MaxBinlogGapToInstallSnapshot)
 		return
 	}
 	if msg.PrevIndex > node.logs.LastIndex() {
-		log.Printf("Member %s prevIndex %d > lastIndex %d", msg.Src, msg.PrevIndex, node.logs.LastIndex())
+		log.Printf("Member %s bad msg, prevIndex %d > lastIndex %d",
+			msg.Src, msg.PrevIndex, node.logs.LastIndex())
 		return
 	}
 
@@ -615,6 +664,12 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	if node.role != RoleLeader {
 		log.Println("error: not leader")
 		return -1, -1
+	}
+	// TODO: use pending channel
+	for node.conf.commit <= node.logs.LastIndex() - MaxPendingLogs {
+		node.mux.Unlock()
+		util.Sleep(0.001)
+		node.mux.Lock()
 	}
 	
 	ent := node.logs.AppendEntry(etype, data)

@@ -68,6 +68,15 @@ func main(){
 	defer raft_xport.Close()
 	log.Println("Raft server started at", port)
 
+	go func() {
+		for {
+			select{
+			case req := <- xport.C:
+				Process(req)
+			}	
+		}
+	}()
+
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
@@ -76,12 +85,11 @@ func main(){
 		select{
 		case <- c:
 			quit = true
-		case req := <- xport.C:
-			Process(req)
-		case msg := <- raft_xport.C():
-			node.RecvC() <- msg
 		case msg := <- node.SendC():
 			raft_xport.Send(msg)
+		case msg := <- raft_xport.C():
+			util.Sleep(0.01) // testing TODO: 
+			node.RecvC() <- msg
 		}
 	}
 }

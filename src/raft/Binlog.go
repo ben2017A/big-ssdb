@@ -30,7 +30,7 @@ func OpenBinlog(dir string) *Binlog {
 	st.wal = wal
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
-	st.ready_c = make(chan bool, 10)
+	st.ready_c = make(chan bool, 3)
 
 	// TODO: 优化点
 	st.wal.SeekTo(0)
