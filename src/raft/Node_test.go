@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+// go test -cover -run Node
+
 // 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
 func newConfig(id string, peers []string, dir string) *Config {
 	c := OpenConfig(dir)
