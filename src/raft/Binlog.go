@@ -72,8 +72,7 @@ func (st *Binlog)startWriter() {
 	go func() {
 		// log.Println("start")
 		for {
-			b := <- st.write_c
-			if b == false {
+			if b := <- st.write_c; b == false {
 				break
 			}
 			st.Fsync()

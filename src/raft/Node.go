@@ -120,9 +120,11 @@ func (node *Node)Start(){
 
 func (node *Node)Close(){
 	log.Printf("Stopping %s...", node.Id())
+	node.append_c <- false
+	node.commit_c <- false
+	node.recv_c <- nil
+	node.stop_c <- true // signal ticker to stop
 	for i := 0; i < 4; i++ {
-		// may or may not wake up all readers, so send n signals
-		node.stop_c <- true // signal to stop
 		<- node.stop_end_c
 	}
 
@@ -138,16 +140,14 @@ func (node *Node)startWorders(){
 	node.stop_end_c = make(chan bool)
 
 	go func() {
-		stop := false
-		for !stop {
-			select{
-			case <- node.stop_c:
-				stop = true
-			case msg := <-node.recv_c:
-				node.mux.Lock()
-				node.handleRaftMessage(msg)
-				node.mux.Unlock()
+		for {
+			msg := <- node.recv_c
+			if msg == nil {
+				break
 			}
+			node.mux.Lock()
+			node.handleRaftMessage(msg)
+			node.mux.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
@@ -168,50 +168,46 @@ func (node *Node)startWorders(){
 	}()
 
 	go func() {
-		stop := false
-		for !stop {
-			select{
-			case <- node.stop_c:
-				stop = true
-			case <-node.append_c:
-				// clear channel, multi signals are treated as one
-				for len(node.append_c) > 0 {
-					<- node.append_c
-				}
-				node.mux.Lock()
-				// 单节点运行
-				if len(node.conf.members) == 0 && node.role == RoleLeader {
-					node.advanceCommitIndex()
-				} else {
-					if node.role == RoleLeader {
-						node.replicateAllMembers()
-					} else {
-						node.sendAppendEntryAck()
-					}
-				}
-				node.mux.Unlock()
+		for {
+			if b := <- node.append_c; b == false {
+				break
 			}
+			// TODO: check MaxPendingLogs
+			
+			// clear channel, multi signals are treated as one
+			for len(node.append_c) > 0 {
+				<- node.append_c
+			}
+			node.mux.Lock()
+			// 单节点运行
+			if len(node.conf.members) == 0 && node.role == RoleLeader {
+				node.advanceCommitIndex()
+			} else {
+				if node.role == RoleLeader {
+					node.replicateAllMembers()
+				} else {
+					node.sendAppendEntryAck()
+				}
+			}
+			node.mux.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
 
 	go func() {
-		stop := false
-		for !stop {
-			select{
-			case <- node.stop_c:
-				stop = true
-			case <- node.commit_c:
-				// clear channel, multi signals are treated as one
-				for len(node.commit_c) > 0 {
-					<- node.commit_c
-				}
-				node.mux.Lock()
-				if node.role == RoleLeader {
-					node.heartbeatAllMembers()
-				}
-				node.mux.Unlock()
+		for {
+			if b := <- node.commit_c; b == false {
+				break
 			}
+			// clear channel, multi signals are treated as one
+			for len(node.commit_c) > 0 {
+				<- node.commit_c
+			}
+			node.mux.Lock()
+			if node.role == RoleLeader {
+				node.heartbeatAllMembers()
+			}
+			node.mux.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
