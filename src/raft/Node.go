@@ -236,6 +236,15 @@ func (node *Node)Tick(timeElapseMs int){
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
+			if node.CommitIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
+				if m.HeartbeatTimer >= HeartbeatTimeout {
+					m.HeartbeatTimer = 0
+					log.Printf("Member %s, send snapshot", m.Id)
+					node.sendSnapshot(m.Id)
+				}
+				continue
+			}
+
 			if m.ReceiveTimeout < ReceiveTimeout {
 				if m.ReplicateTimer >= ReplicateTimeout {
 					if m.MatchIndex != -1 && m.NextIndex != m.MatchIndex + 1 {
@@ -246,13 +255,7 @@ func (node *Node)Tick(timeElapseMs int){
 				}
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
-				// send snapshot?
-				if node.logs.LastIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
-					log.Printf("Member %s, send snapshot", m.Id)
-					node.sendSnapshot(m.Id)
-				} else {
-					node.heartbeatMember(m)
-				}
+				node.heartbeatMember(m)
 			}
 		}
 	}
@@ -369,12 +372,6 @@ func (node *Node)handleRaftMessage(msg *Message){
 	}
 	m.ReceiveTimeout = 0
 
-	// MUST: smaller msg.Term is rejected or ignored
-	if msg.Term < node.Term() {
-		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
-		node.send(NewGossipMsg(msg.Src))
-		return
-	}
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
 		log.Printf("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
@@ -390,7 +387,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 
 	if node.role == RoleLeader {
 		if msg.Type == MessageTypeAppendEntryAck {
-			node.handleAppendEntryAck(msg)
+			node.handleAppendEntryAck(m, msg)
 		} else if msg.Type == MessageTypePreVote {
 			node.handlePreVote(msg)
 		} else {
@@ -398,6 +395,14 @@ func (node *Node)handleRaftMessage(msg *Message){
 		}
 		return
 	}
+
+	// MUST: smaller msg.Term is rejected or ignored
+	if msg.Term < node.Term() {
+		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
+		node.send(NewGossipMsg(msg.Src))
+		return
+	}
+
 	if node.role == RoleCandidate {
 		if msg.Type == MessageTypeRequestVoteAck {
 			node.handleRequestVoteAck(msg)
@@ -583,10 +588,11 @@ func (node *Node)handleAppendEntry(msg *Message){
 	node.commitEntry(commitIndex)
 }
 
-func (node *Node)handleAppendEntryAck(msg *Message) {
-	if node.logs.LastIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
-		log.Printf("Member %s sync broken, prevIndex %d, lastIndex %d, maxGap: %d",
-			msg.Src, msg.PrevIndex, node.logs.LastIndex(), MaxBinlogGapToInstallSnapshot)
+func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
+	if node.CommitIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
+		log.Printf("Member %s sync broken, prevIndex %d, commit %d, maxGap: %d",
+			msg.Src, msg.PrevIndex, node.CommitIndex(), MaxBinlogGapToInstallSnapshot)
+		m.MatchIndex = msg.PrevIndex
 		return
 	}
 	if msg.PrevIndex > node.logs.LastIndex() {
@@ -595,7 +601,6 @@ func (node *Node)handleAppendEntryAck(msg *Message) {
 		return
 	}
 
-	m := node.conf.members[msg.Src]
 	if msg.Data == "false" {
 		if m.NextIndex != msg.PrevIndex + 1 {
 			log.Printf("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
