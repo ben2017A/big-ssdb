@@ -28,7 +28,6 @@ const(
 	ReceiveTimeout   = ReplicateTimeout * 3
 
 	SendWindowSize  = 3
-	SendChannelSize = 10
 
 	MaxBinlogGapToInstallSnapshot = 5
 	MaxPendingLogs = MaxBinlogGapToInstallSnapshot
@@ -49,7 +48,8 @@ type Node struct{
 	// messages to be sent to other nodes
 	send_c chan *Message
 	stop_c chan bool
-	stop_wait_c chan bool
+	stop_end_c chan bool
+	append_c chan bool
 	commit_c chan bool
 	
 	mux sync.Mutex
@@ -59,10 +59,9 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1) // TODO:
-	node.send_c = make(chan *Message, SendChannelSize)
-	node.stop_c = make(chan bool)
-	node.stop_wait_c = make(chan bool)
-	node.commit_c = make(chan bool, 3)
+	node.send_c = make(chan *Message, 1) // TODO:
+	node.append_c = make(chan bool, 3) // log been persisted
+	node.commit_c = make(chan bool, 3) // log been committed
 
 	node.conf = conf
 	node.conf.node = node
@@ -112,7 +111,11 @@ func (node *Node)Start(){
 			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
 			last.Term, last.Index)
 	node.startWorders()
-	node.Tick(0)
+	// 单节点运行
+	if len(node.conf.members) == 0 {
+		node.startElection()
+		node.checkVoteResult()
+	}
 }
 
 func (node *Node)Close(){
@@ -120,7 +123,7 @@ func (node *Node)Close(){
 	for i := 0; i < 4; i++ {
 		// may or may not wake up all readers, so send n signals
 		node.stop_c <- true // signal to stop
-		<- node.stop_wait_c
+		<- node.stop_end_c
 	}
 
 	node.mux.Lock()
@@ -131,6 +134,24 @@ func (node *Node)Close(){
 }
 
 func (node *Node)startWorders(){
+	node.stop_c = make(chan bool)
+	node.stop_end_c = make(chan bool)
+
+	go func() {
+		stop := false
+		for !stop {
+			select{
+			case <- node.stop_c:
+				stop = true
+			case msg := <-node.recv_c:
+				node.mux.Lock()
+				node.handleRaftMessage(msg)
+				node.mux.Unlock()
+			}
+		}
+		node.stop_end_c <- true
+	}()
+
 	go func() {
 		ticker := time.NewTicker(TickerInterval * time.Millisecond)
 		defer ticker.Stop()
@@ -143,7 +164,7 @@ func (node *Node)startWorders(){
 				node.Tick(TickerInterval)
 			}
 		}
-		node.stop_wait_c <- true
+		node.stop_end_c <- true
 	}()
 
 	go func() {
@@ -152,13 +173,13 @@ func (node *Node)startWorders(){
 			select{
 			case <- node.stop_c:
 				stop = true
-			case <-node.logs.ready_c:
+			case <-node.append_c:
 				// clear channel, multi signals are treated as one
-				for len(node.logs.ready_c) > 0 {
-					<- node.logs.ready_c
+				for len(node.append_c) > 0 {
+					<- node.append_c
 				}
 				// 单节点运行
-				if len(node.conf.members) == 0 {
+				if len(node.conf.members) == 0 && node.role == RoleLeader {
 					node.advanceCommitIndex()
 					break
 				}
@@ -171,7 +192,7 @@ func (node *Node)startWorders(){
 				}
 			}
 		}
-		node.stop_wait_c <- true
+		node.stop_end_c <- true
 	}()
 
 	go func() {
@@ -192,22 +213,7 @@ func (node *Node)startWorders(){
 				}
 			}
 		}
-		node.stop_wait_c <- true
-	}()
-
-	go func() {
-		stop := false
-		for !stop {
-			select{
-			case <- node.stop_c:
-				stop = true
-			case msg := <-node.recv_c:
-				node.mux.Lock()
-				node.handleRaftMessage(msg)
-				node.mux.Unlock()
-			}
-		}
-		node.stop_wait_c <- true
+		node.stop_end_c <- true
 	}()
 }
 
@@ -217,15 +223,9 @@ func (node *Node)Tick(timeElapseMs int){
 
 	if node.role == RoleFollower || node.role == RoleCandidate {
 		if node.conf.joined {
-			// 单节点运行
-			if len(node.conf.members) == 0 {
-				node.startElection()
-				node.checkVoteResult()
-			} else {
-				node.electionTimer += timeElapseMs
-				if node.electionTimer >= ElectionTimeout {
-					node.startPreVote()
-				}
+			node.electionTimer += timeElapseMs
+			if node.electionTimer >= ElectionTimeout {
+				node.startPreVote()
 			}
 		}
 	} else if node.role == RoleLeader {
@@ -554,6 +554,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == EntryTypeBeat {
+		// TODO: remember last ack index and time
 		node.sendAppendEntryAck()
 	} else {
 		if ent.Index <= node.CommitIndex() {

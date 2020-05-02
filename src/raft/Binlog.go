@@ -13,8 +13,6 @@ type Binlog struct {
 	lastEntry *Entry // 最新一条持久的日志
 	entries map[int64]*Entry
 
-	ready_c chan bool // 当有日志在本地持久化时
-
 	wal *store.WalFile
 }
 
@@ -30,7 +28,6 @@ func OpenBinlog(dir string) *Binlog {
 	st.wal = wal
 	st.lastEntry = new(Entry)
 	st.entries = make(map[int64]*Entry)
-	st.ready_c = make(chan bool, 3)
 
 	// TODO: 优化点
 	st.wal.SeekTo(0)
@@ -48,7 +45,6 @@ func OpenBinlog(dir string) *Binlog {
 }
 
 func (st *Binlog)Close() {
-	close(st.ready_c)
 	st.wal.Close()
 }
 
@@ -112,7 +108,7 @@ func (st *Binlog)WriteEntry(ent *Entry) {
 
 	if need_fsync {
 		st.Fsync()
-		st.ready_c <- true
+		st.node.append_c <- true
 	}
 }
 

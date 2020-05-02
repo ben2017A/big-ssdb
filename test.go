@@ -13,8 +13,8 @@ import (
 
 	"util"
 	"raft"
+	"raft/server"
 	"redis"
-	"server"
 )
 
 var node *raft.Node
@@ -74,7 +74,15 @@ func main(){
 			select{
 			case req := <- xport.C:
 				Process(req)
-			}	
+			}
+		}
+	}()
+	go func() {
+		for {
+			select{
+			case msg := <- node.SendC():
+				raft_xport.Send(msg)
+			}
 		}
 	}()
 
@@ -86,8 +94,6 @@ func main(){
 		select{
 		case <- c:
 			quit = true
-		case msg := <- node.SendC():
-			raft_xport.Send(msg)
 		case msg := <- raft_xport.C():
 			util.Sleep(0.01) // testing TODO: 
 			node.RecvC() <- msg
