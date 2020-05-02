@@ -58,10 +58,10 @@ type Node struct{
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.role = RoleFollower
-	node.recv_c = make(chan *Message, 1) // TODO:
-	node.send_c = make(chan *Message, 1) // TODO:
-	node.append_c = make(chan bool, 3) // log been persisted
-	node.commit_c = make(chan bool, 3) // log been committed
+	node.recv_c = make(chan *Message, 1/*TODO*/)
+	node.send_c = make(chan *Message, 1/*TODO*/)
+	node.append_c = make(chan bool, 1/*TODO*/) // log been persisted
+	node.commit_c = make(chan bool, 1/*TODO*/) // log been committed
 
 	node.conf = conf
 	node.conf.node = node
@@ -178,18 +178,18 @@ func (node *Node)startWorders(){
 				for len(node.append_c) > 0 {
 					<- node.append_c
 				}
+				node.mux.Lock()
 				// 单节点运行
 				if len(node.conf.members) == 0 && node.role == RoleLeader {
 					node.advanceCommitIndex()
-					break
-				}
-				if node.role == RoleLeader {
-					node.mux.Lock()
-					node.replicateAllMembers()
-					node.mux.Unlock()
 				} else {
-					node.sendAppendEntryAck()
+					if node.role == RoleLeader {
+						node.replicateAllMembers()
+					} else {
+						node.sendAppendEntryAck()
+					}
 				}
+				node.mux.Unlock()
 			}
 		}
 		node.stop_end_c <- true
@@ -206,11 +206,11 @@ func (node *Node)startWorders(){
 				for len(node.commit_c) > 0 {
 					<- node.commit_c
 				}
+				node.mux.Lock()
 				if node.role == RoleLeader {
-					node.mux.Lock()
 					node.heartbeatAllMembers()
-					node.mux.Unlock()
 				}
+				node.mux.Unlock()
 			}
 		}
 		node.stop_end_c <- true
@@ -221,12 +221,14 @@ func (node *Node)Tick(timeElapseMs int){
 	node.mux.Lock()
 	defer node.mux.Unlock()
 
+	if !node.conf.joined {
+		return
+	}
+
 	if node.role == RoleFollower || node.role == RoleCandidate {
-		if node.conf.joined {
-			node.electionTimer += timeElapseMs
-			if node.electionTimer >= ElectionTimeout {
-				node.startPreVote()
-			}
+		node.electionTimer += timeElapseMs
+		if node.electionTimer >= ElectionTimeout {
+			node.startPreVote()
 		}
 	} else if node.role == RoleLeader {
 		for _, m := range node.conf.members {
@@ -264,7 +266,7 @@ func (node *Node)startPreVote(){
 	log.Printf("Node %s start prevote at term %d", node.Id(), node.Term())
 }
 
-func (node *Node)startElection(){
+func (node *Node)startElection() {
 	node.role = RoleCandidate
 	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
@@ -274,14 +276,14 @@ func (node *Node)startElection(){
 	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
 }
 
-func (node *Node)becomeFollower(){
+func (node *Node)becomeFollower() {
 	log.Printf("Node %s became follower at term %d", node.Id(), node.Term())
 	node.role = RoleFollower
 	node.electionTimer = 0	
 	node.resetMembers()
 }
 
-func (node *Node)becomeLeader(){
+func (node *Node)becomeLeader() {
 	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
 	node.role = RoleLeader
 	node.electionTimer = 0
@@ -290,10 +292,12 @@ func (node *Node)becomeLeader(){
 	if node.Term() == 1 { 
 		// 初始化集群成员列表
 		for _, id := range node.conf.peers {
-			node.logs.AppendEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", id))
+			ent := node.logs.NewEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", id))
+			node.logs.AppendEntry(ent)
 		}
 	} else {
-		node.logs.AppendEntry(EntryTypeNoop, "")
+		ent := node.logs.NewEntry(EntryTypeNoop, "")
+		node.logs.AppendEntry(ent)
 	}
 }
 
@@ -572,7 +576,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 				log.Println("duplicated entry ", ent.Term, ent.Index)
 			}
 		}
-		node.logs.WriteEntry(ent)
+		node.logs.AppendEntry(ent)
 	}
 
 	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
@@ -665,20 +669,15 @@ func (node *Node)Propose(data string) (int32, int64) {
 
 func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	node.mux.Lock()
-	defer node.mux.Unlock()
-	
 	if node.role != RoleLeader {
+		node.mux.Unlock()
 		log.Println("error: not leader")
 		return -1, -1
 	}
-	// TODO: use pending channel
-	for node.conf.commit <= node.logs.LastIndex() - MaxPendingLogs {
-		node.mux.Unlock()
-		util.Sleep(0.001)
-		node.mux.Lock()
-	}
-	
-	ent := node.logs.AppendEntry(etype, data)
+	ent := node.logs.NewEntry(etype, data)
+	node.mux.Unlock()
+
+	node.logs.AppendEntry(ent)
 	return ent.Term, ent.Index
 }
 

@@ -2,7 +2,7 @@
 
 ```
 export GOPATH=$(shell pwd)/
-go test -cover -run Node
+go test -run Node
 go test string.go string_test.go -test.bench .*
 ```
 

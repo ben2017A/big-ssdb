@@ -42,14 +42,6 @@ func TestNode(t *testing.T){
 
 	os.MkdirAll(dir1, 0755)
 	os.MkdirAll(dir2, 0755)
-	{
-		b := newBinlog(dir1)
-		b.Clean()
-		b.Close()
-		c := newBinlog(dir2)
-		c.Clean()
-		c.Close()
-	}
 
 	nodes = make(map[string]*Node)
 
@@ -82,6 +74,7 @@ func TestNode(t *testing.T){
 	clean_nodes()
 
 	log.Println("end")
+	fmt.Println("")
 }
 
 func testOrphanNode() {
@@ -163,6 +156,7 @@ func testTwoNodes() {
 	if n1.CommitIndex() != n2.CommitIndex() {
 		log.Fatal("error")	
 	}
+	log.Println("-----")
 }
 
 // 新节点加入集群
@@ -191,6 +185,7 @@ func testJoin() {
 	// if n1.CommitIndex() != n2.CommitIndex() {
 	// 	log.Fatal("error")	
 	// }
+	log.Println("-----")
 }
 
 // 退出集群
@@ -206,13 +201,15 @@ func testQuit() {
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
+	log.Println("-----")
 }
 
 // 落后太多时, 同步 Raft 快照
 func testSnapshot() {
 	testOneNode()
 	for i := 0; i < MaxBinlogGapToInstallSnapshot; i++ {
-		n1.Propose("a")
+		// log.Println(i)
+		n1.Propose(fmt.Sprintf("%d", i))
 	}
 
 	testJoin()
@@ -225,6 +222,7 @@ func testSnapshot() {
 	if n2.CommitIndex() != idx + 1 {
 		log.Fatal("error")	
 	}
+	log.Println("-----")
 }
 
 func testRestart() {
@@ -249,6 +247,7 @@ func testRestart() {
 	if n1.CommitIndex() != 3 {
 		log.Fatal("error")	
 	}
+	log.Println("-----")
 }
 
 //////////////////////////////////////////////////////////////////
