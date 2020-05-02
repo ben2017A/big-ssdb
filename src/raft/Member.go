@@ -6,7 +6,7 @@ type Member struct{
 
 	// sliding window
 	NextIndex int64   // next_send
-	MatchIndex int64  // last_ack
+	MatchIndex int64  // last_ack, -1: never received from remote
 
 	HeartbeatTimer int
 	ReplicateTimer int
@@ -25,7 +25,7 @@ func NewMember(id string) *Member{
 func (m *Member)Reset() {
 	m.Role = RoleFollower
 	m.NextIndex = 0
-	m.MatchIndex = 0
+	m.MatchIndex = -1
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
 	m.ReceiveTimeout = 0

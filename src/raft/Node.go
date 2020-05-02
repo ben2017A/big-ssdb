@@ -236,16 +236,21 @@ func (node *Node)Tick(timeElapseMs int){
 
 			if m.ReceiveTimeout < ReceiveTimeout {
 				if m.ReplicateTimer >= ReplicateTimeout {
-					if m.MatchIndex != 0 && m.NextIndex != m.MatchIndex + 1 {
-						log.Printf("resend member: %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+					if m.MatchIndex != -1 && m.NextIndex != m.MatchIndex + 1 {
+						log.Printf("Member: %s retransmit, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 						m.NextIndex = m.MatchIndex + 1
 					}
 					node.replicateMember(m)
 				}
 			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
-				// log.Println("Heartbeat timeout for node", m.Id)
-				node.heartbeatMember(m)
+				// send snapshot?
+				if node.logs.LastIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
+					log.Printf("Member %s, send snapshot", m.Id)
+					node.sendSnapshot(m.Id)
+				} else {
+					node.heartbeatMember(m)
+				}
 			}
 		}
 	}
@@ -312,6 +317,7 @@ func (node *Node)heartbeatAllMembers() {
 
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
+	m.ReplicateTimer = 0
 	prev := node.logs.LastEntry()
 	ent := NewBeatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
@@ -327,9 +333,8 @@ func (node *Node)replicateMember(m *Member) {
 	if m.NextIndex == 0 {
 		return
 	}
-	// TODO: send snapshot?
-	if m.MatchIndex != 0 && m.NextIndex - m.MatchIndex > SendWindowSize {
-		log.Printf("stop and wait %s, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+	if m.MatchIndex != -1 && m.NextIndex - m.MatchIndex > SendWindowSize {
+		log.Printf("member %s send window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
 

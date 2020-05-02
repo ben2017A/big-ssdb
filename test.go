@@ -11,6 +11,7 @@ import (
 	// "path/filepath"
 	// "encoding/binary"
 
+	"util"
 	"raft"
 	"redis"
 	"server"
@@ -98,13 +99,19 @@ func Process(req *redis.Request) {
 	resp := new(redis.Response)
 	resp.Dst = req.Src
 
-	cmd := strings.ToLower(req.Cmd()) 
+	cmd := strings.ToLower(req.Cmd())
 
-	t, i := node.Propose(req.Encode())
-	log.Println("Propose", t, i, cmd)
-	if t == -1 {
-		resp.ReplyError("Propose failed")
+	if cmd == "command" {
+		resp.ReplyError("not implemented")
+	} else if cmd == "info" {
+		resp.ReplyBulk(node.Info())
+	} else {
+		t, i := node.Propose(req.Encode())
+		log.Println("Propose", t, i, cmd)
+		if t == -1 {
+			resp.ReplyError("Propose failed")
+		}
+		// TODO: send reply after applied, not now
 	}
-
 	xport.Send(resp)
 }
