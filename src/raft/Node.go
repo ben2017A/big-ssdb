@@ -760,7 +760,6 @@ func (node *Node)loadSnapshot(data string) {
 	sn := new(Snapshot)
 	if sn.Decode(data) == false {
 		log.Println("decode snapshot error")
-		util.Sleep(1)
 		return
 	}
 

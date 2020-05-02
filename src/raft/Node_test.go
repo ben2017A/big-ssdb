@@ -220,7 +220,7 @@ func testSnapshot() {
 	idx := n2.CommitIndex()
 	n1.Propose("c")
 
-	sleep(10.01) // wait replication
+	sleep(0.01) // wait replication
 
 	if n2.CommitIndex() != idx + 1 {
 		log.Fatal("error")	
