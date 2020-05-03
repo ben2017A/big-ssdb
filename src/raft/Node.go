@@ -35,8 +35,10 @@ const(
 
 // Node 是轻量级的, 可以快速的创建和销毁
 type Node struct{
+	sync.Mutex
+
 	role RoleType
-	leader string // currently discovered leader
+	leader string // currently discovered leader, TODO: ref *Member
 	votesReceived map[string]string // nodeId => vote result
 	electionTimer int
 
@@ -49,10 +51,6 @@ type Node struct{
 	send_c chan *Message
 	stop_c chan bool
 	stop_end_c chan bool
-	append_c chan bool
-	commit_c chan bool
-	
-	mux sync.Mutex
 }
 
 func NewNode(conf *Config, logs *Binlog) *Node {
@@ -60,8 +58,6 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1/*TODO*/)
 	node.send_c = make(chan *Message, 1/*TODO*/)
-	node.append_c = make(chan bool, 1/*TODO*/) // log been persisted
-	node.commit_c = make(chan bool, 1/*TODO*/) // log been committed
 
 	node.conf = conf
 	node.conf.node = node
@@ -70,12 +66,12 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.logs.node = node
 
 	// validate persitent state
-	if node.conf.commit > node.logs.LastIndex() {
-		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.conf.commit, node.logs.LastIndex())
+	if node.logs.commitIndex > node.logs.LastIndex() {
+		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.logs.commitIndex, node.logs.LastIndex())
 	}
-	if node.conf.commit < node.logs.LastIndex() - MaxPendingLogs {
+	if node.logs.commitIndex < node.logs.LastIndex() - MaxPendingLogs {
 		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
-			node.conf.commit, node.logs.LastIndex())
+			node.logs.commitIndex, node.logs.LastIndex())
 	}
 
 	return node
@@ -94,7 +90,7 @@ func (node *Node)Vote() string {
 }
 
 func (node *Node)CommitIndex() int64 {
-	return node.conf.commit
+	return node.logs.commitIndex
 }
 
 func (node *Node)RecvC() chan<- *Message {
@@ -108,7 +104,7 @@ func (node *Node)SendC() <-chan *Message {
 func (node *Node)Start(){
 	last := node.logs.LastEntry()
 	log.Printf("Start %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
+			node.conf.id, node.conf.peers, node.conf.term, node.logs.commitIndex,
 			last.Term, last.Index)
 	node.startWorders()
 	// 单节点运行
@@ -120,18 +116,18 @@ func (node *Node)Start(){
 
 func (node *Node)Close(){
 	log.Printf("Stopping %s...", node.Id())
-	node.append_c <- false
-	node.commit_c <- false
+	node.logs.accept_c <- false
+	node.logs.commit_c <- false
 	node.recv_c <- nil
 	node.stop_c <- true // signal ticker to stop
 	for i := 0; i < 4; i++ {
 		<- node.stop_end_c
 	}
 
-	node.mux.Lock()
+	node.Lock()
 	node.conf.Close()
 	node.logs.Close()
-	node.mux.Unlock()
+	node.Unlock()
 	log.Printf("Stopped %s", node.Id())
 }
 
@@ -145,9 +141,9 @@ func (node *Node)startWorders(){
 			if msg == nil {
 				break
 			}
-			node.mux.Lock()
+			node.Lock()
 			node.handleRaftMessage(msg)
-			node.mux.Unlock()
+			node.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
@@ -169,16 +165,16 @@ func (node *Node)startWorders(){
 
 	go func() {
 		for {
-			if b := <- node.append_c; b == false {
+			if b := <- node.logs.accept_c; b == false {
 				break
 			}
 			// TODO: check MaxPendingLogs
-			
+
 			// clear channel, multi signals are treated as one
-			for len(node.append_c) > 0 {
-				<- node.append_c
+			for len(node.logs.accept_c) > 0 {
+				<- node.logs.accept_c
 			}
-			node.mux.Lock()
+			node.Lock()
 			// 单节点运行
 			if len(node.conf.members) == 0 && node.role == RoleLeader {
 				node.advanceCommitIndex()
@@ -189,33 +185,33 @@ func (node *Node)startWorders(){
 					node.sendAppendEntryAck()
 				}
 			}
-			node.mux.Unlock()
+			node.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
 
 	go func() {
 		for {
-			if b := <- node.commit_c; b == false {
+			if b := <- node.logs.commit_c; b == false {
 				break
 			}
 			// clear channel, multi signals are treated as one
-			for len(node.commit_c) > 0 {
-				<- node.commit_c
+			for len(node.logs.commit_c) > 0 {
+				<- node.logs.commit_c
 			}
-			node.mux.Lock()
+			node.Lock()
 			if node.role == RoleLeader {
 				node.heartbeatAllMembers()
 			}
-			node.mux.Unlock()
+			node.Unlock()
 		}
 		node.stop_end_c <- true
 	}()
 }
 
 func (node *Node)Tick(timeElapseMs int){
-	node.mux.Lock()
-	defer node.mux.Unlock()
+	node.Lock()
+	defer node.Unlock()
 
 	if !node.conf.joined {
 		return
@@ -291,12 +287,10 @@ func (node *Node)becomeLeader() {
 	if node.Term() == 1 { 
 		// 初始化集群成员列表
 		for _, id := range node.conf.peers {
-			ent := node.logs.NewEntry(EntryTypeConf, fmt.Sprintf("AddMember %s", id))
-			node.logs.AppendEntry(ent)
+			node.logs.Append(node.Term(), EntryTypeConf, fmt.Sprintf("AddMember %s", id))
 		}
 	} else {
-		ent := node.logs.NewEntry(EntryTypeNoop, "")
-		node.logs.AppendEntry(ent)
+		node.logs.Append(node.Term(), EntryTypeNoop, "")
 	}
 }
 
@@ -322,7 +316,7 @@ func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
 	prev := node.logs.LastEntry()
-	ent := NewBeatEntry(node.CommitIndex())
+	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -567,17 +561,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
-
-		old := node.logs.GetEntry(ent.Index)
-		if old != nil {
-			if old.Term != ent.Term {
-				// TODO:
-				log.Println("TODO: delete conflict entry, and entries that follow")
-			} else {
-				log.Println("duplicated entry ", ent.Term, ent.Index)
-			}
-		}
-		node.logs.AppendEntry(ent)
+		node.logs.Write(ent)
 	}
 
 	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
@@ -633,7 +617,6 @@ func (node *Node)advanceCommitIndex() {
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
 			node.commitEntry(commitIndex)
-			node.commit_c <- true
 		}
 	}
 }
@@ -643,7 +626,8 @@ func (node *Node)commitEntry(commitIndex int64) {
 		return
 	}
 	log.Printf("%s commit %d => %d", node.Id(), node.CommitIndex(), commitIndex)
-	node.conf.commit = commitIndex
+	node.logs.commitIndex = commitIndex
+	node.logs.commit_c <- true
 
 	// synchronously apply to Config
 	for index := node.conf.applied + 1; index <= node.CommitIndex(); index ++ {
@@ -669,16 +653,18 @@ func (node *Node)Propose(data string) (int32, int64) {
 }
 
 func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
-	node.mux.Lock()
+	var term int32
+	node.Lock()
 	if node.role != RoleLeader {
-		node.mux.Unlock()
+		node.Unlock()
 		log.Println("error: not leader")
 		return -1, -1
 	}
-	ent := node.logs.NewEntry(etype, data)
-	node.mux.Unlock()
+	// assign term to a new entry while holding lock
+	term = node.Term()
+	node.Unlock()
 
-	node.logs.AppendEntry(ent)
+	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
 }
 
@@ -697,8 +683,8 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 // }
 
 func (node *Node)Info() string {
-	node.mux.Lock()
-	defer node.mux.Unlock()
+	node.Lock()
+	defer node.Unlock()
 
 	last := node.logs.LastEntry()
 	
@@ -706,7 +692,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
-	ret += fmt.Sprintf("commit: %d\n", node.conf.commit)
+	ret += fmt.Sprintf("commit: %d\n", node.logs.commitIndex)
 	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
 	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
@@ -774,7 +760,7 @@ func (node *Node)loadSnapshot(data string) {
 
 	last := node.logs.LastEntry()
 	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-		node.conf.id, node.conf.peers, node.conf.term, node.conf.commit,
+		node.conf.id, node.conf.peers, node.conf.term, node.logs.commitIndex,
 		last.Term, last.Index)
 
 	log.Printf("Done")

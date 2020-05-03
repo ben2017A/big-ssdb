@@ -8,18 +8,23 @@ import (
 )
 
 type Binlog struct {
+	sync.Mutex
+
 	node *Node
 	service Service
 
-	nextIndex int64
-	lastEntry *Entry // 最新一条持久的日志
-	entries map[int64]*Entry
-	write_c chan bool // write signal
 	stop_c  chan bool // stop signal
+	write_c chan bool // write signal
+	accept_c chan bool
+	commit_c chan bool
+
+	entries map[int64]*Entry
+	lastEntry *Entry // 最新一条持久的日志
+	appendIndex int64
+	// acceptIndex int64
+	commitIndex int64 // 事实上可以不持久化
 
 	wal *store.WalFile
-
-	mux sync.Mutex
 }
 
 func OpenBinlog(dir string) *Binlog {
@@ -32,19 +37,23 @@ func OpenBinlog(dir string) *Binlog {
 
 	st := new(Binlog)
 	st.wal = wal
-	st.reset()
+	st.init()
 
 	st.stop_c  = make(chan bool)
 	st.write_c = make(chan bool, 1/*TODO*/)
+	st.accept_c = make(chan bool, 1/*TODO*/) // log been persisted
+	st.commit_c = make(chan bool, 1/*TODO*/) // log been committed
 
 	st.startWriter()
 
 	return st
 }
 
-func (st *Binlog)reset() {
-	st.lastEntry = new(Entry)
+func (st *Binlog)init() {
 	st.entries = make(map[int64]*Entry)
+	st.lastEntry = new(Entry)
+	st.appendIndex = 0
+	st.commitIndex = 0
 
 	// TODO: 优化点
 	st.wal.SeekTo(0)
@@ -56,9 +65,9 @@ func (st *Binlog)reset() {
 		}
 		st.entries[e.Index] = e
 		st.lastEntry = e
+		st.commitIndex = util.MaxInt64(st.commitIndex, e.Commit)
 	}
-
-	st.nextIndex = st.lastEntry.Index + 1
+	st.appendIndex = st.lastEntry.Index
 }
 
 func (st *Binlog)Close() {
@@ -72,9 +81,14 @@ func (st *Binlog)startWriter() {
 	go func() {
 		// log.Println("start")
 		for {
-			if b := <- st.write_c; b == false {
-				break
+			run := <- st.write_c
+			for run && len(st.write_c) > 0 {
+				run = <- st.write_c
 			}
+			if !run {
+				break;
+			}
+
 			st.Fsync()
 		}
 		// log.Println("quit")
@@ -97,42 +111,68 @@ func (st *Binlog)LastEntry() *Entry {
 }
 
 func (st *Binlog)GetEntry(index int64) *Entry {
-	st.mux.Lock()
-	defer st.mux.Unlock()
+	st.Lock()
+	defer st.Unlock()
 	return st.entries[index]
 }
 
-// 需要 node.mux.Lock(), 是否不应该放在这里? 应该移到 Node 里?
-func (st *Binlog)NewEntry(type_ EntryType, data string) *Entry {
+func (st *Binlog)Append(term int32, typo EntryType, data string) *Entry {
 	ent := new(Entry)
-	ent.Type = type_
+	ent.Term = term
+	ent.Type = typo
 	ent.Data = data
+	
+	st.Lock()
+	st.appendIndex += 1
+	ent.Index = st.appendIndex
+	st.Unlock()
 
-	ent.Term = st.node.Term()
-	ent.Commit = st.node.CommitIndex()
-	ent.Index = st.nextIndex
-
-	st.nextIndex += 1
+	st.Write(ent)
 	return ent
 }
 
 // 将 ent 放入写缓冲即返回, 会处理空洞
-func (st *Binlog)AppendEntry(ent *Entry) {
-	st.mux.Lock()
-	// first entry
-	if st.lastEntry.Index == 0 {
-		st.lastEntry.Index = ent.Index - 1
-	}
-	// TODO: 优化点, 不能全部放内存
-	st.entries[ent.Index] = ent
-	st.mux.Unlock()
+func (st *Binlog)Write(ent *Entry) {
+	drop := false
 
-	st.write_c <- true
+	st.Lock()
+	{
+		// first entry
+		if st.lastEntry.Index == 0 {
+			st.lastEntry.Index = ent.Index - 1
+		}
+
+		old := st.entries[ent.Index]
+		if old != nil {
+			if old.Term > ent.Term {
+				// after assigning index to a proposing entry, but before saving it,
+				// we just received an entry with same index from new leader
+				log.Printf("drop entry %d:%d, old entry has newer term %d", ent.Term, ent.Index, old.Term)
+				drop = true
+			} else if old.Term < ent.Term {
+				// TODO: how?
+				log.Println("TODO: delete conflict entry, and entries that follow")
+			} else {
+				log.Printf("drop duplicated entry %d:%d", ent.Term, ent.Index)
+				drop = true
+			}
+		}
+
+		if !drop {
+			// TODO: 优化点, 不能全部放内存
+			st.entries[ent.Index] = ent
+		}
+	}
+	st.Unlock()
+
+	if !drop {
+		st.write_c <- true
+	}
 }
 
 func (st *Binlog)Fsync() {
-	st.mux.Lock()
-	defer st.mux.Unlock()
+	st.Lock()
+	defer st.Unlock()
 
 	// 找出连续的 entries, 持久化, 更新 lastEntry
 	last := st.lastEntry
@@ -142,6 +182,7 @@ func (st *Binlog)Fsync() {
 			break
 		}
 		last = e
+		last.Commit = util.MinInt64(last.Index, st.commitIndex)
 
 		data := last.Encode()
 		st.wal.Append(data)
@@ -154,25 +195,27 @@ func (st *Binlog)Fsync() {
 			log.Fatal(err)
 		}
 		st.lastEntry = last
-		st.node.append_c <- true
+		st.accept_c <- true
 	}
 }
 
 func (st *Binlog)Clean() {
-	st.mux.Lock()
-	defer st.mux.Unlock()
+	st.Lock()
+	defer st.Unlock()
 
 	st.stopWriter()
 	if err := st.wal.Clean(); err != nil {
 		log.Fatal(err)
 	}
 
-	st.reset()
+	st.init()
 	st.startWriter()
 }
 
 func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.Clean()
-	st.AppendEntry(sn.lastEntry)
+	st.Write(sn.lastEntry)
+	st.appendIndex = sn.LastIndex()
+	st.commitIndex = sn.LastIndex()
 	st.Fsync()
 }

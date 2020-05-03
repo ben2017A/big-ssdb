@@ -14,7 +14,6 @@ type Config struct {
 	// ## 持久化, 且必须原子性操作 ##
 	id string
 	term int32
-	commit int64 // 事实上可以不持久化
 	applied int64
 	peers []string // 包括自己
 
@@ -85,7 +84,6 @@ func (c *Config)encode() string {
 	arr := map[string]string{
 		"id": c.id,
 		"term": util.I32toa(c.term),
-		"commit": util.I64toa(c.commit),
 		"applied": util.I64toa(c.applied),
 	}
 	ps := ""
@@ -109,7 +107,6 @@ func (c *Config)decode(data string) {
 
 	c.id = arr["id"]
 	c.term = util.Atoi32(arr["term"])
-	c.commit = util.Atoi64(arr["commit"])
 	c.applied = util.Atoi64(arr["applied"])
 	if len(arr["peers"]) > 0 {
 		ps := strings.Split(arr["peers"], ",")
@@ -188,7 +185,6 @@ func (c *Config)ApplyEntry(ent *Entry) {
 func (c *Config)Clean() {
 	c.term = 0
 	c.vote = ""
-	c.commit = 0
 	c.applied = 0
 	c.joined = false
 	c.peers = make([]string, 0)
@@ -201,7 +197,6 @@ func (c *Config)Clean() {
 func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
 	c.Clean()
 	c.term = sn.LastTerm()
-	c.commit = sn.LastIndex()
 	c.applied = sn.LastIndex()
 	c.SetPeers(sn.peers)
 	c.Fsync()

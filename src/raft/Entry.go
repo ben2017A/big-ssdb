@@ -52,7 +52,7 @@ func (e *Entry)Decode(buf string) bool {
 	return true
 }
 
-func NewBeatEntry(commitIndex int64) *Entry {
+func NewHearteatEntry(commitIndex int64) *Entry {
 	ent := new(Entry)
 	ent.Type = EntryTypeBeat
 	ent.Term = 0
