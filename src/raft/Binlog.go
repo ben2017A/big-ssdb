@@ -38,9 +38,9 @@ func OpenBinlog(dir string) *Binlog {
 	st := new(Binlog)
 	st.wal = wal
 	st.init()
-
-	st.stop_c  = make(chan bool)
-	st.write_c = make(chan bool, 1/*TODO*/)
+	
+	st.stop_c   = make(chan bool)
+	st.write_c  = make(chan bool, 1/*TODO*/)
 	st.accept_c = make(chan bool, 1/*TODO*/) // log been persisted
 	st.commit_c = make(chan bool, 1/*TODO*/) // log been committed
 
@@ -197,6 +197,28 @@ func (st *Binlog)Fsync() {
 		st.lastEntry = last
 		st.accept_c <- true
 	}
+}
+
+func (st *Binlog)Commit(commitIndex int64) {
+	commitIndex = util.MinInt64(commitIndex, st.LastIndex())
+	if commitIndex <= st.commitIndex {
+		return
+	}
+
+	log.Printf("%s commit %d => %d", st.node.Id(), st.commitIndex, commitIndex)
+	st.commitIndex = commitIndex
+	st.commit_c <- true
+
+	// synchronously apply to Config
+	for index := st.node.conf.applied + 1; index <= st.commitIndex; index ++ {
+		ent := st.GetEntry(index)
+		if ent == nil {
+			log.Fatalf("Lost entry@%d", index)
+		}
+		st.node.conf.ApplyEntry(ent)
+	}
+
+	// TODO: asynchronously apply to Service
 }
 
 func (st *Binlog)Clean() {

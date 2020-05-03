@@ -61,17 +61,17 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 
 	node.conf = conf
 	node.conf.node = node
-
 	node.logs = logs
 	node.logs.node = node
+	node.logs.commitIndex = util.MaxInt64(node.logs.commitIndex, node.conf.applied)
 
 	// validate persitent state
-	if node.logs.commitIndex > node.logs.LastIndex() {
-		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.logs.commitIndex, node.logs.LastIndex())
+	if node.CommitIndex() > node.logs.LastIndex() {
+		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.CommitIndex(), node.logs.LastIndex())
 	}
-	if node.logs.commitIndex < node.logs.LastIndex() - MaxPendingLogs {
+	if node.CommitIndex() < node.logs.LastIndex() - MaxPendingLogs {
 		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
-			node.logs.commitIndex, node.logs.LastIndex())
+			node.CommitIndex(), node.logs.LastIndex())
 	}
 
 	return node
@@ -104,7 +104,7 @@ func (node *Node)SendC() <-chan *Message {
 func (node *Node)Start(){
 	last := node.logs.LastEntry()
 	log.Printf("Start %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.peers, node.conf.term, node.logs.commitIndex,
+			node.conf.id, node.conf.peers, node.conf.term, node.CommitIndex(),
 			last.Term, last.Index)
 	node.startWorders()
 	// 单节点运行
@@ -563,9 +563,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 		node.logs.Write(ent)
 	}
-
-	commitIndex := util.MinInt64(ent.Commit, node.logs.LastIndex())
-	node.commitEntry(commitIndex)
+	node.logs.Commit(ent.Commit)
 }
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
@@ -616,29 +614,9 @@ func (node *Node)advanceCommitIndex() {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
-			node.commitEntry(commitIndex)
+			node.logs.Commit(commitIndex)
 		}
 	}
-}
-
-func (node *Node)commitEntry(commitIndex int64) {
-	if commitIndex <= node.CommitIndex() {
-		return
-	}
-	log.Printf("%s commit %d => %d", node.Id(), node.CommitIndex(), commitIndex)
-	node.logs.commitIndex = commitIndex
-	node.logs.commit_c <- true
-
-	// synchronously apply to Config
-	for index := node.conf.applied + 1; index <= node.CommitIndex(); index ++ {
-		ent := node.logs.GetEntry(index)
-		if ent == nil {
-			log.Fatalf("Lost entry@%d", index)
-		}
-		node.conf.ApplyEntry(ent)
-	}
-
-	// TODO: asynchronously apply to Service
 }
 
 func (node *Node)handleInstallSnapshot(msg *Message) {
@@ -692,7 +670,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
-	ret += fmt.Sprintf("commit: %d\n", node.logs.commitIndex)
+	ret += fmt.Sprintf("commit: %d\n", node.CommitIndex())
 	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
 	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
@@ -760,7 +738,7 @@ func (node *Node)loadSnapshot(data string) {
 
 	last := node.logs.LastEntry()
 	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-		node.conf.id, node.conf.peers, node.conf.term, node.logs.commitIndex,
+		node.conf.id, node.conf.peers, node.conf.term, node.CommitIndex(),
 		last.Term, last.Index)
 
 	log.Printf("Done")
