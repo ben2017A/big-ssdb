@@ -164,15 +164,20 @@ func (node *Node)startWorders(){
 	}()
 
 	go func() {
+		defer func(){
+			node.stop_end_c <- true
+		}()
 		for {
-			if b := <- node.logs.accept_c; b == false {
-				break
-			}
 			// TODO: check MaxPendingLogs
-
+			if b := <- node.logs.accept_c; b == false {
+				return
+			}
 			// clear channel, multi signals are treated as one
 			for len(node.logs.accept_c) > 0 {
-				<- node.logs.accept_c
+				b := <- node.logs.accept_c
+				if !b {
+					return
+				}
 			}
 			node.Lock()
 			// 单节点运行
@@ -187,17 +192,22 @@ func (node *Node)startWorders(){
 			}
 			node.Unlock()
 		}
-		node.stop_end_c <- true
 	}()
 
 	go func() {
+		defer func(){
+			node.stop_end_c <- true
+		}()
 		for {
 			if b := <- node.logs.commit_c; b == false {
-				break
+				return
 			}
 			// clear channel, multi signals are treated as one
 			for len(node.logs.commit_c) > 0 {
-				<- node.logs.commit_c
+				b := <- node.logs.commit_c
+				if !b {
+					return
+				}
 			}
 			node.Lock()
 			if node.role == RoleLeader {
@@ -205,7 +215,6 @@ func (node *Node)startWorders(){
 			}
 			node.Unlock()
 		}
-		node.stop_end_c <- true
 	}()
 }
 
