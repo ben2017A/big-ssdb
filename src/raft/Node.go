@@ -63,16 +63,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.conf.node = node
 	node.logs = logs
 	node.logs.node = node
-	node.logs.commitIndex = util.MaxInt64(node.logs.commitIndex, node.conf.applied)
-
-	// validate persitent state
-	if node.CommitIndex() > node.logs.LastIndex() {
-		log.Fatalf("Data corruption, commit: %d > lastIndex: %d", node.CommitIndex(), node.logs.LastIndex())
-	}
-	if node.CommitIndex() < node.logs.LastIndex() - MaxPendingLogs {
-		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
-			node.CommitIndex(), node.logs.LastIndex())
-	}
+	node.logs.commitIndex = node.conf.applied
 
 	return node
 }
@@ -102,13 +93,12 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
-	last := node.logs.LastEntry()
-	log.Printf("Start %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-			node.conf.id, node.conf.peers, node.conf.term, node.CommitIndex(),
-			last.Term, last.Index)
+	log.Printf("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
+			node.conf.id, node.conf.peers, node.conf.term,
+			node.logs.commitIndex, node.logs.LastIndex())
 	node.startWorders()
 	// 单节点运行
-	if len(node.conf.members) == 0 {
+	if node.conf.IsSingleton() {
 		node.startElection()
 		node.checkVoteResult()
 	}
@@ -168,7 +158,6 @@ func (node *Node)startWorders(){
 			node.stop_end_c <- true
 		}()
 		for {
-			// TODO: check MaxPendingLogs
 			if b := <- node.logs.accept_c; b == false {
 				return
 			}
@@ -181,7 +170,7 @@ func (node *Node)startWorders(){
 			}
 			node.Lock()
 			// 单节点运行
-			if len(node.conf.members) == 0 && node.role == RoleLeader {
+			if node.conf.IsSingleton() && node.role == RoleLeader {
 				node.advanceCommitIndex()
 			} else {
 				if node.role == RoleLeader {
@@ -651,6 +640,8 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	term = node.Term()
 	node.Unlock()
 
+	// TODO: check MaxPendingLogs
+
 	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
 }
@@ -672,17 +663,15 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 func (node *Node)Info() string {
 	node.Lock()
 	defer node.Unlock()
-
-	last := node.logs.LastEntry()
 	
 	var ret string
 	ret += fmt.Sprintf("id: %s\n", node.Id())
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
-	ret += fmt.Sprintf("commit: %d\n", node.CommitIndex())
-	ret += fmt.Sprintf("lastTerm: %d\n", last.Term)
-	ret += fmt.Sprintf("lastIndex: %d\n", last.Index)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
+	ret += fmt.Sprintf("append: %d\n", node.logs.appendIndex)
+	ret += fmt.Sprintf("accept: %d\n", node.logs.LastIndex())
+	ret += fmt.Sprintf("commit: %d\n", node.logs.commitIndex)
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 
@@ -745,10 +734,9 @@ func (node *Node)loadSnapshot(data string) {
 	node.conf.RecoverFromSnapshot(sn)
 	node.logs.RecoverFromSnapshot(sn)
 
-	last := node.logs.LastEntry()
-	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, lastTerm: %d, lastIndex: %d",
-		node.conf.id, node.conf.peers, node.conf.term, node.CommitIndex(),
-		last.Term, last.Index)
+	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, accept: %d",
+			node.conf.id, node.conf.peers, node.conf.term,
+			node.logs.commitIndex, node.logs.LastIndex())
 
 	log.Printf("Done")
 }

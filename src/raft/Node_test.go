@@ -231,6 +231,7 @@ func testRestart() {
 		n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
 		nodes[n1.Id()] = n1
 		n1.Start()
+		sleep(0.01)
 
 		n1.Close()
 		delete(nodes, "n1")

@@ -61,6 +61,10 @@ func (c *Config)IsNew() bool {
 	return len(c.peers) == 0
 }
 
+func (c *Config)IsSingleton() bool {
+	return c.joined && len(c.members) == 0
+}
+
 func (c *Config)Init(id string, peers []string) {
 	c.id = id
 	c.SetPeers(peers)

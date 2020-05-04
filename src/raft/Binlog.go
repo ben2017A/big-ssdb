@@ -22,7 +22,7 @@ type Binlog struct {
 	lastEntry *Entry // 最新一条持久的日志
 	appendIndex int64
 	// acceptIndex int64
-	commitIndex int64 // 事实上可以不持久化
+	commitIndex int64
 
 	wal *store.WalFile
 }
@@ -68,6 +68,16 @@ func (st *Binlog)init() {
 		st.commitIndex = util.MaxInt64(st.commitIndex, e.Commit)
 	}
 	st.appendIndex = st.lastEntry.Index
+
+	// validate persitent state
+	if st.commitIndex > st.LastIndex() {
+		log.Fatalf("Data corruption, commit: %d > lastIndex: %d",
+			st.commitIndex, st.LastIndex())
+	}
+	if st.commitIndex < st.LastIndex() - MaxPendingLogs {
+		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
+			st.commitIndex, st.LastIndex())
+	}
 }
 
 func (st *Binlog)Close() {
@@ -137,11 +147,6 @@ func (st *Binlog)Write(ent *Entry) {
 
 	st.Lock()
 	{
-		// first entry
-		if st.lastEntry.Index == 0 {
-			st.lastEntry.Index = ent.Index - 1
-		}
-
 		old := st.entries[ent.Index]
 		if old != nil {
 			if old.Term > ent.Term {
@@ -236,8 +241,9 @@ func (st *Binlog)Clean() {
 
 func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.Clean()
-	st.Write(sn.lastEntry)
 	st.appendIndex = sn.LastIndex()
 	st.commitIndex = sn.LastIndex()
+	st.lastEntry.Index = sn.LastIndex() - 1
+	st.Write(sn.lastEntry)
 	st.Fsync()
 }
