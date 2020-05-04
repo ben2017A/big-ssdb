@@ -631,11 +631,13 @@ func (node *Node)handleInstallSnapshot(msg *Message) {
 
 /* ###################### Methods ####################### */
 
+// 应该由调用者确保不会 propose 太快, 否则直接丢弃
 func (node *Node)Propose(data string) (int32, int64) {
 	return node._propose(EntryTypeData, data)
 }
 
 func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
+	// use a propose_lock?
 	var term int32
 	node.Lock()
 	if node.role != RoleLeader {
@@ -647,11 +649,11 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	term = node.Term()
 	node.Unlock()
 
-	// check MaxUncommittedSize
-	for node.logs.UncommittedSize() >= 3 {
-		log.Println("sleep")
-		log.Printf("commit: %d, accept: %d append: %d", node.logs.CommitIndex(), node.logs.AcceptIndex(), node.logs.AppendIndex())
-		util.Sleep(1)
+	// TODO: 直接丢弃
+	for node.logs.UncommittedSize() >= MaxUncommittedSize {
+		log.Printf("sleep, commit: %d, accept: %d append: %d",
+			node.logs.CommitIndex(), node.logs.AcceptIndex(), node.logs.AppendIndex())
+		util.Sleep(0.2)
 	}
 
 	ent := node.logs.Append(term, etype, data)
