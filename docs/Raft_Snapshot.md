@@ -1,5 +1,7 @@
 # Raft and Service Snapshot
 
+**应该由 leader 主动推 snapshot, 还是由 follower 主动拉?**
+
 Snapshot 分为 Raft Snapshot 和 Service Snapshot. 快照的安装过程因为不是原子操作, 所以要保存中间状态, 重试以最终完成.
 
 ## 流程

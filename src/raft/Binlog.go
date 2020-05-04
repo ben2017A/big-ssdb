@@ -70,13 +70,8 @@ func (st *Binlog)init() {
 	st.appendIndex = st.lastEntry.Index
 
 	// validate persitent state
-	if st.commitIndex > st.LastIndex() {
-		log.Fatalf("Data corruption, commit: %d > lastIndex: %d",
-			st.commitIndex, st.LastIndex())
-	}
-	if st.commitIndex < st.LastIndex() - MaxPendingLogs {
-		log.Fatalf("Data corruption, too much pending logs, commit: %d, lastIndex: %d",
-			st.commitIndex, st.LastIndex())
+	if st.CommitIndex() > st.AcceptIndex() {
+		log.Fatalf("Data corruption, commit: %d > accept: %d", st.CommitIndex(), st.AcceptIndex())
 	}
 }
 
@@ -111,13 +106,26 @@ func (st *Binlog)stopWriter() {
 	<- st.stop_c
 }
 
-func (st *Binlog)LastIndex() int64 {
+func (st *Binlog)AppendIndex() int64 {
+	return st.appendIndex
+}
+
+func (st *Binlog)AcceptIndex() int64 {
 	return st.LastEntry().Index
+}
+
+func (st *Binlog)CommitIndex() int64 {
+	return st.commitIndex
 }
 
 // 最新一条持久化的日志
 func (st *Binlog)LastEntry() *Entry {
 	return st.lastEntry
+}
+
+// how many logs(unstable + stable) uncommitted
+func (st *Binlog)UncommittedSize() int {
+	return (int)(st.appendIndex - st.commitIndex)
 }
 
 func (st *Binlog)GetEntry(index int64) *Entry {
@@ -205,7 +213,7 @@ func (st *Binlog)Fsync() {
 }
 
 func (st *Binlog)Commit(commitIndex int64) {
-	commitIndex = util.MinInt64(commitIndex, st.LastIndex())
+	commitIndex = util.MinInt64(commitIndex, st.AcceptIndex())
 	if commitIndex <= st.commitIndex {
 		return
 	}

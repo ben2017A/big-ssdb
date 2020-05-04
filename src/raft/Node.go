@@ -30,7 +30,7 @@ const(
 	SendWindowSize  = 3
 
 	MaxBinlogGapToInstallSnapshot = 5
-	MaxPendingLogs = MaxBinlogGapToInstallSnapshot
+	MaxUncommittedSize = MaxBinlogGapToInstallSnapshot
 )
 
 // Node 是轻量级的, 可以快速的创建和销毁
@@ -38,7 +38,7 @@ type Node struct{
 	sync.Mutex
 
 	role RoleType
-	leader string // currently discovered leader, TODO: ref *Member
+	leader *Member // currently discovered leader
 	votesReceived map[string]string // nodeId => vote result
 	electionTimer int
 
@@ -65,6 +65,12 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.logs.node = node
 	node.logs.commitIndex = node.conf.applied
 
+	// validate persitent state
+	if node.logs.UncommittedSize() > MaxUncommittedSize {
+		log.Fatalf("Data corruption, too many uncommitted logs, append: %d, commit: %d",
+			node.logs.AppendIndex(), node.logs.CommitIndex())
+	}
+
 	return node
 }
 
@@ -81,7 +87,7 @@ func (node *Node)Vote() string {
 }
 
 func (node *Node)CommitIndex() int64 {
-	return node.logs.commitIndex
+	return node.logs.CommitIndex()
 }
 
 func (node *Node)RecvC() chan<- *Message {
@@ -95,7 +101,7 @@ func (node *Node)SendC() <-chan *Message {
 func (node *Node)Start(){
 	log.Printf("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.logs.commitIndex, node.logs.LastIndex())
+			node.logs.CommitIndex(), node.logs.AcceptIndex())
 	node.startWorders()
 	// 单节点运行
 	if node.conf.IsSingleton() {
@@ -226,7 +232,7 @@ func (node *Node)Tick(timeElapseMs int){
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
-			if node.CommitIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
+			if node.logs.CommitIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
 				if m.HeartbeatTimer >= HeartbeatTimeout {
 					m.HeartbeatTimer = 0
 					log.Printf("Member %s, send snapshot", m.Id)
@@ -251,36 +257,37 @@ func (node *Node)Tick(timeElapseMs int){
 	}
 }
 
-func (node *Node)startPreVote(){
-	node.role = RoleFollower
-	node.electionTimer = 0
+func (node *Node)reset(){
+	node.leader = nil
+	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
+	node.resetMembers()
+}
+
+func (node *Node)startPreVote() {
+	node.reset()
+	node.role = RoleFollower
 	node.broadcast(NewPreVoteMsg())
 	log.Printf("Node %s start prevote at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)startElection() {
+	node.reset()
 	node.role = RoleCandidate
-	node.electionTimer = rand.Intn(200)
-	node.votesReceived = make(map[string]string)
-	node.resetMembers()
 	node.conf.SetRound(node.Term() + 1, node.Id())
 	node.broadcast(NewRequestVoteMsg())
 	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)becomeFollower() {
-	log.Printf("Node %s became follower at term %d", node.Id(), node.Term())
+	node.reset()
 	node.role = RoleFollower
-	node.electionTimer = 0	
-	node.resetMembers()
+	log.Printf("Node %s became follower at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)becomeLeader() {
-	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
+	node.reset()
 	node.role = RoleLeader
-	node.electionTimer = 0
-	node.resetMembers()
 
 	if node.Term() == 1 { 
 		// 初始化集群成员列表
@@ -290,12 +297,13 @@ func (node *Node)becomeLeader() {
 	} else {
 		node.logs.Append(node.Term(), EntryTypeNoop, "")
 	}
+	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
 }
 
 /* ############################################# */
 
 func (node *Node)resetMembers() {
-	nextIndex := node.logs.LastIndex() + 1
+	nextIndex := node.logs.AcceptIndex() + 1
 	for _, m := range node.conf.members {
 		m.Reset()
 		m.NextIndex = nextIndex
@@ -304,7 +312,7 @@ func (node *Node)resetMembers() {
 
 func (node *Node)heartbeatAllMembers() {
 	for _, m := range node.conf.members {
-		if m.NextIndex > node.logs.LastIndex() {
+		if m.NextIndex > node.logs.AcceptIndex() {
 			node.heartbeatMember(m)
 		}
 	}
@@ -314,7 +322,7 @@ func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
 	prev := node.logs.LastEntry()
-	ent := NewHearteatEntry(node.CommitIndex())
+	ent := NewHearteatEntry(node.logs.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, prev))
 }
 
@@ -340,7 +348,7 @@ func (node *Node)replicateMember(m *Member) {
 		if ent == nil {
 			break
 		}
-		ent.Commit = node.CommitIndex()
+		ent.Commit = node.logs.CommitIndex()
 		
 		prev := node.logs.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, prev))
@@ -431,10 +439,9 @@ func (node *Node)handlePreVote(msg *Message){
 			log.Println("    major followers are still reachable, ignore")
 			return
 		}
-	}
-	for _, m := range node.conf.members {
-		if m.Role == RoleLeader && m.ReceiveTimeout < ReceiveTimeout {
-			log.Printf("leader %s is still reachable, ignore PreVote from %s", m.Id, msg.Src)
+	} else {
+		if node.leader != nil && node.leader.ReceiveTimeout < ReceiveTimeout {
+			log.Printf("leader %s is still reachable, ignore PreVote from %s", node.leader.Id, msg.Src)
 			return
 		}
 	}
@@ -505,7 +512,7 @@ func (node *Node)checkVoteResult(){
 
 func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	var prev *Entry
-	if msg.PrevIndex < node.logs.LastIndex() {
+	if msg.PrevIndex < node.logs.AcceptIndex() {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
 	} else {
 		prev = node.logs.LastEntry()
@@ -519,20 +526,20 @@ func (node *Node)sendDuplicatedAckToMessage(msg *Message){
 	node.send(ack)
 }
 
-func (node *Node)setLeader(leaderId string) {
-	if node.leader == leaderId {
-		return
+func (node *Node)setLeaderId(leaderId string) {
+	if node.leader != nil {
+		if node.leader.Id == leaderId {
+			return
+		}
+		node.leader.Role = RoleFollower
 	}
-	if node.leader != "" {
-		node.conf.members[node.leader].Role = RoleFollower
-	}
-	node.leader = leaderId
-	node.conf.members[node.leader].Role = RoleLeader
+	node.leader = node.conf.members[leaderId]
+	node.leader.Role = RoleLeader
 }
 
 func (node *Node)handleAppendEntry(msg *Message){
 	node.electionTimer = 0
-	node.setLeader(msg.Src)
+	node.setLeaderId(msg.Src)
 
 	if msg.PrevIndex > 0 {
 		prev := node.logs.GetEntry(msg.PrevIndex)
@@ -554,8 +561,8 @@ func (node *Node)handleAppendEntry(msg *Message){
 		// TODO: remember last ack index and time
 		node.sendAppendEntryAck()
 	} else {
-		if ent.Index <= node.CommitIndex() {
-			log.Printf("entry: %d not after commit: %d", ent.Index, node.CommitIndex())
+		if ent.Index <= node.logs.CommitIndex() {
+			log.Printf("invalid entry: %d before commit: %d", ent.Index, node.logs.CommitIndex())
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
@@ -565,15 +572,15 @@ func (node *Node)handleAppendEntry(msg *Message){
 }
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
-	if node.CommitIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
+	if node.logs.CommitIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
 		log.Printf("Member %s sync broken, prevIndex %d, commit %d, maxGap: %d",
-			msg.Src, msg.PrevIndex, node.CommitIndex(), MaxBinlogGapToInstallSnapshot)
+			msg.Src, msg.PrevIndex, node.logs.CommitIndex(), MaxBinlogGapToInstallSnapshot)
 		m.MatchIndex = msg.PrevIndex
 		return
 	}
-	if msg.PrevIndex > node.logs.LastIndex() {
+	if msg.PrevIndex > node.logs.AcceptIndex() {
 		log.Printf("Member %s bad msg, prevIndex %d > lastIndex %d",
-			msg.Src, msg.PrevIndex, node.logs.LastIndex())
+			msg.Src, msg.PrevIndex, node.logs.AcceptIndex())
 		return
 	}
 
@@ -587,7 +594,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
-		if m.MatchIndex > node.CommitIndex() {
+		if m.MatchIndex > node.logs.CommitIndex() {
 			node.advanceCommitIndex()
 		}
 	}
@@ -597,7 +604,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 func (node *Node)advanceCommitIndex() {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.conf.members) + 1)
-	matchIndex = append(matchIndex, node.logs.LastIndex()) // self
+	matchIndex = append(matchIndex, node.logs.AcceptIndex()) // self
 	for _, m := range node.conf.members {
 		matchIndex = append(matchIndex, m.MatchIndex)
 	}
@@ -607,8 +614,8 @@ func (node *Node)advanceCommitIndex() {
 	commitIndex := matchIndex[len(matchIndex)/2]
 	log.Println("match[] =", matchIndex, " major matchIndex", commitIndex)
 
-	commitIndex = util.MinInt64(commitIndex, node.logs.LastIndex())
-	if commitIndex > node.CommitIndex() {
+	commitIndex = util.MinInt64(commitIndex, node.logs.AcceptIndex())
+	if commitIndex > node.logs.CommitIndex() {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
@@ -640,7 +647,12 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	term = node.Term()
 	node.Unlock()
 
-	// TODO: check MaxPendingLogs
+	// check MaxUncommittedSize
+	for node.logs.UncommittedSize() >= 3 {
+		log.Println("sleep")
+		log.Printf("commit: %d, accept: %d append: %d", node.logs.CommitIndex(), node.logs.AcceptIndex(), node.logs.AppendIndex())
+		util.Sleep(1)
+	}
 
 	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
@@ -669,9 +681,9 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
-	ret += fmt.Sprintf("append: %d\n", node.logs.appendIndex)
-	ret += fmt.Sprintf("accept: %d\n", node.logs.LastIndex())
-	ret += fmt.Sprintf("commit: %d\n", node.logs.commitIndex)
+	ret += fmt.Sprintf("append: %d\n", node.logs.AppendIndex())
+	ret += fmt.Sprintf("accept: %d\n", node.logs.AcceptIndex())
+	ret += fmt.Sprintf("commit: %d\n", node.logs.CommitIndex())
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 
@@ -700,8 +712,8 @@ func (node *Node)broadcast(msg *Message){
 }
 
 func (node *Node)sendAppendEntryAck() {
-	if node.leader != "" {
-		node.send(NewAppendEntryAck(node.leader, true))
+	if node.leader != nil {
+		node.send(NewAppendEntryAck(node.leader.Id, true))
 	}
 }
 
@@ -726,17 +738,15 @@ func (node *Node)loadSnapshot(data string) {
 		return
 	}
 
+	node.reset()
 	node.role = RoleFollower
-	node.leader = ""
-	node.electionTimer = 0	
-	node.votesReceived = make(map[string]string)
 
 	node.conf.RecoverFromSnapshot(sn)
 	node.logs.RecoverFromSnapshot(sn)
 
 	log.Printf("Reset %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.logs.commitIndex, node.logs.LastIndex())
+			node.logs.CommitIndex(), node.logs.AcceptIndex())
 
 	log.Printf("Done")
 }
