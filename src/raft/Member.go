@@ -11,7 +11,7 @@ type Member struct{
 	HeartbeatTimer int
 	ReplicateTimer int
 
-	IdleTimeout int // increase on tick(), reset on ApplyEntryAck
+	IdleTimer int // increase on tick(), reset on ApplyEntryAck
 }
 
 func NewMember(id string) *Member{
@@ -28,7 +28,7 @@ func (m *Member)Reset() {
 	m.MatchIndex = -1
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
-	m.IdleTimeout = 0
+	m.IdleTimer = 0
 }
 
 func (m *Member)Connected() bool {

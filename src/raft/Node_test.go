@@ -92,10 +92,10 @@ func testOrphanNode() {
 
 	// 集群接受 n2
 	n1.ProposeAddMember("n2")
-	sleep(0.01)
+	sleep()
 
 	n1.Tick(HeartbeatTimeout)
-	sleep(0.01)
+	sleep()
 
 	// 集群的消息会被 n2 丢弃
 	if len(n2.conf.peers) != 0 {
@@ -120,7 +120,7 @@ func testOneNode() {
 		log.Fatal("error")
 	}
 
-	sleep(0.01) // wait commit
+	sleep() // wait commit
 	if n1.CommitIndex() != 1 {
 		log.Fatal("error")
 	}
@@ -142,7 +142,7 @@ func testTwoNodes() {
 
 	n1.Tick(ElectionTimeout) // n1 start election
 	
-	sleep(0.02) // wait log replication
+	sleep() // wait log replication
 
 	if n1.role != RoleLeader {
 		log.Fatal("error")
@@ -154,7 +154,7 @@ func testTwoNodes() {
 		log.Fatal("error")
 	}
 	if n1.CommitIndex() != n2.CommitIndex() {
-		log.Fatal("error")	
+		log.Fatal("error ", n1.CommitIndex(), n2.CommitIndex())	
 	}
 	log.Println("-----")
 }
@@ -162,7 +162,7 @@ func testTwoNodes() {
 // 新节点加入集群
 func testJoin() {
 	n1.ProposeAddMember("n2")
-	sleep(0.01)
+	sleep()
 	if n1.conf.members["n2"] == nil {
 		log.Println("error")
 	}
@@ -177,7 +177,7 @@ func testJoin() {
 
 	n1.Tick(HeartbeatTimeout) // leader send ping
 	
-	sleep(0.01) // wait repication
+	sleep() // wait repication
 
 	if n2.role != RoleFollower {
 		log.Fatal("error")
@@ -191,13 +191,13 @@ func testJoin() {
 // 退出集群
 func testQuit() {
 	n1.ProposeDelMember("n2")
-	sleep(0.02)
+	sleep()
 	if n1.conf.members["n2"] != nil {
 		log.Fatal("error")
 	}
 
 	n2.Tick(ElectionTimeout) // start election
-	sleep(0.01)
+	sleep()
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
@@ -211,16 +211,17 @@ func testSnapshot() {
 		// log.Println(i)
 		n1.Propose(fmt.Sprintf("%d", i))
 	}
-
 	testJoin()
+
+	n1.Tick(HeartbeatTimeout*1) // send snapshot
+	sleep() // wait replication
 
 	idx := n2.CommitIndex()
 	n1.Propose("c")
-
-	sleep(0.01) // wait replication
+	sleep() // wait replication
 
 	if n2.CommitIndex() != idx + 1 {
-		log.Fatal("error")	
+		log.Fatal("error ", idx, n2.CommitIndex())	
 	}
 	log.Println("-----")
 }
@@ -231,7 +232,7 @@ func testRestart() {
 		n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
 		nodes[n1.Id()] = n1
 		n1.Start()
-		sleep(0.01)
+		sleep()
 
 		n1.Close()
 		delete(nodes, "n1")
@@ -244,7 +245,7 @@ func testRestart() {
 
 	n1.Propose("set a 1")
 
-	sleep(0.01)
+	sleep()
 	if n1.CommitIndex() != 3 {
 		log.Fatal("error")	
 	}
@@ -253,12 +254,8 @@ func testRestart() {
 
 //////////////////////////////////////////////////////////////////
 
-func sleep(second float32){
-	time.Sleep((time.Duration)(second * 1000) * time.Millisecond)
-}
-
 func clean_nodes(){
-	sleep(0.01) // wait proceed commit
+	sleep() // wait proceed commit
 
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -299,6 +296,10 @@ func networking() {
 		}
 		mutex.Unlock()
 
-		sleep(0.001)
+		time.Sleep(100 * time.Microsecond)
 	}
+}
+
+func sleep(){
+	time.Sleep(10 * time.Millisecond)
 }

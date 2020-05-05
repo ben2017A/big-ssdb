@@ -8,10 +8,7 @@ import (
 	"syscall"
 	"strconv"
 	"strings"
-	// "path/filepath"
-	// "encoding/binary"
 
-	"util"
 	"raft"
 	"raft/server"
 	"redis"
@@ -97,7 +94,6 @@ func main(){
 		case <- c:
 			quit = true
 		case msg := <- raft_xport.C():
-			util.Sleep(0.00) // testing TODO: 
 			node.RecvC() <- msg
 		}
 	}

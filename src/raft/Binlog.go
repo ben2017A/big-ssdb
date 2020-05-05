@@ -40,9 +40,9 @@ func OpenBinlog(dir string) *Binlog {
 	st.init()
 	
 	st.stop_c   = make(chan bool)
-	st.write_c  = make(chan bool, 1/*TODO*/)
-	st.accept_c = make(chan bool, 0/*TODO*/) // log been persisted
-	st.commit_c = make(chan bool, 0/*TODO*/) // log been committed
+	st.write_c  = make(chan bool, 3/*TODO*/)
+	st.accept_c = make(chan bool, 0) // log been persisted
+	st.commit_c = make(chan bool, 0) // log been committed
 
 	st.startWriter()
 

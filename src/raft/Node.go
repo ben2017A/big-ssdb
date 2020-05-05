@@ -23,14 +23,12 @@ const(
 const(
 	TickerInterval   = 100
 	ElectionTimeout  = 5 * 1000
-	HeartbeatTimeout = 4 * 1000 // TODO: ElectionTimeout/3
 	ReplicateTimeout = 1 * 1000
-	IdleTimeout   = ReplicateTimeout * 3
+	HeartbeatTimeout = ReplicateTimeout * 3
 
-	SendWindowSize  = 3
-
-	MaxBinlogGapToInstallSnapshot = 5
-	MaxUncommittedSize = MaxBinlogGapToInstallSnapshot
+	SendWindowSize     = 3
+	MaxUncommittedSize = SendWindowSize
+	MaxFallBehindSize  = 5
 )
 
 // Node is lightweighted
@@ -196,32 +194,38 @@ func (node *Node)Tick(timeElapseMs int) {
 		}
 	} else if node.role == RoleLeader {
 		for _, m := range node.conf.members {
-			m.IdleTimeout += timeElapseMs
+			m.IdleTimer += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
-			if node.logs.CommitIndex() - m.MatchIndex > MaxBinlogGapToInstallSnapshot {
+			// only send snapshot when follower responses within HeartbeatTimeout * 2
+			if m.Connected() && m.IdleTimer <= HeartbeatTimeout * 2 {
 				if m.HeartbeatTimer >= HeartbeatTimeout {
-					m.HeartbeatTimer = 0
-					log.Printf("Member %s, send snapshot", m.Id)
-					node.sendSnapshot(m.Id)
+					if node.logs.CommitIndex() - m.MatchIndex > MaxFallBehindSize {
+						m.HeartbeatTimer = 0
+						log.Printf("Member %s, send snapshot", m.Id)
+						node.sendSnapshot(m.Id)
+					}
 				}
-				continue
 			}
 
 			if m.ReplicateTimer >= ReplicateTimeout {
-				// only send data to member when
-				// * we ever received an ack(may be to a heartbeat)
-				// * it is not idle
-				if m.Connected() && m.IdleTimeout < IdleTimeout {
-					if m.UnackedSize() != 0 {
-						log.Printf("Member: %s retransmission timeout, reset next: %d => %d",
-							m.Id, m.NextIndex, m.MatchIndex + 1)
-						m.NextIndex = m.MatchIndex + 1
+				// only send data to follower when
+				// 1. we ever received an ack(may be to a heartbeat)
+				// 2. it is not idle
+				// 3. it is not fall behind
+				if m.Connected() && m.IdleTimer < HeartbeatTimeout {
+					if node.logs.CommitIndex() - m.MatchIndex <= MaxFallBehindSize {
+						if m.UnackedSize() != 0 {
+							log.Printf("Member: %s retransmission timeout, reset next: %d => %d",
+								m.Id, m.NextIndex, m.MatchIndex + 1)
+							m.NextIndex = m.MatchIndex + 1
+						}
+						node.replicateMember(m)
 					}
-					node.replicateMember(m)
 				}
 			}
+
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				node.heartbeatMember(m)
 			}
@@ -366,7 +370,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		log.Printf("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
 		return
 	}
-	m.IdleTimeout = 0
+	m.IdleTimer = 0
 
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
@@ -430,17 +434,17 @@ func (node *Node)handlePreVote(msg *Message){
 		arr := make([]int, 0, len(node.conf.members) + 1)
 		arr = append(arr, 0) // self
 		for _, m := range node.conf.members {
-			arr = append(arr, m.IdleTimeout)
+			arr = append(arr, m.IdleTimer)
 		}
 		sort.Ints(arr)
 		log.Println("    receive timeouts[] =", arr)
 		timer := arr[len(arr)/2]
-		if timer < IdleTimeout {
+		if timer < HeartbeatTimeout {
 			log.Println("    major followers are still reachable, ignore")
 			return
 		}
 	} else {
-		if node.leader != nil && node.leader.IdleTimeout < IdleTimeout {
+		if node.leader != nil && node.leader.IdleTimer < HeartbeatTimeout {
 			log.Printf("leader %s is still reachable, ignore PreVote from %s", node.leader.Id, msg.Src)
 			return
 		}
@@ -574,9 +578,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 }
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
-	if node.logs.CommitIndex() - msg.PrevIndex > MaxBinlogGapToInstallSnapshot {
-		log.Printf("Member %s sync broken, prevIndex %d, commit %d, maxGap: %d",
-			msg.Src, msg.PrevIndex, node.logs.CommitIndex(), MaxBinlogGapToInstallSnapshot)
+	if node.logs.CommitIndex() - msg.PrevIndex > MaxFallBehindSize {
+		log.Printf("Member %s sync broken, prevIndex %d, commit %d, MaxFallBehindSize: %d",
+			msg.Src, msg.PrevIndex, node.logs.CommitIndex(), MaxFallBehindSize)
 		m.MatchIndex = msg.PrevIndex
 		return
 	}
@@ -679,18 +683,19 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 		// received, the newer one will replace the old one.
 		term = node.Term()
 
-		// TODO: 直接丢弃
+		// TODO: 直接丢弃?
 		for node.logs.UncommittedSize() >= MaxUncommittedSize {
 			log.Printf("sleep, append: %d, accept: %d commit: %d",
 				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
 			node.Unlock()
-			util.Sleep(0.1)
+			util.Sleep(0.01)
 			node.Lock()
 		}
 	}
 	node.Unlock()
 
-	// invoke logs.Append() outside of node.Lock(), because it may block
+	// call logs.Append() outside of node.Lock(), because it may
+	// need node.Lock() to proceed
 	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
 }
@@ -706,7 +711,7 @@ func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
 }
 
 // // 获取集群的 ReadIndex, 这个函数将发起集群内的网络交互, 阻塞直到收到结果.
-// func (node *Node)RaftReadIndex() int64 {
+// func (node *Node)ReadIndex() int64 {
 // }
 
 func (node *Node)Info() string {
