@@ -19,7 +19,7 @@ const(
 	RoleCandidate = "candidate"
 )
 
-// NodeOption
+// TODO: NodeOption
 const(
 	TickerInterval   = 100
 	ElectionTimeout  = 5 * 1000
@@ -33,7 +33,7 @@ const(
 	MaxUncommittedSize = MaxBinlogGapToInstallSnapshot
 )
 
-// Node 是轻量级的, 可以快速的创建和销毁
+// Node is lightweighted
 type Node struct{
 	sync.Mutex
 
@@ -55,6 +55,7 @@ type Node struct{
 
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
+	node.reset()
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1/*TODO*/)
 	node.send_c = make(chan *Message, 1/*TODO*/)
@@ -63,6 +64,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.conf.node = node
 	node.logs = logs
 	node.logs.node = node
+	// binlogs store commitIndex in log entry, which may not be up to date
 	node.logs.commitIndex = node.conf.applied
 
 	// validate persitent state
@@ -292,7 +294,7 @@ func (node *Node)becomeLeader() {
 	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
 
 	if node.Term() == 1 { 
-		// 初始化集群成员列表
+		// store cluster members in binlog, as very first entry(s)
 		for _, id := range node.conf.peers {
 			node.logs.Append(node.Term(), EntryTypeConf, fmt.Sprintf("AddMember %s", id))
 		}
@@ -397,7 +399,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		return
 	}
 
-	// MUST: smaller msg.Term is rejected or ignored
+	// MUST: smaller msg.Term is rejected
 	if msg.Term < node.Term() {
 		log.Println("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
 		node.send(NewGossipMsg(msg.Src))
