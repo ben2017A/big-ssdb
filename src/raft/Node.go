@@ -55,7 +55,6 @@ type Node struct{
 
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
-	node.reset()
 	node.role = RoleFollower
 	node.recv_c = make(chan *Message, 1/*TODO*/)
 	node.send_c = make(chan *Message, 1/*TODO*/)
@@ -66,6 +65,8 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.logs.node = node
 	// binlogs store commitIndex in log entry, which may not be up to date
 	node.logs.commitIndex = node.conf.applied
+
+	node.reset()
 
 	// validate persitent state
 	if node.logs.UncommittedSize() > MaxUncommittedSize {
