@@ -207,7 +207,7 @@ func testQuit() {
 // 落后太多时, 同步 Raft 快照
 func testSnapshot() {
 	testOneNode()
-	for i := 0; i < MaxUncommittedSize*10; i++ {
+	for i := 0; i < MaxFallBehindSize; i++ {
 		// log.Println(i)
 		n1.Propose(fmt.Sprintf("%d", i))
 	}
