@@ -75,6 +75,9 @@ func (c *Config)Close() {
 }
 
 func (c *Config)Fsync() {
+	if c.applied == 0 {
+		return
+	}
 	// persist data
 	s := c.encode()
 	// TODO: 优化点

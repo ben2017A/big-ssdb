@@ -274,8 +274,8 @@ func (node *Node)startPreVote() {
 func (node *Node)startElection() {
 	node.reset()
 	node.role = RoleCandidate
-	node.conf.SetRound(node.Term() + 1, node.Id())
 	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
+	node.conf.SetRound(node.Term() + 1, node.Id())
 	node.broadcast(NewRequestVoteMsg())
 }
 
