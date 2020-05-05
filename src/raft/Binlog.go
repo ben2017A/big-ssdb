@@ -190,29 +190,31 @@ func (st *Binlog)Fsync() {
 	has_new := false
 
 	st.Lock()
-	// 找出连续的 entries, 持久化, 更新 lastEntry
-	for {
-		ent := st.entries[st.lastEntry.Index + 1]
-		if ent == nil {
-			break
-		}
-		st.lastEntry = ent
-		has_new = true
+	{
+		// 找出连续的 entries, 持久化, 更新 lastEntry
+		for {
+			ent := st.entries[st.lastEntry.Index + 1]
+			if ent == nil {
+				break
+			}
+			st.lastEntry = ent
+			has_new = true
 
-		ent.Commit = util.MinInt64(ent.Index, st.commitIndex)
+			ent.Commit = util.MinInt64(ent.Index, st.commitIndex)
 
-		data := ent.Encode()
-		st.wal.Append(data)
-		log.Println("[Append]", util.StringEscape(data))
-	}
-	if has_new {
-		err := st.wal.Fsync()
-		if err != nil {
-			log.Fatal(err)
+			data := ent.Encode()
+			st.wal.Append(data)
+			log.Println("[Append]", util.StringEscape(data))
 		}
-		// when is follower
-		if st.appendIndex < st.lastEntry.Index {
-			st.appendIndex = st.lastEntry.Index
+		if has_new {
+			err := st.wal.Fsync()
+			if err != nil {
+				log.Fatal(err)
+			}
+			// when is follower
+			if st.appendIndex < st.lastEntry.Index {
+				st.appendIndex = st.lastEntry.Index
+			}
 		}
 	}
 	st.Unlock()
