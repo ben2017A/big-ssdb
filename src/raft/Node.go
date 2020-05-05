@@ -159,47 +159,27 @@ func (node *Node)startWorders(){
 		node.stop_end_c <- true
 	}()
 
-	go func() {
-		defer func(){
+	signal_consume := func(ch chan bool, consume func()) {
+		defer func() {
 			node.stop_end_c <- true
 		}()
 		for {
-			if b := <- node.logs.accept_c; b == false {
+			if b := <- ch; b == false {
 				return
 			}
 			// clear channel, multi signals are treated as one
-			for len(node.logs.accept_c) > 0 {
-				b := <- node.logs.accept_c
+			for len(ch) > 0 {
+				b := <- ch
 				if !b {
 					return
 				}
 			}
-			node.onAccept()
+			consume()
 		}
-	}()
-
-	func read_signel() {
-		
 	}
 
-	go func() {
-		defer func(){
-			node.stop_end_c <- true
-		}()
-		for {
-			if b := <- node.logs.commit_c; b == false {
-				return
-			}
-			// clear channel, multi signals are treated as one
-			for len(node.logs.commit_c) > 0 {
-				b := <- node.logs.commit_c
-				if !b {
-					return
-				}
-			}
-			node.onCommit()
-		}
-	}()
+	go signal_consume(node.logs.accept_c, node.onAccept)
+	go signal_consume(node.logs.commit_c, node.onCommit)
 }
 
 func (node *Node)Tick(timeElapseMs int) {
