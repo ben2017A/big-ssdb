@@ -63,7 +63,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.conf.node = node
 	node.logs = logs
 	node.logs.node = node
-	// binlogs store commitIndex in log entry, which may not be up to date
+	// Binlog store commitIndex in log entry, which may not be up to date
 	node.logs.commitIndex = node.conf.applied
 
 	node.reset()
@@ -83,10 +83,6 @@ func (node *Node)Id() string {
 
 func (node *Node)Term() int32 {
 	return node.conf.term
-}
-
-func (node *Node)Vote() string {
-	return node.conf.vote
 }
 
 func (node *Node)CommitIndex() int64 {
@@ -241,7 +237,9 @@ func (node *Node)onAccept() {
 		node.advanceCommitIndex()
 	} else {
 		if node.role == RoleLeader {
-			node.replicateAllMembers()
+			for _, m := range node.conf.members {
+				node.replicateMember(m)
+			}
 		} else {
 			node.sendAppendEntryAck()
 		}
@@ -332,12 +330,6 @@ func (node *Node)heartbeatMember(m *Member){
 	pre := node.logs.LastEntry()
 	ent := NewHearteatEntry(node.logs.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
-}
-
-func (node *Node)replicateAllMembers() {
-	for _, m := range node.conf.members {
-		node.replicateMember(m)
-	}
 }
 
 func (node *Node)replicateMember(m *Member) {
@@ -468,9 +460,9 @@ func (node *Node)handlePreVoteAck(msg *Message){
 func (node *Node)handleRequestVote(msg *Message){
 	// only vote once at one term, if the candidate does not receive ack,
 	// it should start a new election
-	if node.Vote() != "" /*&& node.Vote() != msg.Src*/ {
+	if node.conf.vote != "" /*&& node.conf.vote != msg.Src*/ {
 		// just ignore
-		log.Println("already vote for", node.Vote(), "ignore", msg.Src)
+		log.Println("already vote for", node.conf.vote, "ignore", msg.Src)
 		return
 	}
 	
