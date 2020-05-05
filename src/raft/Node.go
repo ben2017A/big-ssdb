@@ -178,6 +178,10 @@ func (node *Node)startWorders(){
 		}
 	}()
 
+	func read_signel() {
+		
+	}
+
 	go func() {
 		defer func(){
 			node.stop_end_c <- true
