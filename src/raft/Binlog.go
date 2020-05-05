@@ -41,8 +41,8 @@ func OpenBinlog(dir string) *Binlog {
 	
 	st.stop_c   = make(chan bool)
 	st.write_c  = make(chan bool, 1/*TODO*/)
-	st.accept_c = make(chan bool, 1/*TODO*/) // log been persisted
-	st.commit_c = make(chan bool, 1/*TODO*/) // log been committed
+	st.accept_c = make(chan bool, 0/*TODO*/) // log been persisted
+	st.commit_c = make(chan bool, 0/*TODO*/) // log been committed
 
 	st.startWriter()
 
@@ -73,9 +73,6 @@ func (st *Binlog)init() {
 	if st.CommitIndex() > st.AcceptIndex() {
 		log.Fatalf("Data corruption, commit: %d > accept: %d", st.CommitIndex(), st.AcceptIndex())
 	}
-}
-
-func (st *Binlog)reset() {
 }
 
 func (st *Binlog)Close() {
@@ -114,21 +111,23 @@ func (st *Binlog)AppendIndex() int64 {
 }
 
 func (st *Binlog)AcceptIndex() int64 {
-	return st.LastEntry().Index
+	return st.lastEntry.Index
 }
 
 func (st *Binlog)CommitIndex() int64 {
 	return st.commitIndex
 }
 
+// how many logs(unstable + stable) uncommitted
+func (st *Binlog)UncommittedSize() int {
+	st.Lock()
+	defer st.Unlock()
+	return (int)(st.appendIndex - st.commitIndex)
+}
+
 // 最新一条持久化的日志
 func (st *Binlog)LastEntry() *Entry {
 	return st.lastEntry
-}
-
-// how many logs(unstable + stable) uncommitted
-func (st *Binlog)UncommittedSize() int {
-	return (int)(st.appendIndex - st.commitIndex)
 }
 
 func (st *Binlog)GetEntry(index int64) *Entry {
@@ -167,7 +166,7 @@ func (st *Binlog)Write(ent *Entry) {
 				drop = true
 			} else if old.Term < ent.Term {
 				// TODO: how?
-				log.Println("TODO: delete conflict entry, and entries that follow")
+				log.Println("TODO: delete conflicted entry, and entries that follow")
 			} else {
 				log.Printf("drop duplicated entry %d:%d", ent.Term, ent.Index)
 				drop = true
@@ -181,6 +180,7 @@ func (st *Binlog)Write(ent *Entry) {
 	}
 	st.Unlock()
 
+	// write_c consumer need holding lock, so produce write_c outside
 	if !drop {
 		st.write_c <- true
 	}
@@ -219,31 +219,23 @@ func (st *Binlog)Fsync() {
 	}
 	st.Unlock()
 
+	// accept_c consumer need holding lock, so produce accept_c outside
 	if has_new {
 		st.accept_c <- true
 	}
 }
 
 func (st *Binlog)Commit(commitIndex int64) {
+	st.Lock()
+	defer st.Unlock()
+
 	commitIndex = util.MinInt64(commitIndex, st.AcceptIndex())
 	if commitIndex <= st.commitIndex {
 		return
 	}
-
-	log.Printf("%s commit %d => %d", st.node.Id(), st.commitIndex, commitIndex)
+	// TODO: every conf entry must be explictly committed, check here
 	st.commitIndex = commitIndex
 	st.commit_c <- true
-
-	// synchronously apply to Config
-	for index := st.node.conf.applied + 1; index <= st.commitIndex; index ++ {
-		ent := st.GetEntry(index)
-		if ent == nil {
-			log.Fatalf("Lost entry@%d", index)
-		}
-		st.node.conf.ApplyEntry(ent)
-	}
-
-	// TODO: asynchronously apply to Service
 }
 
 func (st *Binlog)Clean() {

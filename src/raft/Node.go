@@ -341,7 +341,6 @@ func (node *Node)replicateMember(m *Member) {
 		return
 	}
 	m.ReplicateTimer = 0
-	m.HeartbeatTimer = 0
 
 	maxIndex := m.MatchIndex + SendWindowSize
 	for m.NextIndex <= maxIndex {
@@ -355,6 +354,7 @@ func (node *Node)replicateMember(m *Member) {
 		node.send(NewAppendEntryMsg(m.Id, ent, pre))
 		
 		m.NextIndex ++
+		m.HeartbeatTimer = 0
 	}
 }
 
@@ -568,7 +568,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 		}
 		node.logs.Write(ent)
 	}
-	node.logs.Commit(ent.Commit)
+	if ent.Commit > node.logs.CommitIndex() {
+		node.tryCommit(ent.Commit)
+	}
 }
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
@@ -619,7 +621,7 @@ func (node *Node)advanceCommitIndex() {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
 		if ent.Term == node.Term() {
-			node.logs.Commit(commitIndex)
+			node.tryCommit(commitIndex)
 		}
 	}
 }
@@ -627,6 +629,32 @@ func (node *Node)advanceCommitIndex() {
 func (node *Node)handleInstallSnapshot(msg *Message) {
 	node.loadSnapshot(msg.Data)
 	node.send(NewAppendEntryAck(msg.Src, true))
+}
+
+func (node *Node)tryCommit(commitIndex int64) {
+	oldIndex := node.logs.CommitIndex()
+
+	// logs.Commit() may write to commit_c, which may block until
+	// Node consumed commit_c, cosumming commit_c requires holding the lock
+	node.Unlock() // already locked by caller
+	node.logs.Commit(commitIndex)
+	node.Lock()   // will be unlocked by caller
+
+	newIndex := node.logs.CommitIndex()
+	if oldIndex == newIndex {
+		return
+	}
+	log.Printf("%s commit %d => %d", node.Id(), oldIndex, newIndex)
+
+	// synchronously apply to Config
+	for index := node.conf.applied + 1; index <= node.logs.CommitIndex(); index ++ {
+		ent := node.logs.GetEntry(index)
+		if ent == nil {
+			log.Fatalf("Lost entry@%d", index)
+		}
+		node.conf.ApplyEntry(ent)
+	}
+	// TODO: asynchronously apply to Service
 }
 
 /* ###################### Methods ####################### */
@@ -651,9 +679,9 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 
 	// TODO: 直接丢弃
 	for node.logs.UncommittedSize() >= MaxUncommittedSize {
-		log.Printf("sleep, commit: %d, accept: %d append: %d",
-			node.logs.CommitIndex(), node.logs.AcceptIndex(), node.logs.AppendIndex())
-		util.Sleep(0.2)
+		log.Printf("sleep, append: %d, accept: %d commit: %d",
+			node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
+		util.Sleep(0.1)
 	}
 
 	ent := node.logs.Append(term, etype, data)

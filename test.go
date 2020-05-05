@@ -71,18 +71,20 @@ func main(){
 
 	go func() {
 		for {
-			select{
-			case req := <- xport.C:
-				Process(req)
+			req := <- xport.C
+			if req == nil {
+				break
 			}
+			Process(req)
 		}
 	}()
 	go func() {
 		for {
-			select{
-			case msg := <- node.SendC():
-				raft_xport.Send(msg)
+			msg := <- node.SendC()
+			if msg == nil {
+				break
 			}
+			raft_xport.Send(msg)
 		}
 	}()
 
@@ -95,7 +97,7 @@ func main(){
 		case <- c:
 			quit = true
 		case msg := <- raft_xport.C():
-			util.Sleep(0.01) // testing TODO: 
+			util.Sleep(0.00) // testing TODO: 
 			node.RecvC() <- msg
 		}
 	}
