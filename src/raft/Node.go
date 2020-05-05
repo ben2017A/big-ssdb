@@ -633,7 +633,7 @@ func (node *Node)tryCommit(commitIndex int64) {
 	oldIndex := node.logs.CommitIndex()
 
 	// logs.Commit() may write to commit_c, which may block until
-	// Node consumed commit_c, cosumming commit_c requires holding the lock
+	// Node consumed commit_c, consuming commit_c requires holding the lock
 	node.Unlock() // already locked by caller
 	node.logs.Commit(commitIndex)
 	node.Lock()   // will be unlocked by caller
