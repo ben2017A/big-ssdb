@@ -185,29 +185,32 @@ func (st *Binlog)Write(ent *Entry) {
 
 func (st *Binlog)Fsync() {
 	st.Lock()
-	defer st.Unlock()
 
 	// 找出连续的 entries, 持久化, 更新 lastEntry
-	last := st.lastEntry
-	for{
-		e := st.entries[last.Index + 1]
-		if e == nil {
+	has_new := false
+	for {
+		ent := st.entries[st.lastEntry.Index + 1]
+		if ent == nil {
 			break
 		}
-		last = e
-		last.Commit = util.MinInt64(last.Index, st.commitIndex)
+		st.lastEntry = ent
+		has_new = true
 
-		data := last.Encode()
+		ent.Commit = util.MinInt64(ent.Index, st.commitIndex)
+
+		data := ent.Encode()
 		st.wal.Append(data)
 		log.Println("[Append]", util.StringEscape(data))
 	}
-
-	if last != st.lastEntry {
+	if has_new {
 		err := st.wal.Fsync()
 		if err != nil {
 			log.Fatal(err)
 		}
-		st.lastEntry = last
+	}
+	st.Unlock()
+
+	if has_new {
 		st.accept_c <- true
 	}
 }

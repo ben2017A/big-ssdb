@@ -5,13 +5,13 @@ type Member struct{
 	Role RoleType
 
 	// sliding window
-	NextIndex int64   // next_send
-	MatchIndex int64  // last_ack, -1: never received from remote
+	NextIndex int64   // send_next
+	MatchIndex int64  // last_ack/(recv_next-1), -1: never received from remote
 
 	HeartbeatTimer int
 	ReplicateTimer int
 
-	ReceiveTimeout int // increase on tick(), reset on ApplyEntryAck
+	IdleTimeout int // increase on tick(), reset on ApplyEntryAck
 }
 
 func NewMember(id string) *Member{
@@ -28,5 +28,13 @@ func (m *Member)Reset() {
 	m.MatchIndex = -1
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
-	m.ReceiveTimeout = 0
+	m.IdleTimeout = 0
+}
+
+func (m *Member)Connected() bool {
+	return m.MatchIndex != -1
+}
+
+func (m *Member)UnackedSize() int {
+	return int(m.NextIndex - m.MatchIndex) - 1
 }

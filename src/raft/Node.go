@@ -25,7 +25,7 @@ const(
 	ElectionTimeout  = 5 * 1000
 	HeartbeatTimeout = 4 * 1000 // TODO: ElectionTimeout/3
 	ReplicateTimeout = 1 * 1000
-	ReceiveTimeout   = ReplicateTimeout * 3
+	IdleTimeout   = ReplicateTimeout * 3
 
 	SendWindowSize  = 3
 
@@ -174,18 +174,7 @@ func (node *Node)startWorders(){
 					return
 				}
 			}
-			node.Lock()
-			// 单节点运行
-			if node.conf.IsSingleton() && node.role == RoleLeader {
-				node.advanceCommitIndex()
-			} else {
-				if node.role == RoleLeader {
-					node.replicateAllMembers()
-				} else {
-					node.sendAppendEntryAck()
-				}
-			}
-			node.Unlock()
+			node.onAccept()
 		}
 	}()
 
@@ -204,16 +193,12 @@ func (node *Node)startWorders(){
 					return
 				}
 			}
-			node.Lock()
-			if node.role == RoleLeader {
-				node.heartbeatAllMembers()
-			}
-			node.Unlock()
+			node.onCommit()
 		}
 	}()
 }
 
-func (node *Node)Tick(timeElapseMs int){
+func (node *Node)Tick(timeElapseMs int) {
 	node.Lock()
 	defer node.Unlock()
 
@@ -228,7 +213,7 @@ func (node *Node)Tick(timeElapseMs int){
 		}
 	} else if node.role == RoleLeader {
 		for _, m := range node.conf.members {
-			m.ReceiveTimeout += timeElapseMs
+			m.IdleTimeout += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
@@ -241,10 +226,14 @@ func (node *Node)Tick(timeElapseMs int){
 				continue
 			}
 
-			if m.ReceiveTimeout < ReceiveTimeout {
-				if m.ReplicateTimer >= ReplicateTimeout {
-					if m.MatchIndex != -1 && m.NextIndex != m.MatchIndex + 1 {
-						log.Printf("Member: %s retransmit, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+			if m.ReplicateTimer >= ReplicateTimeout {
+				// only send data to member when
+				// * we ever received an ack(may be to a heartbeat)
+				// * it is not idle
+				if m.Connected() && m.IdleTimeout < IdleTimeout {
+					if m.UnackedSize() != 0 {
+						log.Printf("Member: %s retransmission timeout, reset next: %d => %d",
+							m.Id, m.NextIndex, m.MatchIndex + 1)
 						m.NextIndex = m.MatchIndex + 1
 					}
 					node.replicateMember(m)
@@ -257,7 +246,35 @@ func (node *Node)Tick(timeElapseMs int){
 	}
 }
 
-func (node *Node)reset(){
+func (node *Node)onAccept() {
+	node.Lock()
+	defer node.Unlock()
+	// 单节点运行
+	if node.conf.IsSingleton() && node.role == RoleLeader {
+		node.advanceCommitIndex()
+	} else {
+		if node.role == RoleLeader {
+			node.replicateAllMembers()
+		} else {
+			node.sendAppendEntryAck()
+		}
+	}
+}
+
+func (node *Node)onCommit() {
+	node.Lock()
+	defer node.Unlock()
+	if node.role == RoleLeader {
+		for _, m := range node.conf.members {
+			// will not heartbeat when there is pending entry to be sent
+			if m.NextIndex > node.logs.AcceptIndex() {
+				node.heartbeatMember(m)
+			}
+		}
+	}
+}
+
+func (node *Node)reset() {
 	node.leader = nil
 	node.electionTimer = rand.Intn(200)
 	node.votesReceived = make(map[string]string)
@@ -267,16 +284,16 @@ func (node *Node)reset(){
 func (node *Node)startPreVote() {
 	node.reset()
 	node.role = RoleFollower
-	node.broadcast(NewPreVoteMsg())
 	log.Printf("Node %s start prevote at term %d", node.Id(), node.Term())
+	node.broadcast(NewPreVoteMsg())
 }
 
 func (node *Node)startElection() {
 	node.reset()
 	node.role = RoleCandidate
 	node.conf.SetRound(node.Term() + 1, node.Id())
-	node.broadcast(NewRequestVoteMsg())
 	log.Printf("Node %s start election at term %d", node.Id(), node.Term())
+	node.broadcast(NewRequestVoteMsg())
 }
 
 func (node *Node)becomeFollower() {
@@ -288,6 +305,7 @@ func (node *Node)becomeFollower() {
 func (node *Node)becomeLeader() {
 	node.reset()
 	node.role = RoleLeader
+	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
 
 	if node.Term() == 1 { 
 		// 初始化集群成员列表
@@ -297,7 +315,8 @@ func (node *Node)becomeLeader() {
 	} else {
 		node.logs.Append(node.Term(), EntryTypeNoop, "")
 	}
-	log.Printf("Node %s became leader at term %d", node.Id(), node.Term())
+	// immediately check if followers are alive, then send data after acked
+	node.heartbeatAllMembers()
 }
 
 /* ############################################# */
@@ -312,18 +331,20 @@ func (node *Node)resetMembers() {
 
 func (node *Node)heartbeatAllMembers() {
 	for _, m := range node.conf.members {
-		if m.NextIndex > node.logs.AcceptIndex() {
-			node.heartbeatMember(m)
-		}
+		m.HeartbeatTimer = 0
+		m.ReplicateTimer = 0
 	}
+	pre := node.logs.LastEntry()
+	ent := NewHearteatEntry(node.logs.CommitIndex())
+	node.broadcast(NewAppendEntryMsg("", ent, pre))
 }
 
 func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
-	prev := node.logs.LastEntry()
+	pre := node.logs.LastEntry()
 	ent := NewHearteatEntry(node.logs.CommitIndex())
-	node.send(NewAppendEntryMsg(m.Id, ent, prev))
+	node.send(NewAppendEntryMsg(m.Id, ent, pre))
 }
 
 func (node *Node)replicateAllMembers() {
@@ -333,16 +354,17 @@ func (node *Node)replicateAllMembers() {
 }
 
 func (node *Node)replicateMember(m *Member) {
-	if m.NextIndex == 0 {
+	if !m.Connected() {
 		return
 	}
-	if m.MatchIndex != -1 && m.NextIndex - m.MatchIndex > SendWindowSize {
-		log.Printf("member %s send window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+	if m.UnackedSize() >= SendWindowSize {
+		log.Printf("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-
 	m.ReplicateTimer = 0
-	maxIndex := util.MaxInt64(m.NextIndex, m.MatchIndex + SendWindowSize)
+	m.HeartbeatTimer = 0
+
+	maxIndex := m.MatchIndex + SendWindowSize
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
 		if ent == nil {
@@ -350,11 +372,10 @@ func (node *Node)replicateMember(m *Member) {
 		}
 		ent.Commit = node.logs.CommitIndex()
 		
-		prev := node.logs.GetEntry(m.NextIndex - 1)
-		node.send(NewAppendEntryMsg(m.Id, ent, prev))
+		pre := node.logs.GetEntry(m.NextIndex - 1)
+		node.send(NewAppendEntryMsg(m.Id, ent, pre))
 		
 		m.NextIndex ++
-		m.HeartbeatTimer = 0
 	}
 }
 
@@ -366,7 +387,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		log.Printf("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
 		return
 	}
-	m.ReceiveTimeout = 0
+	m.IdleTimeout = 0
 
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
@@ -430,17 +451,17 @@ func (node *Node)handlePreVote(msg *Message){
 		arr := make([]int, 0, len(node.conf.members) + 1)
 		arr = append(arr, 0) // self
 		for _, m := range node.conf.members {
-			arr = append(arr, m.ReceiveTimeout)
+			arr = append(arr, m.IdleTimeout)
 		}
 		sort.Ints(arr)
 		log.Println("    receive timeouts[] =", arr)
 		timer := arr[len(arr)/2]
-		if timer < ReceiveTimeout {
+		if timer < IdleTimeout {
 			log.Println("    major followers are still reachable, ignore")
 			return
 		}
 	} else {
-		if node.leader != nil && node.leader.ReceiveTimeout < ReceiveTimeout {
+		if node.leader != nil && node.leader.IdleTimeout < IdleTimeout {
 			log.Printf("leader %s is still reachable, ignore PreVote from %s", node.leader.Id, msg.Src)
 			return
 		}
@@ -590,7 +611,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 			m.MatchIndex = msg.PrevIndex
 			m.NextIndex  = msg.PrevIndex + 1
 		}
-		return
+		return // do not send immediately, wait for replicate timer
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
