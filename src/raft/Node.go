@@ -63,7 +63,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.conf.node = node
 	node.logs = logs
 	node.logs.node = node
-	// Binlog store commitIndex in log entry, which may not be up to date
+	// Binlog stores commitIndex in every log entry, which may not be up to date
 	node.logs.commitIndex = node.conf.applied
 
 	node.reset()
@@ -668,22 +668,29 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	// use a propose_lock?
 	var term int32
 	node.Lock()
-	if node.role != RoleLeader {
-		node.Unlock()
-		log.Println("error: not leader")
-		return -1, -1
+	{
+		if node.role != RoleLeader {
+			node.Unlock()
+			log.Println("error: not leader")
+			return -1, -1
+		}
+		// assign term to a proposing entry while holding lock, then assign index
+		// inside logs.Append(). When a new entry with save index (sure with newer term)
+		// received, the newer one will replace the old one.
+		term = node.Term()
+
+		// TODO: 直接丢弃
+		for node.logs.UncommittedSize() >= MaxUncommittedSize {
+			log.Printf("sleep, append: %d, accept: %d commit: %d",
+				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
+			node.Unlock()
+			util.Sleep(0.1)
+			node.Lock()
+		}
 	}
-	// assign term to a new entry while holding lock
-	term = node.Term()
 	node.Unlock()
 
-	// TODO: 直接丢弃, 而且在 node.Lock() 里判断
-	for node.logs.UncommittedSize() >= MaxUncommittedSize {
-		log.Printf("sleep, append: %d, accept: %d commit: %d",
-			node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
-		util.Sleep(0.1)
-	}
-
+	// invoke logs.Append() outside of node.Lock(), because it may block
 	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
 }

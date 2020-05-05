@@ -227,7 +227,7 @@ func (st *Binlog)Fsync() {
 
 func (st *Binlog)Commit(commitIndex int64) {
 	has_new := false
-	
+
 	st.Lock()
 	{
 		commitIndex = util.MinInt64(commitIndex, st.AcceptIndex())
@@ -241,6 +241,7 @@ func (st *Binlog)Commit(commitIndex int64) {
 	}
 	st.Unlock()
 
+	// accept_c consumer may need holding lock, so produce accept_c outside
 	if has_new {
 		st.commit_c <- true
 	}
