@@ -226,16 +226,24 @@ func (st *Binlog)Fsync() {
 }
 
 func (st *Binlog)Commit(commitIndex int64) {
+	has_new := false
+	
 	st.Lock()
-	defer st.Unlock()
-
-	commitIndex = util.MinInt64(commitIndex, st.AcceptIndex())
-	if commitIndex <= st.commitIndex {
-		return
+	{
+		commitIndex = util.MinInt64(commitIndex, st.AcceptIndex())
+		if commitIndex <= st.commitIndex {
+			st.Unlock()
+			return
+		}
+		has_new = true
+		// TODO: every conf entry must be explictly committed, check here
+		st.commitIndex = commitIndex
 	}
-	// TODO: every conf entry must be explictly committed, check here
-	st.commitIndex = commitIndex
-	st.commit_c <- true
+	st.Unlock()
+
+	if has_new {
+		st.commit_c <- true
+	}
 }
 
 func (st *Binlog)Clean() {

@@ -677,7 +677,7 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	term = node.Term()
 	node.Unlock()
 
-	// TODO: 直接丢弃
+	// TODO: 直接丢弃, 而且在 node.Lock() 里判断
 	for node.logs.UncommittedSize() >= MaxUncommittedSize {
 		log.Printf("sleep, append: %d, accept: %d commit: %d",
 			node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
