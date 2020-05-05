@@ -3,12 +3,12 @@ package server
 import (
 	"fmt"
 	"net"
-	"log"
 	"sync"
 	"bytes"
 	"math"
 	"encoding/binary"
 
+	"glog"
 	"raft"
 	"util"
 )
@@ -107,7 +107,7 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool{
 
 	client := tp.id_clients[msg.Dst]
 	if client == nil {
-		log.Printf("dst: %s not connected", msg.Dst)
+		glog.Debug("dst: %s not connected", msg.Dst)
 		return false
 	}
 	client.send_seq ++
@@ -126,21 +126,20 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool{
 		binary.Write(send_buf, binary.BigEndian, num)
 		binary.Write(send_buf, binary.BigEndian, idx + 1)
 		send_buf.WriteString(str[s : e])
-		// log.Println("send fragment:", str[s:e])
 
 		cnt, err := tp.conn.WriteToUDP(send_buf.Bytes(), client.addr)
 		if cnt == 0 { // closed in other thread
 			return false
 		}
 		if err != nil { // socket error
-			log.Println(err)
+			glog.Errorln(err)
 			return false
 		}
 	}
 
 	// buf := []byte(str)
 	// n, _ := tp.conn.WriteToUDP(buf, addr)
-	log.Printf("    send > %s\n", util.StringEscape(str))
+	glog.Debug("    send > %s\n", util.StringEscape(str))
 	return true
 }
 
@@ -154,25 +153,24 @@ func (tp *UdpTransport)Recv() {
 			break
 		}
 		if err != nil { // socket error
-			log.Println(err)
+			glog.Errorln(err)
 			break
 		}
 		if cnt <= 8 {
-			log.Println("bad packet len =", cnt)
+			glog.Error("bad packet len = %d", cnt)
 			continue
 		}
 		client := tp.addr_clients[uaddr.String()]
 		if client == nil {
-			log.Println("receive from unknown addr", uaddr.String())
+			glog.Info("receive from unknown addr %s", uaddr.String())
 			continue
 		}
 
 		s := binary.BigEndian.Uint32(buf[0:4])
 		n := binary.BigEndian.Uint16(buf[4:6])
 		i := binary.BigEndian.Uint16(buf[6:8])
-		// log.Println(s, n, i)
 		if n == 0 || i == 0 {
-			log.Printf("bad packet n=%d, i=%d", n, i)
+			glog.Debug("bad packet n=%d, i=%d", n, i)
 			continue
 		}
 		if client.recv_num == 0 || client.recv_seq != s || client.recv_num != n {
@@ -182,7 +180,7 @@ func (tp *UdpTransport)Recv() {
 			recv_buf.Reset()
 		}
 		if client.recv_idx != i - 1 { // miss order
-			log.Println("miss order packet")
+			glog.Info("miss ordered packet")
 			client.recv_num = 0
 			continue
 		}
@@ -204,9 +202,9 @@ func (tp *UdpTransport)Recv() {
 		if len(str) > 0 {
 			msg := raft.DecodeMessage(str);
 			if msg == nil {
-				log.Println("decode error:", str)
+				glog.Error("decode error: %s", str)
 			} else {
-				log.Printf(" receive < %s\n", util.StringEscape(str))
+				glog.Debug(" receive < %s\n", util.StringEscape(str))
 				tp.c <- msg
 			}
 		}

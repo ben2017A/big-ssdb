@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"strconv"
 	"strings"
 
+	"glog"
 	"raft"
 	"raft/server"
 	"redis"
@@ -18,7 +18,7 @@ var node *raft.Node
 var xport *redis.Transport
 
 func main(){
-	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	// glog.SetLevel("info")
 
 	port := 8001
 	if len(os.Args) > 1 {
@@ -30,16 +30,16 @@ func main(){
 	base_dir := "./tmp/" + nodeId
 
 	if err := os.MkdirAll(base_dir, 0755); err != nil {
-		log.Fatalf("Failed to make dir %s, %s", base_dir, err)
+		glog.Fatal("Failed to make dir %s, %s", base_dir, err)
 	}
 
 	xport = redis.NewTransport("127.0.0.1", port+1000)
 	if xport == nil {
-		log.Fatalf("Failed to start redis port")
+		glog.Fatal("Failed to start redis port")
 		return
 	}
 	defer xport.Close()
-	log.Println("Redis server started at", port+1000)
+	glog.Infoln("Redis server started at", port+1000)
 
 	id_addr := make(map[string]string)
 	id_addr["8001"] = "127.0.0.1:8001"
@@ -64,7 +64,7 @@ func main(){
 		raft_xport.Connect(k, v)
 	}
 	defer raft_xport.Close()
-	log.Println("Raft server started at", port)
+	glog.Infoln("Raft server started at", port)
 
 	go func() {
 		for {
@@ -111,7 +111,7 @@ func Process(req *redis.Request) {
 		resp.ReplyBulk(node.Info())
 	} else {
 		t, i := node.Propose(req.Encode())
-		log.Println("Propose", t, i, cmd)
+		glog.Debugln("Propose", t, i, cmd)
 		if t == -1 {
 			resp.ReplyError("Propose failed")
 		}

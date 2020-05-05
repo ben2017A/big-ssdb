@@ -1,10 +1,10 @@
 package raft
 
 import (
-	"log"
 	"strings"
 	"encoding/json"
 
+	"glog"
 	"store"
 	"util"
 )
@@ -41,7 +41,7 @@ func (c *Config)Open(dir string) bool {
 	fn := dir + "/config.wal"
 	wal := store.OpenWalFile(fn)
 	if wal == nil {
-		log.Printf("Failed to open wal file: %s", fn)
+		glog.Error("Failed to open wal file: %s", fn)
 		return false
 	}
 
@@ -83,7 +83,7 @@ func (c *Config)Fsync() {
 	// TODO: 优化点
 	c.wal.Append(s)
 	if err := c.wal.Fsync(); err != nil {
-		log.Fatal(err)
+		glog.Fatalln(err)
 	}
 }
 
@@ -109,7 +109,7 @@ func (c *Config)decode(data string) {
 	var arr map[string]string
 	err := json.Unmarshal([]byte(data), &arr)
 	if err != nil {
-		log.Fatal("bad data:", data)
+		glog.Fatalln("bad data:", data)
 	}
 
 	c.id = arr["id"]
@@ -172,7 +172,7 @@ func (c *Config)updatePeers() {
 func (c *Config)ApplyEntry(ent *Entry) {
 	c.applied = ent.Index
 
-	log.Println("[Apply] ", util.StringEscape(ent.Encode()))
+	glog.Debug("[Apply] %s", util.StringEscape(ent.Encode()))
 	if ent.Type == EntryTypeConf {
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
@@ -197,7 +197,7 @@ func (c *Config)Clean() {
 	c.peers = make([]string, 0)
 	c.members = make(map[string]*Member)
 	if err := c.wal.Clean(); err != nil {
-		log.Fatal(err)
+		glog.Fatalln(err)
 	}
 }
 

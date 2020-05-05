@@ -2,7 +2,6 @@ package raft
 
 import (
 	"testing"
-	"log"
 	"fmt"
 	"time"
 	"sync"
@@ -40,16 +39,15 @@ var dir1 string = "./tmp/n1"
 var dir2 string = "./tmp/n2"
 
 func TestNode(t *testing.T){
-	defer glog.Flush()
-	glog.SetLevel("debug")
-	glog.Debug("a %d", 0)
-	glog.Info("a %d", 1)
-	glog.Warn("b %d", 2)
-	glog.Error("c %d", 3)
-	sleep(0.1)
-	os.Exit(1)
-
-	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	// defer glog.Flush()
+	// glog.SetLevel("debug")
+	// glog.Debug("a %d", 0)
+	// glog.Info("a %d", 1)
+	// glog.Warn("b %d", 2)
+	// glog.Error("c %d", 3)
+	// glog.Fatal("c %d", 3)
+	// sleep(0.1)
+	// os.Exit(1)
 
 	os.MkdirAll(dir1, 0755)
 	os.MkdirAll(dir2, 0755)
@@ -84,7 +82,7 @@ func TestNode(t *testing.T){
 	testRestart()
 	clean_nodes()
 
-	log.Println("end")
+	glog.Info("end")
 	fmt.Println("")
 }
 
@@ -110,10 +108,10 @@ func testOrphanNode() {
 
 	// 集群的消息会被 n2 丢弃
 	if len(n2.conf.peers) != 0 {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 	if n2.CommitIndex() != 0 {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 }
 
@@ -128,12 +126,12 @@ func testOneNode() {
 	mutex.Unlock()
 
 	if n1.role != RoleLeader {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 
 	wait() // wait commit
 	if n1.CommitIndex() != 1 {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 }
 
@@ -156,18 +154,18 @@ func testTwoNodes() {
 	wait() // wait log replication
 
 	if n1.role != RoleLeader {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 	if n2.role != RoleFollower {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 	if n1.CommitIndex() != 2 {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 	if n1.CommitIndex() != n2.CommitIndex() {
-		log.Fatal("error ", n1.CommitIndex(), n2.CommitIndex())	
+		glog.Fatal("error ", n1.CommitIndex(), n2.CommitIndex())	
 	}
-	log.Println("-----")
+	glog.Info("-----")
 }
 
 // 新节点加入集群
@@ -175,7 +173,7 @@ func testJoin() {
 	n1.ProposeAddMember("n2")
 	wait()
 	if n1.conf.members["n2"] == nil {
-		log.Println("error")
+		glog.Info("error")
 	}
 
 	mutex.Lock()
@@ -191,12 +189,12 @@ func testJoin() {
 	wait() // wait repication
 
 	if n2.role != RoleFollower {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 	// if n1.CommitIndex() != n2.CommitIndex() {
-	// 	log.Fatal("error")	
+	// 	glog.Fatal("error")	
 	// }
-	log.Println("-----")
+	glog.Info("-----")
 }
 
 // 退出集群
@@ -204,22 +202,22 @@ func testQuit() {
 	n1.ProposeDelMember("n2")
 	wait()
 	if n1.conf.members["n2"] != nil {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
 
 	n2.Tick(ElectionTimeout) // start election
 	wait()
 	if n2.role != RoleFollower {
-		log.Fatal("error")
+		glog.Fatal("error")
 	}
-	log.Println("-----")
+	glog.Info("-----")
 }
 
 // 落后太多时, 同步 Raft 快照
 func testSnapshot() {
 	testOneNode()
 	for i := 0; i < MaxFallBehindSize; i++ {
-		// log.Println(i)
+		// glog.Info(i)
 		n1.Propose(fmt.Sprintf("%d", i))
 	}
 	testJoin()
@@ -232,9 +230,9 @@ func testSnapshot() {
 	wait() // wait replication
 
 	if n2.CommitIndex() != idx + 1 {
-		log.Fatal("error ", idx, n2.CommitIndex())	
+		glog.Fatal("error ", idx, n2.CommitIndex())	
 	}
-	log.Println("-----")
+	glog.Info("-----")
 }
 
 func testRestart() {
@@ -258,9 +256,9 @@ func testRestart() {
 
 	wait()
 	if n1.CommitIndex() != 3 {
-		log.Fatal("error")	
+		glog.Fatal("error")	
 	}
-	log.Println("-----")
+	glog.Info("-----")
 }
 
 //////////////////////////////////////////////////////////////////
@@ -274,7 +272,7 @@ func clean_nodes(){
 	for id, n := range nodes {
 		n.Close()
 		delete(nodes, id)
-		// log.Printf("%s stopped", id)
+		// glog.Printf("%s stopped", id)
 	}
 }
 
@@ -291,10 +289,10 @@ func dispatch(id string){
 	}
 
 	msg := <- n.SendC()
-	log.Println("    send > " + msg.Encode())
+	glog.Info("    send > " + msg.Encode())
 
 	if nodes[msg.Dst] != nil {
-		// log.Println("    recv < " + msg.Encode())
+		// glog.Info("    recv < " + msg.Encode())
 		nodes[msg.Dst].RecvC() <- msg
 	}
 }

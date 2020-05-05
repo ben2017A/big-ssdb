@@ -583,8 +583,9 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 	buf.WriteString(file)
 	buf.tmp[0] = ':'
 	n := buf.someDigits(1, line)
-	buf.tmp[n+1] = ' '
-	buf.Write(buf.tmp[:n+2])
+	buf.tmp[n+1] = ':'
+	buf.tmp[n+2] = ' '
+	buf.Write(buf.tmp[:n+3])
 	return buf
 }
 
@@ -681,10 +682,10 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 		}
 	}
 	data := buf.Bytes()
-	if !flag.Parsed() {
+	/*if !flag.Parsed() {
 		os.Stderr.Write([]byte("ERROR: logging before flag.Parse: "))
 		os.Stderr.Write(data)
-	} else if l.toStderr {
+	} else */if l.toStderr {
 		os.Stderr.Write(data)
 	} else {
 		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
@@ -1036,6 +1037,10 @@ func Debug(format string, args ...interface{}) {
 	logging.printf(debugLog, format, args...)
 }
 
+func Debugln(args ...interface{}) {
+	logging.println(debugLog, args...)
+}
+
 // Infoln is equivalent to the global Infoln function, guarded by the value of v.
 // See the documentation of V for usage.
 func (v Verbose) Infoln(args ...interface{}) {
@@ -1076,13 +1081,13 @@ func WarningDepth(depth int, args ...interface{}) {
 	logging.printDepth(warnLog, depth, args...)
 }
 
-// Warningln logs to the WARNING and INFO logs.
+// Warnln logs to the WARNING and INFO logs.
 // Arguments are handled in the manner of fmt.Println; a newline is appended if missing.
-func Warningln(args ...interface{}) {
+func Warnln(args ...interface{}) {
 	logging.println(warnLog, args...)
 }
 
-// Warningf logs to the WARNING and INFO logs.
+// Warn logs to the WARNING and INFO logs.
 // Arguments are handled in the manner of fmt.Printf; a newline is appended if missing.
 func Warn(format string, args ...interface{}) {
 	logging.printf(warnLog, format, args...)

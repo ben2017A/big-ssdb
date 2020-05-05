@@ -1,8 +1,8 @@
 package raft
 
 import (
-	"log"
 	"sync"
+	"glog"
 	"util"
 	"store"
 )
@@ -31,7 +31,7 @@ func OpenBinlog(dir string) *Binlog {
 	fn := dir + "/binlog.wal"
 	wal := store.OpenWalFile(fn)
 	if wal == nil {
-		log.Printf("Failed to open wal file: %s", fn)
+		glog.Error("Failed to open wal file: %s", fn)
 		return nil
 	}
 
@@ -61,7 +61,7 @@ func (st *Binlog)init() {
 		r := st.wal.Item()
 		e := DecodeEntry(r)
 		if e == nil {
-			log.Fatalf("Failed to decode entry: %s", r)
+			glog.Fatal("Failed to decode entry: %s", r)
 		}
 		st.entries[e.Index] = e
 		st.lastEntry = e
@@ -71,7 +71,7 @@ func (st *Binlog)init() {
 
 	// validate persitent state
 	if st.CommitIndex() > st.AcceptIndex() {
-		log.Fatalf("Data corruption, commit: %d > accept: %d", st.CommitIndex(), st.AcceptIndex())
+		glog.Fatal("Data corruption, commit: %d > accept: %d", st.CommitIndex(), st.AcceptIndex())
 	}
 }
 
@@ -162,13 +162,13 @@ func (st *Binlog)Write(ent *Entry) {
 			if old.Term > ent.Term {
 				// after assigning index to a proposing entry, but before saving it,
 				// we just received an entry with same index from new leader
-				log.Printf("drop entry %d:%d, old entry has newer term %d", ent.Term, ent.Index, old.Term)
+				glog.Info("drop entry %d:%d, old entry has newer term %d", ent.Term, ent.Index, old.Term)
 				drop = true
 			} else if old.Term < ent.Term {
 				// TODO: how?
-				log.Println("TODO: delete conflicted entry, and entries that follow")
+				glog.Info("TODO: delete conflicted entry, and entries that follow")
 			} else {
-				log.Printf("drop duplicated entry %d:%d", ent.Term, ent.Index)
+				glog.Info("drop duplicated entry %d:%d", ent.Term, ent.Index)
 				drop = true
 			}
 		}
@@ -204,12 +204,12 @@ func (st *Binlog)Fsync() {
 
 			data := ent.Encode()
 			st.wal.Append(data)
-			log.Println("[Append]", util.StringEscape(data))
+			glog.Debug("[Append] %s", util.StringEscape(data))
 		}
 		if has_new {
 			err := st.wal.Fsync()
 			if err != nil {
-				log.Fatal(err)
+				glog.Fatalln(err)
 			}
 			// when is follower
 			if st.appendIndex < st.lastEntry.Index {
@@ -253,7 +253,7 @@ func (st *Binlog)Clean() {
 
 	st.stopWriter()
 	if err := st.wal.Clean(); err != nil {
-		log.Fatal(err)
+		glog.Fatalln(err)
 	}
 
 	st.init()

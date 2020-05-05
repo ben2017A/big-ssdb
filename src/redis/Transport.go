@@ -2,10 +2,10 @@ package redis
 
 import (
 	"net"
-	"log"
 	"fmt"
 	"sync"
 	"bytes"
+	"glog"
 	"util"
 )
 
@@ -26,7 +26,7 @@ func NewTransport(ip string, port int) *Transport {
 	addr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ip, port))
 	conn, err := net.ListenTCP("tcp", addr)
 	if err != nil {
-		log.Println(err)
+		glog.Errorln(err)
 		return nil
 	}
 
@@ -50,10 +50,10 @@ func (tp *Transport)start() {
 		for {
 			conn, err := tp.conn.Accept()
 			if err != nil {
-				log.Fatal(err)
+				glog.Fatalln(err)
 			}
 			tp.lastClientId ++
-			log.Println("Accept connection", tp.lastClientId, conn.RemoteAddr().String())
+			glog.Info("Accept connection %d %s", tp.lastClientId, conn.RemoteAddr().String())
 			go tp.handleClient(tp.lastClientId, conn)
 		}
 	}()
@@ -65,7 +65,7 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 	tp.mux.Unlock()
 
 	defer func() {
-		log.Println("Close connection", clientId, conn.RemoteAddr().String())
+		glog.Info("Close connection %d %s", clientId, conn.RemoteAddr().String())
 		tp.mux.Lock()
 		delete(tp.clients, clientId)
 		tp.mux.Unlock()
@@ -81,10 +81,9 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 		for {
 			n := msg.Decode(buf.Bytes())
 			if n == -1 {
-				log.Println("Parse error")
+				glog.Warnln("Parse error")
 				return
 			} else if (n == 0){
-				// log.Println("not ready")
 				break
 			}
 			buf.Next(n)
@@ -98,7 +97,7 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 			break
 		}
 		buf.Write(tmp[0:n])
-		log.Printf("    receive > %d %s\n", clientId, util.StringEscape(string(tmp[0:n])))
+		glog.Debug("    receive > %d %s", clientId, util.StringEscape(string(tmp[0:n])))
 	}
 }
 
@@ -111,10 +110,10 @@ func (tp *Transport)Send(resp *Response) {
 
 	conn := tp.clients[dst]
 	if conn == nil {
-		log.Println("connection not found:", dst)
+		glog.Info("connection not found: %s", dst)
 		return
 	}
 	
-	log.Printf("    send > %d %s\n", dst, util.StringEscape(data))
+	glog.Debug("    send > %d %s\n", dst, util.StringEscape(data))
 	conn.Write([]byte(data))
 }
