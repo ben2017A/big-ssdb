@@ -66,12 +66,6 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 
 	node.reset()
 
-	// validate persitent state
-	if node.logs.UncommittedSize() > MaxUncommittedSize {
-		log.Fatalf("Data corruption, too many uncommitted logs, append: %d, commit: %d",
-			node.logs.AppendIndex(), node.logs.CommitIndex())
-	}
-
 	return node
 }
 
