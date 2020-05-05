@@ -198,9 +198,9 @@ func (node *Node)Tick(timeElapseMs int) {
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
-			// only send snapshot when follower responses within HeartbeatTimeout * 2
-			if m.Connected() && m.IdleTimer <= HeartbeatTimeout * 2 {
-				if m.HeartbeatTimer >= HeartbeatTimeout {
+			if m.HeartbeatTimer >= HeartbeatTimeout {
+				// only send snapshot when follower responses within HeartbeatTimeout * 2
+				if m.Connected() && m.IdleTimer <= HeartbeatTimeout * 2 {
 					if node.logs.CommitIndex() - m.MatchIndex > MaxFallBehindSize {
 						m.HeartbeatTimer = 0
 						log.Printf("Member %s, send snapshot", m.Id)
