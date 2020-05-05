@@ -50,8 +50,8 @@ func OpenBinlog(dir string) *Binlog {
 }
 
 func (st *Binlog)init() {
-	st.entries = make(map[int64]*Entry)
 	st.lastEntry = new(Entry)
+	st.entries = make(map[int64]*Entry)
 	st.appendIndex = 0
 	st.commitIndex = 0
 
@@ -73,6 +73,9 @@ func (st *Binlog)init() {
 	if st.CommitIndex() > st.AcceptIndex() {
 		log.Fatalf("Data corruption, commit: %d > accept: %d", st.CommitIndex(), st.AcceptIndex())
 	}
+}
+
+func (st *Binlog)reset() {
 }
 
 func (st *Binlog)Close() {
@@ -184,10 +187,10 @@ func (st *Binlog)Write(ent *Entry) {
 }
 
 func (st *Binlog)Fsync() {
-	st.Lock()
-
-	// 找出连续的 entries, 持久化, 更新 lastEntry
 	has_new := false
+
+	st.Lock()
+	// 找出连续的 entries, 持久化, 更新 lastEntry
 	for {
 		ent := st.entries[st.lastEntry.Index + 1]
 		if ent == nil {
@@ -206,6 +209,10 @@ func (st *Binlog)Fsync() {
 		err := st.wal.Fsync()
 		if err != nil {
 			log.Fatal(err)
+		}
+		// when is follower
+		if st.appendIndex < st.lastEntry.Index {
+			st.appendIndex = st.lastEntry.Index
 		}
 	}
 	st.Unlock()
@@ -254,7 +261,9 @@ func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.Clean()
 	st.appendIndex = sn.LastIndex()
 	st.commitIndex = sn.LastIndex()
+	// lastEntry will be updated inside Fsync
 	st.lastEntry.Index = sn.LastIndex() - 1
 	st.Write(sn.lastEntry)
+	// may be called by writer, but force fsync as well
 	st.Fsync()
 }
