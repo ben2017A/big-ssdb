@@ -1,29 +1,43 @@
 package raft
 
+type PeerRole string
+type PeerState int
+
+const(
+	RoleLeader    = "leader"
+	RoleFollower  = "follower"
+	RoleCandidate = "candidate"
+)
+
+const (
+	StateReplicate  = 0
+	StateFallBehind = 1
+)
+
 type Member struct{
 	Id string
-	Role RoleType
+	Role  PeerRole
+	State PeerState
 
 	// sliding window
-	NextIndex int64   // send_next
+	NextIndex  int64   // send_next
 	MatchIndex int64  // last_ack/(recv_next-1), -1: never received from remote
 
 	HeartbeatTimer int
 	ReplicateTimer int
-
-	IdleTimer int // increase on tick(), reset on ApplyEntryAck
+	IdleTimer      int // increase on tick(), reset on ApplyEntryAck
 }
 
 func NewMember(id string) *Member{
 	ret := new(Member)
-	ret.Role = RoleFollower
-	ret.Id = id
 	ret.Reset()
+	ret.Id = id
 	return ret
 }
 
 func (m *Member)Reset() {
 	m.Role = RoleFollower
+	m.State = StateReplicate
 	m.NextIndex = 0
 	m.MatchIndex = -1
 	m.HeartbeatTimer = 0

@@ -127,14 +127,15 @@ func (c *Config)SetRound(term int32, vote string) {
 	c.Fsync()
 }
 
+// 用于集群初始经, 只改变内存状态, 不持久化
 func (c *Config)SetPeers(peers []string) {
 	c.members = make(map[string]*Member)
 	for _, nodeId := range peers {
-		c.addMember(nodeId)
+		c.addPeer(nodeId)
 	}
 }
 
-func (c *Config)addMember(nodeId string) {
+func (c *Config)addPeer(nodeId string) {
 	if c.members[nodeId] != nil {
 		return
 	}
@@ -147,7 +148,7 @@ func (c *Config)addMember(nodeId string) {
 	c.updatePeers()
 }
 
-func (c *Config)delMember(nodeId string) {
+func (c *Config)delPeer(nodeId string) {
 	if nodeId == c.id {
 		c.joined = false
 	} else {
@@ -176,12 +177,12 @@ func (c *Config)ApplyEntry(ent *Entry) {
 	if ent.Type == EntryTypeConf {
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
-		if cmd == "AddMember" {
+		if cmd == "add_peer" {
 			nodeId := ps[1]
-			c.addMember(nodeId)
-		} else if cmd == "DelMember" {
+			c.addPeer(nodeId)
+		} else if cmd == "del_peer" {
 			nodeId := ps[1]
-			c.delMember(nodeId)
+			c.delPeer(nodeId)
 		}
 	}
 

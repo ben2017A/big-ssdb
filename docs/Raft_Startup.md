@@ -23,7 +23,7 @@
 
 ### 配置集群, 接受新节点
 
-* 请求 A, A.ProposeAddMember(B)
+* 请求 A, A.ProposeAddPeer(B)
 * 现在持久化的成员列表是 [A, B]
 
 ### 新节点启动, 加入集群

@@ -100,7 +100,7 @@ func testOrphanNode() {
 	mutex.Unlock()
 
 	// 集群接受 n2
-	n1.ProposeAddMember("n2")
+	n1.ProposeAddPeer("n2")
 	wait()
 
 	n1.Tick(HeartbeatTimeout)
@@ -170,7 +170,7 @@ func testTwoNodes() {
 
 // 新节点加入集群
 func testJoin() {
-	n1.ProposeAddMember("n2")
+	n1.ProposeAddPeer("n2")
 	wait()
 	if n1.conf.members["n2"] == nil {
 		glog.Info("error")
@@ -199,7 +199,7 @@ func testJoin() {
 
 // 退出集群
 func testQuit() {
-	n1.ProposeDelMember("n2")
+	n1.ProposeDelPeer("n2")
 	wait()
 	if n1.conf.members["n2"] != nil {
 		glog.Fatal("error")
@@ -228,6 +228,7 @@ func testSnapshot() {
 	idx := n2.CommitIndex()
 	n1.Propose("c")
 	wait() // wait replication
+	glog.Info(n1.Info())
 
 	if n2.CommitIndex() != idx + 1 {
 		glog.Fatal("error ", idx, n2.CommitIndex())	

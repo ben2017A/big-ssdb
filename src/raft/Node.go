@@ -11,14 +11,6 @@ import (
 	"util"
 )
 
-type RoleType string
-
-const(
-	RoleLeader    = "leader"
-	RoleFollower  = "follower"
-	RoleCandidate = "candidate"
-)
-
 // TODO: NodeOption
 const(
 	TickerInterval   = 100
@@ -35,7 +27,7 @@ const(
 type Node struct{
 	sync.Mutex
 
-	role RoleType
+	role PeerRole
 	leader *Member // currently discovered leader
 	votesReceived map[string]string // nodeId => vote result
 	electionTimer int
@@ -194,8 +186,8 @@ func (node *Node)Tick(timeElapseMs int) {
 
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				// only send snapshot when follower responses within HeartbeatTimeout * 2
-				if m.Connected() && m.IdleTimer <= HeartbeatTimeout * 2 {
-					if node.logs.CommitIndex() - m.MatchIndex > MaxFallBehindSize {
+				if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
+					if m.State == StateFallBehind {
 						m.HeartbeatTimer = 0
 						glog.Info("Member %s, send snapshot", m.Id)
 						node.sendSnapshot(m.Id)
@@ -209,7 +201,7 @@ func (node *Node)Tick(timeElapseMs int) {
 				// 2. it is not idle
 				// 3. it is not fall behind
 				if m.Connected() && m.IdleTimer < HeartbeatTimeout {
-					if node.logs.CommitIndex() - m.MatchIndex <= MaxFallBehindSize {
+					if m.State == StateReplicate {
 						if m.UnackedSize() != 0 {
 							glog.Info("Member: %s retransmission timeout, reset next: %d => %d",
 								m.Id, m.NextIndex, m.MatchIndex + 1)
@@ -293,7 +285,7 @@ func (node *Node)becomeLeader() {
 	if node.Term() == 1 { 
 		// store cluster members in binlog, as very first entry(s)
 		for _, id := range node.conf.peers {
-			node.logs.Append(node.Term(), EntryTypeConf, fmt.Sprintf("AddMember %s", id))
+			node.logs.Append(node.Term(), EntryTypeConf, fmt.Sprintf("add_peer %s", id))
 		}
 	} else {
 		node.logs.Append(node.Term(), EntryTypeNoop, "")
@@ -332,6 +324,9 @@ func (node *Node)heartbeatMember(m *Member){
 
 func (node *Node)replicateMember(m *Member) {
 	if !m.Connected() {
+		return
+	}
+	if m.State != StateReplicate {
 		return
 	}
 	if m.UnackedSize() >= SendWindowSize {
@@ -573,8 +568,9 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	if node.logs.CommitIndex() - msg.PrevIndex > MaxFallBehindSize {
-		glog.Info("Member %s sync broken, prevIndex %d, commit %d, MaxFallBehindSize: %d",
-			msg.Src, msg.PrevIndex, node.logs.CommitIndex(), MaxFallBehindSize)
+		glog.Info("Member %s fall behind, prevIndex %d, commit %d",
+			msg.Src, msg.PrevIndex, node.logs.CommitIndex())
+		m.State = StateFallBehind
 		m.MatchIndex = msg.PrevIndex
 		return
 	}
@@ -584,21 +580,19 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		return
 	}
 
+	m.State = StateReplicate
 	if msg.Data == "false" {
-		if m.NextIndex != msg.PrevIndex + 1 {
-			glog.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
-			m.MatchIndex = msg.PrevIndex
-			m.NextIndex  = msg.PrevIndex + 1
-		}
-		return // do not send immediately, wait for replicate timer
+		glog.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+		m.MatchIndex = msg.PrevIndex
+		m.NextIndex  = msg.PrevIndex + 1
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.logs.CommitIndex() {
 			node.advanceCommitIndex()
 		}
+		node.replicateMember(m)
 	}
-	node.replicateMember(m)
 }
 
 func (node *Node)advanceCommitIndex() {
@@ -694,13 +688,13 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	return ent.Term, ent.Index
 }
 
-func (node *Node)ProposeAddMember(nodeId string) (int32, int64) {
-	data := fmt.Sprintf("AddMember %s", nodeId)
+func (node *Node)ProposeAddPeer(nodeId string) (int32, int64) {
+	data := fmt.Sprintf("add_peer %s", nodeId)
 	return node._propose(EntryTypeConf, data)
 }
 
-func (node *Node)ProposeDelMember(nodeId string) (int32, int64) {
-	data := fmt.Sprintf("DelMember %s", nodeId)
+func (node *Node)ProposeDelPeer(nodeId string) (int32, int64) {
+	data := fmt.Sprintf("del_peer %s", nodeId)
 	return node._propose(EntryTypeConf, data)
 }
 
