@@ -102,7 +102,7 @@ func (node *Node)Start(){
 		node.checkVoteResult()
 	}
 	// wait start
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		<- node.done_c
 	}
 }
@@ -118,6 +118,10 @@ func (node *Node)Close(){
 	node.logs.Close()
 	<- node.done_c
 
+	node.commit_c <- false
+	<- node.done_c
+
+	// 停定时器
 	node.stop_c <- true
 	<- node.done_c
 
@@ -143,7 +147,6 @@ func (node *Node)startWorkers(){
 	}()
 
 	// accept_c 和 commit_c 不能在一个线程中处理, 因为会相互调用形成阻塞
-
 	go func() {
 		node.done_c <- true
 		defer func(){
@@ -158,7 +161,22 @@ func (node *Node)startWorkers(){
 			node.onAccept()
 		}
 	}()
-	
+
+	go func() {
+		node.done_c <- true
+		defer func(){
+			// log.Info("stop")
+			node.done_c <- true
+		}()
+		for {
+			t := <- node.commit_c
+			if t == false {
+				return
+			}
+			node.onCommit()
+		}
+	}()
+
 	go func() {
 		node.done_c <- true
 		defer func(){
@@ -173,8 +191,6 @@ func (node *Node)startWorkers(){
 				return
 			case <- ticker.C:
 				node.Tick(TickerInterval)
-			case <- node.commit_c:
-				node.onCommit()
 			}
 		}
 	}()

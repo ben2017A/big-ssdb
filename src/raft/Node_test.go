@@ -45,27 +45,27 @@ func TestNode(t *testing.T){
 
 	nodes = make(map[string]*Node)
 
-	// fmt.Printf("\n=========================================================\n")
-	// testOrphanNode()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testOrphanNode()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testOneNode()
-	// fmt.Printf("\n")
-	// testJoin()
-	// fmt.Printf("\n")
-	// testQuit()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testOneNode()
+	fmt.Printf("\n")
+	testJoin()
+	fmt.Printf("\n")
+	testQuit()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testTwoNodes()
-	// fmt.Printf("\n")
-	// testQuit()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testTwoNodes()
+	fmt.Printf("\n")
+	testQuit()
+	clean_nodes()
 
-	// fmt.Printf("\n=========================================================\n")
-	// testSnapshot()
-	// clean_nodes()
+	fmt.Printf("\n=========================================================\n")
+	testSnapshot()
+	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
 	testRestart()
@@ -213,11 +213,13 @@ func testRestart() {
 
 	mutex.Lock()
 	{
+		log.Info("")
 		n1.Close()
 		delete(nodes, "n1")
 	}
 	mutex.Unlock()
 
+	log.Info("")
 	n1 = NewNode(OpenConfig(dir1), OpenBinlog(dir1))
 	add_node(n1)
 
