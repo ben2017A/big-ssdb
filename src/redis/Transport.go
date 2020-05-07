@@ -41,6 +41,7 @@ func NewTransport(ip string, port int) *Transport {
 }
 
 func (tp *Transport)Close(){
+	// TODO: properly stop
 	tp.conn.Close()
 	close(tp.C)
 } 
@@ -50,7 +51,7 @@ func (tp *Transport)start() {
 		for {
 			conn, err := tp.conn.Accept()
 			if err != nil {
-				glog.Fatalln(err)
+				glog.Errorln(err)
 			}
 			tp.lastClientId ++
 			glog.Info("Accept connection %d %s", tp.lastClientId, conn.RemoteAddr().String())

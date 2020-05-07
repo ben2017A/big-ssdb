@@ -7,7 +7,7 @@ import (
 	"time"
 	"sync"
 	"encoding/json"
-	"glog"
+	log "glog"
 	"util"
 )
 
@@ -35,29 +35,39 @@ type Node struct{
 	conf *Config
 	logs *Binlog
 
+	stop_c chan bool
+	done_c chan bool
 	// messages to be processed by self
 	recv_c chan *Message
 	// messages to be sent to other nodes
 	send_c chan *Message
-	stop_c chan bool
-	stop_end_c chan bool
+	commit_c chan bool
+
+	commitIndex int64
 }
 
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.role = RoleFollower
-	node.recv_c = make(chan *Message, 1/*TODO*/)
-	node.send_c = make(chan *Message, 1/*TODO*/)
+	node.stop_c = make(chan bool)
+	node.done_c = make(chan bool)
+	node.recv_c = make(chan *Message, 0/*TODO 0*/)
+	node.send_c = make(chan *Message, 0/*TODO 0*/)
+	node.commit_c = make(chan bool) // log been committed
 
 	node.conf = conf
 	node.conf.node = node
 	node.logs = logs
 	node.logs.node = node
-	// Binlog stores commitIndex in every log entry, which may not be up to date
-	node.logs.commitIndex = node.conf.applied
 
 	node.reset()
+	node.commitIndex = node.conf.applied
 
+	// validate persitent state
+	if node.CommitIndex() > node.logs.AcceptIndex() {
+		log.Fatal("Data corruption, commit: %d > accept: %d", node.CommitIndex(), node.logs.AcceptIndex())
+	}
+	
 	return node
 }
 
@@ -70,7 +80,7 @@ func (node *Node)Term() int32 {
 }
 
 func (node *Node)CommitIndex() int64 {
-	return node.logs.CommitIndex()
+	return node.commitIndex
 }
 
 func (node *Node)RecvC() chan<- *Message {
@@ -82,87 +92,92 @@ func (node *Node)SendC() <-chan *Message {
 }
 
 func (node *Node)Start(){
-	glog.Info("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
+	log.Info("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.logs.CommitIndex(), node.logs.AcceptIndex())
-	node.startWorders()
+			node.CommitIndex(), node.logs.AcceptIndex())
+	node.startWorkers()
 	// 单节点运行
 	if node.conf.IsSingleton() {
 		node.startElection()
 		node.checkVoteResult()
 	}
+	// wait start
+	for i := 0; i < 3; i++ {
+		<- node.done_c
+	}
 }
 
 func (node *Node)Close(){
-	glog.Info("Stopping %s...", node.Id())
-	node.logs.accept_c <- false
-	node.logs.commit_c <- false
-	node.recv_c <- nil
-	node.stop_c <- true // signal ticker to stop
-	for i := 0; i < 4; i++ {
-		<- node.stop_end_c
-	}
+	log.Info("Stopping %s...", node.Id())
 
-	node.Lock()
-	node.conf.Close()
+	// 先停外界输入
+	node.recv_c <- nil
+	<- node.done_c
+
+	// 停持久化
 	node.logs.Close()
-	node.Unlock()
-	glog.Info("Stopped %s", node.Id())
+	<- node.done_c
+
+	node.stop_c <- true
+	<- node.done_c
+
+	node.conf.Close()
+
+	log.Info("Stopped %s", node.Id())
 }
 
-func (node *Node)startWorders(){
-	node.stop_c = make(chan bool)
-	node.stop_end_c = make(chan bool)
-
+func (node *Node)startWorkers(){
 	go func() {
+		node.done_c <- true
+		defer func(){
+			// log.Info("stop")
+			node.done_c <- true
+		}()
 		for {
 			msg := <- node.recv_c
 			if msg == nil {
 				break
 			}
-			node.Lock()
 			node.handleRaftMessage(msg)
-			node.Unlock()
 		}
-		node.stop_end_c <- true
 	}()
+
+	// accept_c 和 commit_c 不能在一个线程中处理, 因为会相互调用形成阻塞
 
 	go func() {
-		ticker := time.NewTicker(TickerInterval * time.Millisecond)
-		defer ticker.Stop()
-		stop := false
-		for !stop {
-			select{
-			case <- node.stop_c:
-				stop = true
-			case <- ticker.C:
-				node.Tick(TickerInterval)
-			}
-		}
-		node.stop_end_c <- true
-	}()
-
-	signal_consume := func(ch chan bool, consume func()) {
-		defer func() {
-			node.stop_end_c <- true
+		node.done_c <- true
+		defer func(){
+			// log.Info("stop")
+			node.done_c <- true
 		}()
 		for {
-			if b := <- ch; b == false {
+			t := <- node.logs.accept_c
+			if t == false {
 				return
 			}
-			// clear channel, multi signals are treated as one
-			for len(ch) > 0 {
-				b := <- ch
-				if !b {
-					return
-				}
-			}
-			consume()
+			node.onAccept()
 		}
-	}
-
-	go signal_consume(node.logs.accept_c, node.onAccept)
-	go signal_consume(node.logs.commit_c, node.onCommit)
+	}()
+	
+	go func() {
+		node.done_c <- true
+		defer func(){
+			// log.Info("stop")
+			node.done_c <- true
+		}()
+		ticker := time.NewTicker(TickerInterval * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select{
+			case <- node.stop_c:
+				return
+			case <- ticker.C:
+				node.Tick(TickerInterval)
+			case <- node.commit_c:
+				node.onCommit()
+			}
+		}
+	}()
 }
 
 func (node *Node)Tick(timeElapseMs int) {
@@ -176,6 +191,7 @@ func (node *Node)Tick(timeElapseMs int) {
 	if node.role == RoleFollower || node.role == RoleCandidate {
 		node.electionTimer += timeElapseMs
 		if node.electionTimer >= ElectionTimeout {
+			log.Info(node.Id())
 			node.startPreVote()
 		}
 	} else if node.role == RoleLeader {
@@ -189,7 +205,7 @@ func (node *Node)Tick(timeElapseMs int) {
 				if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
 					if m.State == StateFallBehind {
 						m.HeartbeatTimer = 0
-						glog.Info("Member %s, send snapshot", m.Id)
+						log.Info("Member %s, send snapshot", m.Id)
 						node.sendSnapshot(m.Id)
 					}
 				}
@@ -203,7 +219,7 @@ func (node *Node)Tick(timeElapseMs int) {
 				if m.Connected() && m.IdleTimer < HeartbeatTimeout {
 					if m.State == StateReplicate {
 						if m.UnackedSize() != 0 {
-							glog.Info("Member: %s retransmission timeout, reset next: %d => %d",
+							log.Info("Member: %s retransmission timeout, reset next: %d => %d",
 								m.Id, m.NextIndex, m.MatchIndex + 1)
 							m.NextIndex = m.MatchIndex + 1
 						}
@@ -259,7 +275,7 @@ func (node *Node)reset() {
 func (node *Node)startPreVote() {
 	node.reset()
 	node.role = RoleFollower
-	glog.Info("Node %s start prevote at term %d", node.Id(), node.Term())
+	log.Info("Node %s start prevote at term %d", node.Id(), node.Term())
 	node.broadcast(NewPreVoteMsg())
 }
 
@@ -267,20 +283,20 @@ func (node *Node)startElection() {
 	node.reset()
 	node.role = RoleCandidate
 	node.conf.SetRound(node.Term() + 1, node.Id())
-	glog.Info("Node %s start election at term %d", node.Id(), node.Term())
+	log.Info("Node %s start election at term %d", node.Id(), node.Term())
 	node.broadcast(NewRequestVoteMsg())
 }
 
 func (node *Node)becomeFollower() {
 	node.reset()
 	node.role = RoleFollower
-	glog.Info("Node %s became follower at term %d", node.Id(), node.Term())
+	log.Info("Node %s became follower at term %d", node.Id(), node.Term())
 }
 
 func (node *Node)becomeLeader() {
 	node.reset()
 	node.role = RoleLeader
-	glog.Info("Node %s became leader at term %d", node.Id(), node.Term())
+	log.Info("Node %s became leader at term %d", node.Id(), node.Term())
 
 	if node.Term() == 1 { 
 		// store cluster members in binlog, as very first entry(s)
@@ -310,7 +326,7 @@ func (node *Node)heartbeatAllMembers() {
 		m.ReplicateTimer = 0
 	}
 	pre := node.logs.LastEntry()
-	ent := NewHearteatEntry(node.logs.CommitIndex())
+	ent := NewHearteatEntry(node.CommitIndex())
 	node.broadcast(NewAppendEntryMsg("", ent, pre))
 }
 
@@ -318,7 +334,7 @@ func (node *Node)heartbeatMember(m *Member){
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
 	pre := node.logs.LastEntry()
-	ent := NewHearteatEntry(node.logs.CommitIndex())
+	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
 }
 
@@ -330,7 +346,7 @@ func (node *Node)replicateMember(m *Member) {
 		return
 	}
 	if m.UnackedSize() >= SendWindowSize {
-		glog.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
 	m.ReplicateTimer = 0
@@ -341,7 +357,7 @@ func (node *Node)replicateMember(m *Member) {
 		if ent == nil {
 			break
 		}
-		ent.Commit = node.logs.CommitIndex()
+		ent.Commit = node.CommitIndex()
 		
 		pre := node.logs.GetEntry(m.NextIndex - 1)
 		node.send(NewAppendEntryMsg(m.Id, ent, pre))
@@ -354,16 +370,19 @@ func (node *Node)replicateMember(m *Member) {
 /* ############################################# */
 
 func (node *Node)handleRaftMessage(msg *Message){
+	node.Lock()
+	defer node.Unlock()
+
 	m := node.conf.members[msg.Src]
 	if msg.Dst != node.Id() || m == nil {
-		glog.Info("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
+		log.Info("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
 		return
 	}
 	m.IdleTimer = 0
 
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
-		glog.Info("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
+		log.Info("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
 		node.conf.SetRound(msg.Term, "")
 		if node.role != RoleFollower {
 			node.becomeFollower()
@@ -380,14 +399,14 @@ func (node *Node)handleRaftMessage(msg *Message){
 		} else if msg.Type == MessageTypePreVote {
 			node.handlePreVote(msg)
 		} else {
-			glog.Infoln("drop message", msg.Encode())
+			log.Infoln("drop message", msg.Encode())
 		}
 		return
 	}
 
 	// MUST: smaller msg.Term is rejected
 	if msg.Term < node.Term() {
-		glog.Infoln("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
+		log.Infoln("reject", msg.Type, "msg.Term =", msg.Term, " < node.term = ", node.Term())
 		node.send(NewGossipMsg(msg.Src))
 		return
 	}
@@ -396,7 +415,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		if msg.Type == MessageTypeRequestVoteAck {
 			node.handleRequestVoteAck(msg)
 		} else {
-			glog.Infoln("drop message", msg.Encode())
+			log.Infoln("drop message", msg.Encode())
 		}
 		return
 	}
@@ -412,7 +431,7 @@ func (node *Node)handleRaftMessage(msg *Message){
 		} else if msg.Type == MessageTypeInstallSnapshot {
 			node.handleInstallSnapshot(msg)
 		} else {
-			glog.Infoln("drop message", msg.Encode())
+			log.Infoln("drop message", msg.Encode())
 		}
 		return
 	}
@@ -426,24 +445,24 @@ func (node *Node)handlePreVote(msg *Message){
 			arr = append(arr, m.IdleTimer)
 		}
 		sort.Ints(arr)
-		glog.Debugln("    receive timeouts[] =", arr)
+		log.Debugln("    receive timeouts[] =", arr)
 		timer := arr[len(arr)/2]
 		if timer < HeartbeatTimeout {
-			glog.Debug("    major followers are still reachable, ignore")
+			log.Debug("    major followers are still reachable, ignore")
 			return
 		}
 	} else {
 		if node.leader != nil && node.leader.IdleTimer < HeartbeatTimeout {
-			glog.Info("leader %s is still reachable, ignore PreVote from %s", node.leader.Id, msg.Src)
+			log.Info("leader %s is still reachable, ignore PreVote from %s", node.leader.Id, msg.Src)
 			return
 		}
 	}
-	glog.Info("Node %s grant prevote to %s", node.Id(), msg.Src)
+	log.Info("Node %s grant prevote to %s", node.Id(), msg.Src)
 	node.send(NewPreVoteAck(msg.Src))
 }
 
 func (node *Node)handlePreVoteAck(msg *Message){
-	glog.Info("Node %s receive prevote ack from %s", node.Id(), msg.Src)
+	log.Info("Node %s receive prevote ack from %s", node.Id(), msg.Src)
 	node.votesReceived[msg.Src] = "grant"
 	if len(node.votesReceived) + 1 > (len(node.conf.members) + 1)/2 {
 		node.startElection()
@@ -455,7 +474,7 @@ func (node *Node)handleRequestVote(msg *Message){
 	// it should start a new election
 	if node.conf.vote != "" /*&& node.conf.vote != msg.Src*/ {
 		// just ignore
-		glog.Infoln("already vote for", node.conf.vote, "ignore", msg.Src)
+		log.Infoln("already vote for", node.conf.vote, "ignore", msg.Src)
 		return
 	}
 	
@@ -473,14 +492,14 @@ func (node *Node)handleRequestVote(msg *Message){
 		node.electionTimer = 0
 		node.conf.SetRound(node.Term(), msg.Src)
 		node.send(NewRequestVoteAck(msg.Src, true))
-		glog.Info("Node %s vote for %s at term %d", node.Id(), msg.Src, node.Term())
+		log.Info("Node %s vote for %s at term %d", node.Id(), msg.Src, node.Term())
 	} else {
 		node.send(NewRequestVoteAck(msg.Src, false))
 	}
 }
 
 func (node *Node)handleRequestVoteAck(msg *Message){
-	glog.Info("Node %s receive %s vote ack from %s", node.Id(), msg.Data, msg.Src)
+	log.Info("Node %s receive %s vote ack from %s", node.Id(), msg.Data, msg.Src)
 	node.votesReceived[msg.Src] = msg.Data
 	node.checkVoteResult()
 }
@@ -498,7 +517,7 @@ func (node *Node)checkVoteResult(){
 	if grant > (len(node.conf.members) + 1)/2 {
 		node.becomeLeader()
 	} else if reject > len(node.conf.members)/2 {
-		glog.Info("grant: %d, reject: %d, total: %d", grant, reject, len(node.conf.members)+1)
+		log.Info("grant: %d, reject: %d, total: %d", grant, reject, len(node.conf.members)+1)
 		node.becomeFollower()
 	}
 }
@@ -537,12 +556,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 	if msg.PrevIndex > 0 {
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
-			glog.Infoln("prev entry not found", msg.PrevTerm, msg.PrevIndex)
+			log.Infoln("prev entry not found", msg.PrevTerm, msg.PrevIndex)
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 		if prev.Term != msg.PrevTerm {
-			glog.Infoln("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
+			log.Infoln("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
@@ -554,41 +573,41 @@ func (node *Node)handleAppendEntry(msg *Message){
 		// TODO: remember last ack index and time
 		node.sendAppendEntryAck()
 	} else {
-		if ent.Index <= node.logs.CommitIndex() {
-			glog.Info("invalid entry: %d before commit: %d", ent.Index, node.logs.CommitIndex())
+		if ent.Index <= node.CommitIndex() {
+			log.Info("invalid entry: %d before commit: %d", ent.Index, node.CommitIndex())
 			node.sendDuplicatedAckToMessage(msg)
 			return
 		}
 		node.logs.Write(ent)
 	}
-	if ent.Commit > node.logs.CommitIndex() {
-		node.tryCommit(ent.Commit)
+	if ent.Commit > node.CommitIndex() {
+		node.maybeCommit(ent.Commit)
 	}
 }
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
-	if node.logs.CommitIndex() - msg.PrevIndex > MaxFallBehindSize {
-		glog.Info("Member %s fall behind, prevIndex %d, commit %d",
-			msg.Src, msg.PrevIndex, node.logs.CommitIndex())
+	if node.CommitIndex() - msg.PrevIndex > MaxFallBehindSize {
+		log.Info("Member %s fall behind, prevIndex %d, commit %d",
+			msg.Src, msg.PrevIndex, node.CommitIndex())
 		m.State = StateFallBehind
 		m.MatchIndex = msg.PrevIndex
 		return
 	}
 	if msg.PrevIndex > node.logs.AcceptIndex() {
-		glog.Info("Member %s bad msg, prevIndex %d > lastIndex %d",
+		log.Info("Member %s bad msg, prevIndex %d > lastIndex %d",
 			msg.Src, msg.PrevIndex, node.logs.AcceptIndex())
 		return
 	}
 
 	m.State = StateReplicate
 	if msg.Data == "false" {
-		glog.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
+		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 		m.MatchIndex = msg.PrevIndex
 		m.NextIndex  = msg.PrevIndex + 1
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
-		if m.MatchIndex > node.logs.CommitIndex() {
+		if m.MatchIndex > node.CommitIndex() {
 			node.advanceCommitIndex()
 		}
 		node.replicateMember(m)
@@ -606,47 +625,44 @@ func (node *Node)advanceCommitIndex() {
 		return matchIndex[i] > matchIndex[j]
 	})
 	commitIndex := matchIndex[len(matchIndex)/2]
-	glog.Debugln("match[] =", matchIndex, " major matchIndex", commitIndex)
+	log.Debugln("match", matchIndex, " major matchIndex", commitIndex)
 
-	commitIndex = util.MinInt64(commitIndex, node.logs.AcceptIndex())
-	if commitIndex > node.logs.CommitIndex() {
+	if commitIndex > node.CommitIndex() {
 		ent := node.logs.GetEntry(commitIndex)
 		// only commit currentTerm's log
-		if ent.Term == node.Term() {
-			node.tryCommit(commitIndex)
+		if ent != nil && ent.Term == node.Term() {
+			node.maybeCommit(commitIndex)
 		}
 	}
+}
+
+func (node *Node)maybeCommit(commitIndex int64) {
+	commitIndex = util.MinInt64(commitIndex, node.logs.AcceptIndex())
+	if commitIndex <= node.commitIndex {
+		return
+	}
+	log.Info("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
+	node.commitIndex = commitIndex
+
+	// synchronously apply to Config
+	for index := node.conf.applied + 1; index <= node.CommitIndex(); index ++ {
+		ent := node.logs.GetEntry(index)
+		if ent == nil {
+			log.Fatal("Lost entry@%d", index)
+		}
+		node.conf.ApplyEntry(ent)
+	}
+
+	// TODO: asynchronously apply to Service, in onCommit()?
+
+	node.Unlock() // already locked by caller
+	node.commit_c <- true
+	node.Lock()
 }
 
 func (node *Node)handleInstallSnapshot(msg *Message) {
 	node.loadSnapshot(msg.Data)
 	node.send(NewAppendEntryAck(msg.Src, true))
-}
-
-func (node *Node)tryCommit(commitIndex int64) {
-	oldIndex := node.logs.CommitIndex()
-
-	// logs.Commit() may write to commit_c, which may block until
-	// Node consumed commit_c, consuming commit_c requires holding the lock
-	node.Unlock() // already locked by caller
-	node.logs.Commit(commitIndex)
-	node.Lock()   // will be unlocked by caller
-
-	newIndex := node.logs.CommitIndex()
-	if oldIndex == newIndex {
-		return
-	}
-	glog.Info("%s commit %d => %d", node.Id(), oldIndex, newIndex)
-
-	// synchronously apply to Config
-	for index := node.conf.applied + 1; index <= node.logs.CommitIndex(); index ++ {
-		ent := node.logs.GetEntry(index)
-		if ent == nil {
-			glog.Fatal("Lost entry@%d", index)
-		}
-		node.conf.ApplyEntry(ent)
-	}
-	// TODO: asynchronously apply to Service
 }
 
 /* ###################### Methods ####################### */
@@ -663,7 +679,7 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	{
 		if node.role != RoleLeader {
 			node.Unlock()
-			glog.Infoln("error: not leader")
+			log.Infoln("error: not leader")
 			return -1, -1
 		}
 		// assign term to a proposing entry while holding lock, then assign index
@@ -672,9 +688,9 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 		term = node.Term()
 
 		// TODO: 直接丢弃?
-		for node.logs.UncommittedSize() >= MaxUncommittedSize {
-			glog.Info("sleep, append: %d, accept: %d commit: %d",
-				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.logs.CommitIndex())
+		for node.logs.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
+			log.Info("sleep, append: %d, accept: %d commit: %d",
+				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.CommitIndex())
 			node.Unlock()
 			util.Sleep(0.01)
 			node.Lock()
@@ -713,7 +729,7 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
 	ret += fmt.Sprintf("append: %d\n", node.logs.AppendIndex())
 	ret += fmt.Sprintf("accept: %d\n", node.logs.AcceptIndex())
-	ret += fmt.Sprintf("commit: %d\n", node.logs.CommitIndex())
+	ret += fmt.Sprintf("commit: %d\n", node.CommitIndex())
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 
@@ -761,22 +777,23 @@ func (node *Node)makeSnapshot() string {
 }
 
 func (node *Node)loadSnapshot(data string) {
-	glog.Info("Node %s installing snapshot", node.Id())
+	log.Info("Node %s installing snapshot", node.Id())
 	sn := new(Snapshot)
 	if sn.Decode(data) == false {
-		glog.Error("decode snapshot error")
+		log.Error("decode snapshot error")
 		return
 	}
 
 	node.reset()
 	node.role = RoleFollower
+	node.commitIndex = sn.LastIndex()
 
 	node.conf.RecoverFromSnapshot(sn)
 	node.logs.RecoverFromSnapshot(sn)
 
-	glog.Info("Reset %s, peers: %s, term: %d, commit: %d, accept: %d",
+	log.Info("Reset %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.logs.CommitIndex(), node.logs.AcceptIndex())
+			node.CommitIndex(), node.logs.AcceptIndex())
 
-	glog.Info("Done")
+	log.Info("Done")
 }

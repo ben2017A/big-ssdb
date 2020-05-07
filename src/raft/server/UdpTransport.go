@@ -59,6 +59,7 @@ func (tp *UdpTransport)Addr() string {
 }
 
 func (tp *UdpTransport)Close(){
+	// TODO: properly stop
 	tp.conn.Close()
 }
 
