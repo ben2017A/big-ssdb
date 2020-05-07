@@ -101,10 +101,6 @@ func (node *Node)Start(){
 		node.startElection()
 		node.checkVoteResult()
 	}
-	// wait start
-	for i := 0; i < 4; i++ {
-		<- node.done_c
-	}
 }
 
 func (node *Node)Close(){
@@ -145,6 +141,7 @@ func (node *Node)startWorkers(){
 			node.handleRaftMessage(msg)
 		}
 	}()
+	<- node.done_c
 
 	// accept_c 和 commit_c 不能在一个线程中处理, 因为会相互调用形成阻塞
 	go func() {
@@ -161,6 +158,7 @@ func (node *Node)startWorkers(){
 			node.onAccept()
 		}
 	}()
+	<- node.done_c
 
 	go func() {
 		node.done_c <- true
@@ -176,6 +174,7 @@ func (node *Node)startWorkers(){
 			node.onCommit()
 		}
 	}()
+	<- node.done_c
 
 	go func() {
 		node.done_c <- true
@@ -194,6 +193,7 @@ func (node *Node)startWorkers(){
 			}
 		}
 	}()
+	<- node.done_c
 }
 
 func (node *Node)Tick(timeElapseMs int) {
