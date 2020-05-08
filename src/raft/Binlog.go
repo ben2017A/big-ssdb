@@ -185,21 +185,19 @@ func (st *Binlog)Fsync() {
 			st.wal.Append(data)
 			log.Debug("[Append] %s", util.StringEscape(data))
 		}
-		if has_new {
-			err := st.wal.Fsync()
-			if err != nil {
-				log.Fatalln(err)
-			}
-			// when is follower
-			if st.appendIndex < st.lastEntry.Index {
-				st.appendIndex = st.lastEntry.Index
-			}
+		// when is follower
+		if st.appendIndex < st.lastEntry.Index {
+			st.appendIndex = st.lastEntry.Index
 		}
 	}
 	st.Unlock()
 
 	// accept_c consumer need holding lock, so produce accept_c outside
 	if has_new {
+		err := st.wal.Fsync()
+		if err != nil {
+			log.Fatalln(err)
+		}
 		st.accept_c <- true
 	}
 }

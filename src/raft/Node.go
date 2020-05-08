@@ -241,6 +241,9 @@ func (node *Node)onHeartbeatTimeout(m *Member) {
 
 func (node *Node)onReplicateTimeout(m *Member) {
 	m.ReplicateTimer = 0
+	if m.State != StateReplicate {
+		return
+	}
 	if m.UnackedSize() != 0 {
 		log.Info("Member: %s retransmission timeout, reset next: %d => %d",
 			m.Id, m.NextIndex, m.MatchIndex + 1)
@@ -342,7 +345,14 @@ func (node *Node)broadcastHeartbeat() {
 func (node *Node)sendHeartbeat(m *Member) {
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
-	pre := node.logs.LastEntry()
+	var pre *Entry = nil
+	if m.MatchIndex > 0 {
+		pre = node.logs.GetEntry(m.MatchIndex)
+	}
+	log.Infoln(pre, m.MatchIndex)
+	if pre == nil {
+		pre = node.logs.LastEntry()
+	}
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
 }
@@ -625,15 +635,16 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		return
 	}
 
-	m.State = StateReplicate
 	if msg.Data == "false" {
+		m.State = StateHeartbeat
 		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
 		// maybeRetransmit()
 		old := m.NextIndex
-		m.MatchIndex = util.MaxInt64(m.MatchIndex, 0) // 可能初始化
+		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.MatchIndex + 1,  msg.PrevIndex + 1)
 		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, old, m.NextIndex)
 	} else {
+		m.State = StateReplicate
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {

@@ -46,7 +46,6 @@ func (m *Message)Encode() string{
 }
 
 func (m *Message)Decode(buf string) bool{
-	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 7)
 	if len(ps) != 7 {
 		return false

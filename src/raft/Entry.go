@@ -38,7 +38,6 @@ func (e *Entry)Encode() string{
 }
 
 func (e *Entry)Decode(buf string) bool {
-	buf = strings.Trim(buf, "\r\n")
 	ps := strings.SplitN(buf, " ", 5)
 	if len(ps) != 5 {
 		return false

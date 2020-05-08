@@ -11,7 +11,8 @@ const(
 
 const (
 	StateReplicate  = 0
-	StateFallBehind = 1
+	StateHeartbeat  = 1
+	StateFallBehind = 2
 )
 
 type Member struct{
