@@ -152,11 +152,9 @@ func testJoin() {
 	n2 = NewNode(newConfig("n2", []string{"n1"}, dir2), newBinlog(dir2))
 	add_node(n2)
 
-	n1.Tick(HeartbeatTimeout)
+	n1.Tick(HeartbeatTimeout) // heartbeat and logs
 	wait()
-	n1.Tick(ReplicateTimeout) // leader send logs
-	wait()
-	n1.Tick(HeartbeatTimeout)
+	n1.Tick(HeartbeatTimeout) // heartbeat commit
 	wait()
 
 	if n2.role != RoleFollower {

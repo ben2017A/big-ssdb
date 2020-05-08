@@ -207,7 +207,6 @@ func (node *Node)Tick(timeElapseMs int) {
 	if node.role == RoleFollower || node.role == RoleCandidate {
 		node.electionTimer += timeElapseMs
 		if node.electionTimer >= ElectionTimeout {
-			log.Info(node.Id())
 			node.startPreVote()
 		}
 	} else if node.role == RoleLeader {
@@ -217,17 +216,16 @@ func (node *Node)Tick(timeElapseMs int) {
 			m.HeartbeatTimer += timeElapseMs
 
 			if m.HeartbeatTimer >= HeartbeatTimeout {
-				node.onHeartbeatTimeout(m)
+				node.onHeartbeatTimer(m)
 			}
 			if m.ReplicateTimer >= ReplicateTimeout {
-				log.Info("================replicate timeout===================")
-				node.onReplicateTimeout(m)
+				node.onReplicateTimer(m)
 			}
 		}
 	}
 }
 
-func (node *Node)onHeartbeatTimeout(m *Member) {
+func (node *Node)onHeartbeatTimer(m *Member) {
 	m.HeartbeatTimer = 0
 	if m.State == StateFallBehind {
 		// only send snapshot when follower responses within HeartbeatTimeout * 2
@@ -239,7 +237,7 @@ func (node *Node)onHeartbeatTimeout(m *Member) {
 	node.sendHeartbeat(m)
 }
 
-func (node *Node)onReplicateTimeout(m *Member) {
+func (node *Node)onReplicateTimer(m *Member) {
 	m.ReplicateTimer = 0
 	if m.State != StateReplicate {
 		return
@@ -348,10 +346,6 @@ func (node *Node)sendHeartbeat(m *Member) {
 	var pre *Entry = nil
 	if m.MatchIndex > 0 {
 		pre = node.logs.GetEntry(m.MatchIndex)
-	}
-	log.Infoln(pre, m.MatchIndex)
-	if pre == nil {
-		pre = node.logs.LastEntry()
 	}
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
