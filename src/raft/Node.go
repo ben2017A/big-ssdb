@@ -280,9 +280,12 @@ func (node *Node)onCommit() {
 
 func (node *Node)reset() {
 	node.leader = nil
-	node.electionTimer = rand.Intn(200)
+	node.electionTimer = rand.Intn(ElectionTimeout/10)
 	node.votesReceived = make(map[string]string)
-	node.resetMembers()
+	for _, m := range node.conf.members {
+		m.Reset()
+		m.NextIndex = node.logs.AcceptIndex() + 1
+	}
 }
 
 func (node *Node)startPreVote() {
@@ -325,14 +328,6 @@ func (node *Node)becomeLeader() {
 }
 
 /* ############################################# */
-
-func (node *Node)resetMembers() {
-	nextIndex := node.logs.AcceptIndex() + 1
-	for _, m := range node.conf.members {
-		m.Reset()
-		m.NextIndex = nextIndex
-	}
-}
 
 func (node *Node)broadcastHeartbeat() {
 	for _, m := range node.conf.members {
