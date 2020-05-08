@@ -230,6 +230,7 @@ func (node *Node)onHeartbeatTimer(m *Member) {
 	if m.State == StateFallBehind {
 		// only send snapshot when follower responses within HeartbeatTimeout * 2
 		if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
+			m.ReplicateTimer = 0
 			node.sendSnapshot(m)
 			return
 		}
@@ -381,14 +382,6 @@ func (node *Node)maybeReplicate(m *Member) {
 		m.ReplicateTimer = 0
 		m.HeartbeatTimer = 0
 	}
-}
-
-func (node *Node)sendSnapshot(m *Member){
-	m.ReplicateTimer = 0
-	data := node.makeSnapshot()
-	resp := NewInstallSnapshotMsg(m.Id, data)
-	node.send(resp)
-	log.Info("Member %s, send snapshot", m.Id)
 }
 
 /* ############################################# */
@@ -778,6 +771,13 @@ func (node *Node)sendAppendEntryAck() {
 
 func (node *Node)sendDupAck() {
 	node.send(NewAppendEntryAck(node.leader.Id, false))
+}
+
+func (node *Node)sendSnapshot(m *Member){
+	data := node.makeSnapshot()
+	resp := NewInstallSnapshotMsg(m.Id, data)
+	node.send(resp)
+	log.Info("Member %s, send snapshot", m.Id)
 }
 
 /* ###################### Snapshot ####################### */
