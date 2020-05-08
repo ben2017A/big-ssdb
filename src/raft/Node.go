@@ -48,7 +48,6 @@ type Node struct{
 
 func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
-	node.role = RoleFollower
 	node.stop_c = make(chan bool)
 	node.done_c = make(chan bool)
 	node.recv_c = make(chan *Message, 0/*TODO 0*/)
@@ -61,6 +60,7 @@ func NewNode(conf *Config, logs *Binlog) *Node {
 	node.logs.node = node
 
 	node.reset()
+	node.role = RoleFollower
 	node.commitIndex = node.conf.applied
 
 	// validate persitent state
