@@ -217,54 +217,65 @@ func (node *Node)Tick(timeElapseMs int) {
 			m.HeartbeatTimer += timeElapseMs
 
 			if m.HeartbeatTimer >= HeartbeatTimeout {
-				// only send snapshot when follower responses within HeartbeatTimeout * 2
-				if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
-					if m.State == StateFallBehind {
-						m.HeartbeatTimer = 0
-						log.Info("Member %s, send snapshot", m.Id)
-						node.sendSnapshot(m.Id)
-					}
-				}
+				node.onHeartbeatTimeout(m)
 			}
-
 			if m.ReplicateTimer >= ReplicateTimeout {
-				// only send data to follower when
-				// 1. we ever received an ack(may be to a heartbeat)
-				// 2. it is not idle
-				// 3. it is not fall behind
-				if m.Connected() && m.IdleTimer < HeartbeatTimeout {
-					if m.State == StateReplicate {
-						if m.UnackedSize() != 0 {
-							log.Info("Member: %s retransmission timeout, reset next: %d => %d",
-								m.Id, m.NextIndex, m.MatchIndex + 1)
-							m.NextIndex = m.MatchIndex + 1
-						}
-						node.replicateMember(m)
-					}
-				}
-			}
-
-			if m.HeartbeatTimer >= HeartbeatTimeout {
-				node.heartbeatMember(m)
+				log.Info("================replicate timeout===================")
+				node.onReplicateTimeout(m)
 			}
 		}
 	}
 }
 
+func (node *Node)onHeartbeatTimeout(m *Member) {
+	if m.State == StateFallBehind {
+		// only send snapshot when follower responses within HeartbeatTimeout * 2
+		if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
+			m.HeartbeatTimer = 0
+			m.ReplicateTimer = 0
+			log.Info("Member %s, send snapshot", m.Id)
+			node.sendSnapshot(m.Id)
+			return
+		}
+	}
+	node.heartbeatMember(m)
+}
+
+func (node *Node)onReplicateTimeout(m *Member) {
+	// only send data to follower when
+	// 1. we ever received an ack(may be to a heartbeat)
+	// 2. it is not idle
+	// 3. it is not fall behind
+	if !m.Connected() {
+		return
+	}
+	if m.IdleTimer >= HeartbeatTimeout {
+		return
+	}
+	if m.State != StateReplicate {
+		return
+	}
+	if m.UnackedSize() != 0 {
+		log.Info("Member: %s retransmission timeout, reset next: %d => %d",
+			m.Id, m.NextIndex, m.MatchIndex + 1)
+		m.NextIndex = m.MatchIndex + 1
+	}
+	node.replicateMember(m)
+}
+
 func (node *Node)onAccept() {
 	node.Lock()
 	defer node.Unlock()
-	// 单节点运行
-	if node.conf.IsSingleton() && node.role == RoleLeader {
-		node.advanceCommitIndex()
-	} else {
-		if node.role == RoleLeader {
-			for _, m := range node.conf.members {
-				node.replicateMember(m)
-			}
-		} else {
-			node.sendAppendEntryAck()
+	if node.role == RoleLeader {
+		// 单节点运行
+		if node.conf.IsSingleton() {
+			node.advanceCommitIndex()
 		}
+		for _, m := range node.conf.members {
+			node.replicateMember(m)
+		}
+	} else {
+		node.sendAppendEntryAck()
 	}
 }
 
@@ -367,7 +378,7 @@ func (node *Node)replicateMember(m *Member) {
 	}
 	m.ReplicateTimer = 0
 
-	maxIndex := m.MatchIndex + SendWindowSize
+	maxIndex := util.MinInt64(m.MatchIndex + SendWindowSize, node.logs.AcceptIndex())
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
 		if ent == nil {
@@ -538,7 +549,7 @@ func (node *Node)checkVoteResult(){
 	}
 }
 
-func (node *Node)sendDuplicatedAckToMessage(msg *Message){
+func (node *Node)sendDupAckToMessage(msg *Message){
 	var prev *Entry
 	if msg.PrevIndex < node.logs.AcceptIndex() {
 		prev = node.logs.GetEntry(msg.PrevIndex - 1)
@@ -573,12 +584,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Infoln("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			node.sendDuplicatedAckToMessage(msg)
+			node.sendDupAckToMessage(msg)
 			return
 		}
 		if prev.Term != msg.PrevTerm {
-			log.Infoln("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
-			node.sendDuplicatedAckToMessage(msg)
+			log.Info("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
+			node.sendDupAckToMessage(msg)
 			return
 		}
 	}
@@ -591,7 +602,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	} else {
 		if ent.Index <= node.CommitIndex() {
 			log.Info("invalid entry: %d before commit: %d", ent.Index, node.CommitIndex())
-			node.sendDuplicatedAckToMessage(msg)
+			node.sendDupAckToMessage(msg)
 			return
 		}
 		node.logs.Write(ent)
@@ -617,6 +628,8 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 
 	m.State = StateReplicate
 	if msg.Data == "false" {
+		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
+		// maybeRetransmit()
 		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
 		m.MatchIndex = msg.PrevIndex
 		m.NextIndex  = msg.PrevIndex + 1

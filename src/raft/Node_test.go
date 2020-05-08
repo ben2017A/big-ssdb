@@ -87,11 +87,8 @@ func testOrphanNode() {
 	n1.ProposeAddPeer("n2")
 	wait()
 
-	log.Info("")
 	n1.Tick(HeartbeatTimeout)
-	log.Info("")
 	wait()
-	log.Info("")
 
 	// 集群的消息会被 n2 丢弃
 	if len(n2.conf.peers) != 0 {
@@ -155,16 +152,19 @@ func testJoin() {
 	n2 = NewNode(newConfig("n2", []string{"n1"}, dir2), newBinlog(dir2))
 	add_node(n2)
 
-	n1.Tick(HeartbeatTimeout) // leader send ping
-	
-	wait() // wait repication
+	n1.Tick(HeartbeatTimeout)
+	wait()
+	n1.Tick(ReplicateTimeout) // leader send logs
+	wait()
+	n1.Tick(HeartbeatTimeout)
+	wait()
 
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-	// if n1.CommitIndex() != n2.CommitIndex() {
-	// 	log.Fatal("error")	
-	// }
+	if n1.CommitIndex() != n2.CommitIndex() {
+		log.Fatal("error")	
+	}
 	log.Info("-----")
 }
 
@@ -178,6 +178,7 @@ func testQuit() {
 
 	n2.Tick(ElectionTimeout) // start election
 	wait()
+
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
@@ -202,7 +203,7 @@ func testSnapshot() {
 	log.Info(n1.Info())
 
 	if n2.CommitIndex() != idx + 1 {
-		log.Fatal("error ", idx, n2.CommitIndex())	
+		log.Fatal("error %d %d", idx, n2.CommitIndex())	
 	}
 	log.Info("-----")
 }
@@ -213,13 +214,11 @@ func testRestart() {
 
 	mutex.Lock()
 	{
-		log.Info("")
 		n1.Close()
 		delete(nodes, "n1")
 	}
 	mutex.Unlock()
 
-	log.Info("")
 	n1 = NewNode(OpenConfig(dir1), OpenBinlog(dir1))
 	add_node(n1)
 
