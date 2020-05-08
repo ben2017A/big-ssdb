@@ -228,39 +228,25 @@ func (node *Node)Tick(timeElapseMs int) {
 }
 
 func (node *Node)onHeartbeatTimeout(m *Member) {
+	m.HeartbeatTimer = 0
 	if m.State == StateFallBehind {
 		// only send snapshot when follower responses within HeartbeatTimeout * 2
 		if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
-			m.HeartbeatTimer = 0
-			m.ReplicateTimer = 0
-			log.Info("Member %s, send snapshot", m.Id)
-			node.sendSnapshot(m.Id)
+			node.sendSnapshot(m)
 			return
 		}
 	}
-	node.heartbeatMember(m)
+	node.sendHeartbeat(m)
 }
 
 func (node *Node)onReplicateTimeout(m *Member) {
-	// only send data to follower when
-	// 1. we ever received an ack(may be to a heartbeat)
-	// 2. it is not idle
-	// 3. it is not fall behind
-	if !m.Connected() {
-		return
-	}
-	if m.IdleTimer >= HeartbeatTimeout {
-		return
-	}
-	if m.State != StateReplicate {
-		return
-	}
+	m.ReplicateTimer = 0
 	if m.UnackedSize() != 0 {
 		log.Info("Member: %s retransmission timeout, reset next: %d => %d",
 			m.Id, m.NextIndex, m.MatchIndex + 1)
 		m.NextIndex = m.MatchIndex + 1
 	}
-	node.replicateMember(m)
+	node.maybeReplicate(m)
 }
 
 func (node *Node)onAccept() {
@@ -272,7 +258,7 @@ func (node *Node)onAccept() {
 			node.advanceCommitIndex()
 		}
 		for _, m := range node.conf.members {
-			node.replicateMember(m)
+			node.maybeReplicate(m)
 		}
 	} else {
 		node.sendAppendEntryAck()
@@ -286,7 +272,7 @@ func (node *Node)onCommit() {
 		for _, m := range node.conf.members {
 			// will not heartbeat when there is pending entry to be sent
 			if m.NextIndex > node.logs.AcceptIndex() {
-				node.heartbeatMember(m)
+				node.sendHeartbeat(m)
 			}
 		}
 	}
@@ -333,8 +319,9 @@ func (node *Node)becomeLeader() {
 	} else {
 		node.logs.Append(node.Term(), EntryTypeNoop, "")
 	}
+
 	// immediately check if followers are alive, then send data after acked
-	node.heartbeatAllMembers()
+	node.broadcastHeartbeat()
 }
 
 /* ############################################# */
@@ -347,7 +334,7 @@ func (node *Node)resetMembers() {
 	}
 }
 
-func (node *Node)heartbeatAllMembers() {
+func (node *Node)broadcastHeartbeat() {
 	for _, m := range node.conf.members {
 		m.HeartbeatTimer = 0
 		m.ReplicateTimer = 0
@@ -357,7 +344,7 @@ func (node *Node)heartbeatAllMembers() {
 	node.broadcast(NewAppendEntryMsg("", ent, pre))
 }
 
-func (node *Node)heartbeatMember(m *Member){
+func (node *Node)sendHeartbeat(m *Member) {
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
 	pre := node.logs.LastEntry()
@@ -365,8 +352,11 @@ func (node *Node)heartbeatMember(m *Member){
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
 }
 
-func (node *Node)replicateMember(m *Member) {
+func (node *Node)maybeReplicate(m *Member) {
 	if !m.Connected() {
+		return
+	}
+	if m.IdleTimer >= HeartbeatTimeout {
 		return
 	}
 	if m.State != StateReplicate {
@@ -376,7 +366,6 @@ func (node *Node)replicateMember(m *Member) {
 		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-	m.ReplicateTimer = 0
 
 	maxIndex := util.MinInt64(m.MatchIndex + SendWindowSize, node.logs.AcceptIndex())
 	for m.NextIndex <= maxIndex {
@@ -390,8 +379,23 @@ func (node *Node)replicateMember(m *Member) {
 		node.send(NewAppendEntryMsg(m.Id, ent, pre))
 		
 		m.NextIndex ++
+		m.ReplicateTimer = 0
 		m.HeartbeatTimer = 0
 	}
+}
+
+func (node *Node)sendAppendEntryAck() {
+	if node.leader != nil {
+		node.send(NewAppendEntryAck(node.leader.Id, true))
+	}
+}
+
+func (node *Node)sendSnapshot(m *Member){
+	m.ReplicateTimer = 0
+	data := node.makeSnapshot()
+	resp := NewInstallSnapshotMsg(m.Id, data)
+	node.send(resp)
+	log.Info("Member %s, send snapshot", m.Id)
 }
 
 /* ############################################# */
@@ -474,7 +478,7 @@ func (node *Node)handlePreVote(msg *Message){
 		sort.Ints(arr)
 		log.Debugln("    receive timeouts[] =", arr)
 		timer := arr[len(arr)/2]
-		if timer < HeartbeatTimeout {
+		if timer < HeartbeatTimeout * 2 {
 			log.Debug("    major followers are still reachable, ignore")
 			return
 		}
@@ -617,7 +621,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		log.Info("Member %s fall behind, prevIndex %d, commit %d",
 			msg.Src, msg.PrevIndex, node.CommitIndex())
 		m.State = StateFallBehind
-		m.MatchIndex = msg.PrevIndex
+		m.MatchIndex = util.MaxInt64(m.MatchIndex, 0) // 可能初始化
 		return
 	}
 	if msg.PrevIndex > node.logs.AcceptIndex() {
@@ -630,16 +634,17 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	if msg.Data == "false" {
 		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
 		// maybeRetransmit()
-		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, m.NextIndex, msg.PrevIndex + 1)
-		m.MatchIndex = msg.PrevIndex
-		m.NextIndex  = msg.PrevIndex + 1
+		old := m.NextIndex
+		m.MatchIndex = util.MaxInt64(m.MatchIndex, 0) // 可能初始化
+		m.NextIndex  = util.MaxInt64(m.MatchIndex + 1,  msg.PrevIndex + 1)
+		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, old, m.NextIndex)
 	} else {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {
 			node.advanceCommitIndex()
 		}
-		node.replicateMember(m)
+		node.maybeReplicate(m)
 	}
 }
 
@@ -784,18 +789,6 @@ func (node *Node)broadcast(msg *Message){
 		msg.Dst = m.Id
 		node.send(msg)
 	}
-}
-
-func (node *Node)sendAppendEntryAck() {
-	if node.leader != nil {
-		node.send(NewAppendEntryAck(node.leader.Id, true))
-	}
-}
-
-func (node *Node)sendSnapshot(dst string){
-	data := node.makeSnapshot()
-	resp := NewInstallSnapshotMsg(dst, data)
-	node.send(resp)
 }
 
 /* ###################### Snapshot ####################### */
