@@ -372,20 +372,14 @@ func (node *Node)maybeReplicate(m *Member) {
 		if ent == nil {
 			break
 		}
-		ent.Commit = node.CommitIndex()
+		ent.Commit = util.MinInt64(ent.Index, node.CommitIndex())
 		
-		pre := node.logs.GetEntry(m.NextIndex - 1)
-		node.send(NewAppendEntryMsg(m.Id, ent, pre))
+		prev := node.logs.GetEntry(m.NextIndex - 1)
+		node.send(NewAppendEntryMsg(m.Id, ent, prev))
 		
 		m.NextIndex ++
 		m.ReplicateTimer = 0
 		m.HeartbeatTimer = 0
-	}
-}
-
-func (node *Node)sendAppendEntryAck() {
-	if node.leader != nil {
-		node.send(NewAppendEntryAck(node.leader.Id, true))
 	}
 }
 
@@ -552,22 +546,6 @@ func (node *Node)checkVoteResult(){
 	}
 }
 
-func (node *Node)sendDupAckToMessage(msg *Message){
-	var prev *Entry
-	if msg.PrevIndex < node.logs.AcceptIndex() {
-		prev = node.logs.GetEntry(msg.PrevIndex - 1)
-	} else {
-		prev = node.logs.LastEntry()
-	}
-	
-	ack := NewAppendEntryAck(msg.Src, false)
-	if prev != nil {
-		ack.PrevTerm = prev.Term
-		ack.PrevIndex = prev.Index
-	}
-	node.send(ack)
-}
-
 func (node *Node)setLeaderId(leaderId string) {
 	if node.leader != nil {
 		if node.leader.Id == leaderId {
@@ -587,12 +565,12 @@ func (node *Node)handleAppendEntry(msg *Message){
 		prev := node.logs.GetEntry(msg.PrevIndex)
 		if prev == nil {
 			log.Infoln("prev entry not found", msg.PrevTerm, msg.PrevIndex)
-			node.sendDupAckToMessage(msg)
+			node.sendDupAck()
 			return
 		}
 		if prev.Term != msg.PrevTerm {
 			log.Info("entry index: %d, prev.Term %d != msg.PrevTerm %d", msg.PrevIndex, prev.Term, msg.PrevTerm)
-			node.sendDupAckToMessage(msg)
+			node.sendDupAck()
 			return
 		}
 	}
@@ -605,7 +583,7 @@ func (node *Node)handleAppendEntry(msg *Message){
 	} else {
 		if ent.Index <= node.CommitIndex() {
 			log.Info("invalid entry: %d before commit: %d", ent.Index, node.CommitIndex())
-			node.sendDupAckToMessage(msg)
+			node.sendDupAck()
 			return
 		}
 		node.logs.Write(ent)
@@ -789,6 +767,17 @@ func (node *Node)broadcast(msg *Message){
 		msg.Dst = m.Id
 		node.send(msg)
 	}
+}
+
+func (node *Node)sendAppendEntryAck() {
+	if node.leader == nil {
+		return
+	}
+	node.send(NewAppendEntryAck(node.leader.Id, true))
+}
+
+func (node *Node)sendDupAck() {
+	node.send(NewAppendEntryAck(node.leader.Id, false))
 }
 
 /* ###################### Snapshot ####################### */
