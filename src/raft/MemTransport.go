@@ -37,14 +37,15 @@ func (t *MemTransport)Listen(addr string) error {
 			if msg == nil {
 				return
 			}
-			go func() {
+			// 乱序
+			// go func() {
 				t.Lock()
 				node := t.nodes[msg.Dst]
 				t.Unlock()
 				if node != nil {
 					node.RecvC() <- msg
 				}
-			}()
+			// }()
 		}
 	}()
 	return nil

@@ -40,7 +40,7 @@ func NewMember(id string) *Member{
 func (m *Member)Reset() {
 	m.Role = RoleFollower
 	m.State = StateReplicate
-	m.WindowSize = 2
+	m.WindowSize = 1
 	m.NextIndex  = 0
 	m.MatchIndex = 0
 	m.IdleTimer      = 0

@@ -288,11 +288,12 @@ func (node *Node)maybeReplicate(m *Member) {
 	if m.State != StateReplicate {
 		return
 	}
+
+	// flow control
 	if m.UnackedSize() >= m.WindowSize {
 		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
-
 	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.logs.AcceptIndex())
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
@@ -572,7 +573,6 @@ func (node *Node)handleAppendEntry(msg *Message){
 	ent := DecodeEntry(msg.Data)
 
 	if ent.Type == EntryTypeBeat {
-		// TODO: remember last ack index and time
 		node.sendAppendEntryAck()
 	} else {
 		if ent.Index <= node.CommitIndex() {
@@ -604,13 +604,14 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	if msg.Data == "false" {
 		m.State = StateHeartbeat
 		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
-		// maybeRetransmit()
 		old := m.NextIndex
+		m.WindowSize = 1 // congestion control
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.MatchIndex + 1,  msg.PrevIndex + 1)
 		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, old, m.NextIndex)
 	} else {
 		m.State = StateReplicate
+		m.WindowSize = util.MinInt64(m.WindowSize + 1, MaxWindowSize) // slow start
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {
