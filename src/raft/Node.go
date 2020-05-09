@@ -138,7 +138,7 @@ func (node *Node)startWorkers(){
 			if msg == nil {
 				break
 			}
-			node.handleRaftMessage(msg)
+			node.onReceive(msg)
 		}
 	}()
 	<- node.done_c
@@ -228,12 +228,9 @@ func (node *Node)Tick(timeElapseMs int) {
 func (node *Node)onHeartbeatTimer(m *Member) {
 	m.HeartbeatTimer = 0
 	if m.State == StateFallBehind {
-		// only send snapshot when follower responses within HeartbeatTimeout * 2
-		if m.Connected() && m.IdleTimer < HeartbeatTimeout * 2 {
-			m.ReplicateTimer = 0
-			node.sendSnapshot(m)
-			return
-		}
+		m.State = StateHeartbeat
+		node.sendSnapshot(m)
+		return
 	}
 	node.sendHeartbeat(m)
 }
@@ -278,6 +275,18 @@ func (node *Node)onCommit() {
 			}
 		}
 	}
+}
+
+func (node *Node)onReceive(msg *Message) {
+	node.Lock()
+	defer node.Unlock()
+	m := node.conf.members[msg.Src]
+	if msg.Dst != node.Id() || m == nil {
+		log.Info("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
+		return
+	}
+	m.IdleTimer = 0
+	node.handleRaftMessage(m, msg)
 }
 
 func (node *Node)reset() {
@@ -353,12 +362,6 @@ func (node *Node)sendHeartbeat(m *Member) {
 }
 
 func (node *Node)maybeReplicate(m *Member) {
-	if !m.Connected() {
-		return
-	}
-	if m.IdleTimer >= HeartbeatTimeout {
-		return
-	}
 	if m.State != StateReplicate {
 		return
 	}
@@ -384,19 +387,18 @@ func (node *Node)maybeReplicate(m *Member) {
 	}
 }
 
+func (node *Node)sendSnapshot(m *Member){
+	m.HeartbeatTimer = 0
+	m.ReplicateTimer = 0
+	data := node.makeSnapshot()
+	resp := NewInstallSnapshotMsg(m.Id, data)
+	node.send(resp)
+	log.Info("Member %s, send snapshot", m.Id)
+}
+
 /* ############################################# */
 
-func (node *Node)handleRaftMessage(msg *Message){
-	node.Lock()
-	defer node.Unlock()
-
-	m := node.conf.members[msg.Src]
-	if msg.Dst != node.Id() || m == nil {
-		log.Info("%s drop message %s => %s, peers: %s", node.Id(), msg.Src, msg.Dst, node.conf.peers)
-		return
-	}
-	m.IdleTimer = 0
-
+func (node *Node)handleRaftMessage(m *Member, msg *Message){
 	// MUST: node.Term is set to be larger msg.Term
 	if msg.Term > node.Term() {
 		log.Info("Node %s receive greater msg.term: %d, node.term: %d", node.Id(), msg.Term, node.Term())
@@ -771,13 +773,6 @@ func (node *Node)sendAppendEntryAck() {
 
 func (node *Node)sendDupAck() {
 	node.send(NewAppendEntryAck(node.leader.Id, false))
-}
-
-func (node *Node)sendSnapshot(m *Member){
-	data := node.makeSnapshot()
-	resp := NewInstallSnapshotMsg(m.Id, data)
-	node.send(resp)
-	log.Info("Member %s, send snapshot", m.Id)
 }
 
 /* ###################### Snapshot ####################### */

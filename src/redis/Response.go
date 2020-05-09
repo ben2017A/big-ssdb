@@ -49,6 +49,7 @@ func (r *Response)ReplyArray(ps []string) {
 	r.vals = ps
 }
 
+// TODO: EncodeSSDB()
 func (r *Response)Encode() string {
 	var buf bytes.Buffer
 	switch r._type {
