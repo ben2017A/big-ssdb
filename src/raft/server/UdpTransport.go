@@ -13,6 +13,8 @@ import (
 	"util"
 )
 
+// TODO: UdpLink, 可靠传输, 流量控制
+
 type client_t struct {
 	addr *net.UDPAddr
 
@@ -32,22 +34,22 @@ type UdpTransport struct{
 	mux sync.Mutex
 }
 
-func NewUdpTransport(ip string, port int) (*UdpTransport){
-	s := fmt.Sprintf("%s:%d", ip, port)
-	addr, _ := net.ResolveUDPAddr("udp", s)
-	conn, _ := net.ListenUDP("udp", addr)
+func (tp *UdpTransport)Listen(addr string) error {
+	uaddr, _ := net.ResolveUDPAddr("udp", addr)
+	conn, _ := net.ListenUDP("udp", uaddr)
 	conn.SetReadBuffer(1 * 1024 * 1024)
 	conn.SetWriteBuffer(1 * 1024 * 1024)
 
 	tp := new(UdpTransport)
-	tp.addr = addr.String()
+	tp.addr = uaddr.String()
 	tp.conn = conn
 	tp.c = make(chan *raft.Message, 8)
 	tp.id_clients = make(map[string]*client_t)
 	tp.addr_clients = make(map[string]*client_t)
 
 	go tp.Recv()
-	return tp
+
+	return nil
 }
 
 func (tp *UdpTransport)C() chan *raft.Message {
@@ -63,7 +65,7 @@ func (tp *UdpTransport)Close(){
 	tp.conn.Close()
 }
 
-func (tp *UdpTransport)Connect(nodeId, addr string){
+func (tp *UdpTransport)Connect(nodeId, addr string) error {
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 
@@ -77,6 +79,8 @@ func (tp *UdpTransport)Connect(nodeId, addr string){
 		tp.addr_clients[addr] = client
 	}
 	tp.id_clients[nodeId] = tp.addr_clients[addr]
+
+	return nil
 }
 
 func (tp *UdpTransport)Disconnect(nodeId string){
@@ -102,7 +106,7 @@ func (tp *UdpTransport)Disconnect(nodeId string){
 }
 
 // thread safe
-func (tp *UdpTransport)Send(msg *raft.Message) bool{
+func (tp *UdpTransport)Send(msg *raft.Message) bool {
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 

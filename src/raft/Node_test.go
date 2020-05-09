@@ -4,7 +4,6 @@ import (
 	"testing"
 	"fmt"
 	"time"
-	"sync"
 	"os"
 	log "glog"
 	// "flag"
@@ -12,18 +11,33 @@ import (
 
 // go test -cover -run Node
 
-// 新配置, 如果指定目录已存在旧配置, 则先删除旧配置
-func newConfig(id string, peers []string, dir string) *Config {
+var xport *MemTransport
+var n1 *Node
+var n2 *Node
+
+func newNode(id string, peers []string) *Node {
+	dir := "./tmp/" + id
+	os.MkdirAll(dir, 0755)
+
 	c := OpenConfig(dir)
 	c.Clean()
 	c.Init(id, peers)
-	return c
-}
 
-func newBinlog(dir string) *Binlog {
 	b := OpenBinlog(dir)
 	b.Clean()
-	return b
+
+	n := NewNode(xport, c, b)
+	xport.AddNode(n)
+	n.Start()
+	return n
+}
+
+func clean_nodes(){
+	if xport != nil {
+		xport.Close()
+	}
+	xport = NewMemTransport()
+	xport.Listen("")
 }
 
 /*
@@ -31,19 +45,10 @@ func newBinlog(dir string) *Binlog {
 等待集群各节点同步后, 观察各节点的 commitIndex 是否相同, 若相同则认为各状态机是一致的.
 */
 
-var n1 *Node
-var n2 *Node
-var mutex sync.Mutex
-var nodes map[string]*Node
-var dir1 string = "./tmp/n1"
-var dir2 string = "./tmp/n2"
-
 func TestNode(t *testing.T){
 	// defer log.Flush()
-	os.MkdirAll(dir1, 0755)
-	os.MkdirAll(dir2, 0755)
 
-	nodes = make(map[string]*Node)
+	clean_nodes()
 
 	fmt.Printf("\n=========================================================\n")
 	testOrphanNode()
@@ -80,8 +85,7 @@ func testOrphanNode() {
 	testOneNode()
 
 	// 启动孤儿节点
-	n2 = NewNode(newConfig("n2", []string{}, dir2), newBinlog(dir2))
-	add_node(n2)
+	n2 = newNode("n2", []string{})
 
 	// 集群接受 n2
 	n1.ProposeAddPeer("n2")
@@ -101,8 +105,7 @@ func testOrphanNode() {
 
 // 单节点集群
 func testOneNode() {
-	n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
-	add_node(n1)
+	n1 = newNode("n1", []string{"n1"})
 
 	if n1.role != RoleLeader {
 		log.Fatal("error")
@@ -117,14 +120,12 @@ func testOneNode() {
 // 以相同的配置启动双节点集群
 func testTwoNodes() {
 	members := []string{"n1", "n2"}
-	n1 = NewNode(newConfig("n1", members, dir1), newBinlog(dir1))
-	n2 = NewNode(newConfig("n2", members, dir2), newBinlog(dir2))
-	add_node(n1)
-	add_node(n2)
+	n1 = newNode("n1", members)
+	n2 = newNode("n2", members)
 
 	n1.Tick(ElectionTimeout) // n1 start election
 	
-	wait() // wait log replication
+	sleep(0.02) // many log replication
 
 	if n1.role != RoleLeader {
 		log.Fatal("error")
@@ -136,9 +137,10 @@ func testTwoNodes() {
 		log.Fatal("error")
 	}
 	if n1.CommitIndex() != n2.CommitIndex() {
-		log.Fatal("error ", n1.CommitIndex(), n2.CommitIndex())	
+		log.Fatal("error %d %d", n1.CommitIndex(), n2.CommitIndex())	
 	}
 	log.Info("-----")
+	// os.Exit(1)
 }
 
 // 新节点加入集群
@@ -149,8 +151,7 @@ func testJoin() {
 		log.Info("error")
 	}
 
-	n2 = NewNode(newConfig("n2", []string{"n1"}, dir2), newBinlog(dir2))
-	add_node(n2)
+	n2 = newNode("n2", []string{"n1"}/*leader=n1*/)
 
 	n1.Tick(HeartbeatTimeout) // heartbeat and logs
 	wait()
@@ -207,18 +208,12 @@ func testSnapshot() {
 }
 
 func testRestart() {
-	n1 = NewNode(newConfig("n1", []string{"n1"}, dir1), newBinlog(dir1))
-	add_node(n1)
+	n1 = newNode("n1", []string{"n1"})
+	xport.DelNode(n1)
 
-	mutex.Lock()
-	{
-		n1.Close()
-		delete(nodes, "n1")
-	}
-	mutex.Unlock()
-
-	n1 = NewNode(OpenConfig(dir1), OpenBinlog(dir1))
-	add_node(n1)
+	n1 = NewNode(xport, OpenConfig("./tmp/n1"), OpenBinlog("./tmp/n1"))
+	n1.Start()
+	xport.AddNode(n1)
 
 	n1.Propose("set a 1")
 
@@ -230,44 +225,6 @@ func testRestart() {
 }
 
 //////////////////////////////////////////////////////////////////
-
-func add_node(n *Node){
-	mutex.Lock()
-	defer mutex.Unlock()
-	
-	n.Start()
-	nodes[n.Id()] = n
-
-	go func(){
-		for {
-			msg := <- n.SendC()
-			if msg == nil {
-				return
-			}
-			log.Info("    send > " + msg.Encode())
-		
-			go func(){
-				mutex.Lock()
-				defer mutex.Unlock()
-				// log.Info("    recv < " + msg.Encode())
-				if nodes[msg.Dst] != nil {
-					nodes[msg.Dst].RecvC() <- msg
-				}
-			}()
-		}
-	}()
-}
-
-func clean_nodes(){
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for id, n := range nodes {
-		n.Close()
-		delete(nodes, id)
-		// log.Printf("%s stopped", id)
-	}
-}
 
 func wait(){
 	time.Sleep(10 * time.Millisecond)

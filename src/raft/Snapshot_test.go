@@ -18,7 +18,7 @@ func TestSnapshot(t *testing.T){
 	logs := OpenBinlog("./tmp/n1")
 	logs.Clean()
 
-	n1 := NewNode(conf, logs)
+	n1 := NewNode(NewMemTransport(), conf, logs)
 	defer n1.Close()
 
 	n1.Start()

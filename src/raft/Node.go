@@ -32,6 +32,7 @@ type Node struct{
 	votesReceived map[string]string // nodeId => vote result
 	electionTimer int
 
+	xport Transport
 	conf *Config
 	logs *Binlog
 
@@ -39,21 +40,19 @@ type Node struct{
 	done_c chan bool
 	// messages to be processed by self
 	recv_c chan *Message
-	// messages to be sent to other nodes
-	send_c chan *Message
 	commit_c chan bool
 
 	commitIndex int64
 }
 
-func NewNode(conf *Config, logs *Binlog) *Node {
+func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.stop_c = make(chan bool)
 	node.done_c = make(chan bool)
-	node.recv_c = make(chan *Message, 0/*TODO 0*/)
-	node.send_c = make(chan *Message, 0/*TODO 0*/)
+	node.recv_c = make(chan *Message, 0/*TODO*/)
 	node.commit_c = make(chan bool) // log been committed
 
+	node.xport = xport
 	node.conf = conf
 	node.conf.node = node
 	node.logs = logs
@@ -85,10 +84,6 @@ func (node *Node)CommitIndex() int64 {
 
 func (node *Node)RecvC() chan<- *Message {
 	return node.recv_c
-}
-
-func (node *Node)SendC() <-chan *Message {
-	return node.send_c
 }
 
 func (node *Node)Start(){
@@ -289,6 +284,37 @@ func (node *Node)onReceive(msg *Message) {
 	node.handleRaftMessage(m, msg)
 }
 
+func (node *Node)maybeReplicate(m *Member) {
+	if m.State != StateReplicate {
+		return
+	}
+
+	// TODO: 如果 Transport 实现了流量控制, 则这里不考虑发送窗口
+	if m.UnackedSize() >= SendWindowSize {
+		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+		return
+	}
+	maxIndex := util.MinInt64(m.MatchIndex + SendWindowSize, node.logs.AcceptIndex())
+	for m.NextIndex <= maxIndex {
+		ent := node.logs.GetEntry(m.NextIndex)
+		if ent == nil {
+			break
+		}
+		ent.Commit = util.MinInt64(ent.Index, node.CommitIndex())
+		
+		prev := node.logs.GetEntry(m.NextIndex - 1)
+		ok := node.send(NewAppendEntryMsg(m.Id, ent, prev))
+		if !ok {
+			// maybe it is because of flow control
+			break
+		}
+		
+		m.NextIndex ++
+		m.ReplicateTimer = 0
+		m.HeartbeatTimer = 0
+	}
+}
+
 func (node *Node)reset() {
 	node.leader = nil
 	node.electionTimer = rand.Intn(ElectionTimeout/10)
@@ -359,32 +385,6 @@ func (node *Node)sendHeartbeat(m *Member) {
 	}
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
-}
-
-func (node *Node)maybeReplicate(m *Member) {
-	if m.State != StateReplicate {
-		return
-	}
-	if m.UnackedSize() >= SendWindowSize {
-		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
-		return
-	}
-
-	maxIndex := util.MinInt64(m.MatchIndex + SendWindowSize, node.logs.AcceptIndex())
-	for m.NextIndex <= maxIndex {
-		ent := node.logs.GetEntry(m.NextIndex)
-		if ent == nil {
-			break
-		}
-		ent.Commit = util.MinInt64(ent.Index, node.CommitIndex())
-		
-		prev := node.logs.GetEntry(m.NextIndex - 1)
-		node.send(NewAppendEntryMsg(m.Id, ent, prev))
-		
-		m.NextIndex ++
-		m.ReplicateTimer = 0
-		m.HeartbeatTimer = 0
-	}
 }
 
 func (node *Node)sendSnapshot(m *Member){
@@ -745,19 +745,18 @@ func (node *Node)Info() string {
 
 /* ############################################# */
 
-func (node *Node)send(msg *Message){
-	new_msg := *msg // copy
-	new_msg.Src = node.Id()
-	new_msg.Term = node.Term()
-	if new_msg.PrevTerm == 0 && new_msg.Type != MessageTypeAppendEntry {
+func (node *Node)send(msg *Message) bool {
+	msg.Src = node.Id()
+	msg.Term = node.Term()
+	if msg.PrevTerm == 0 && msg.Type != MessageTypeAppendEntry {
 		last := node.logs.LastEntry()
-		new_msg.PrevTerm = last.Term
-		new_msg.PrevIndex = last.Index
+		msg.PrevTerm = last.Term
+		msg.PrevIndex = last.Index
 	}
-	node.send_c <- &new_msg
+	return node.xport.Send(msg)
 }
 
-func (node *Node)broadcast(msg *Message){
+func (node *Node)broadcast(msg *Message) {
 	for _, m := range node.conf.members {
 		msg.Dst = m.Id
 		node.send(msg)
