@@ -67,14 +67,15 @@ func (c *Config)IsSingleton() bool {
 
 func (c *Config)Init(id string, peers []string) {
 	c.id = id
-	c.SetPeers(peers)
+	c.setPeers(peers)
 }
 
 func (c *Config)Close() {
+	c.fsync()
 	c.wal.Close()
 }
 
-func (c *Config)Fsync() {
+func (c *Config)fsync() {
 	if c.applied == 0 {
 		return
 	}
@@ -117,18 +118,18 @@ func (c *Config)decode(data string) {
 	c.applied = util.Atoi64(arr["applied"])
 	if len(arr["peers"]) > 0 {
 		ps := strings.Split(arr["peers"], ",")
-		c.SetPeers(ps)
+		c.setPeers(ps)
 	}
 }
 
 func (c *Config)SetRound(term int32, vote string) {
 	c.term = term
 	c.vote = vote
-	c.Fsync()
+	c.fsync()
 }
 
 // 用于集群初始经, 只改变内存状态, 不持久化
-func (c *Config)SetPeers(peers []string) {
+func (c *Config)setPeers(peers []string) {
 	c.members = make(map[string]*Member)
 	for _, nodeId := range peers {
 		c.addPeer(nodeId)
@@ -184,10 +185,11 @@ func (c *Config)ApplyEntry(ent *Entry) {
 			nodeId := ps[1]
 			c.delPeer(nodeId)
 		}
+		c.fsync()
+	} else {
+		// TODO: 优化点, 不需要每次都 fsync
+		c.fsync()
 	}
-
-	// TODO: 优化点, 不需要每次都 fsync
-	c.Fsync()
 }
 
 func (c *Config)Clean() {
@@ -206,6 +208,6 @@ func (c *Config)RecoverFromSnapshot(sn *Snapshot) {
 	c.Clean()
 	c.term = sn.LastTerm()
 	c.applied = sn.LastIndex()
-	c.SetPeers(sn.peers)
-	c.Fsync()
+	c.setPeers(sn.peers)
+	c.fsync()
 }

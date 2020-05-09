@@ -87,7 +87,7 @@ func (st *Binlog)startWriter() {
 			case <- st.stop_c:
 				return
 			case <- st.append_c:
-				st.Fsync()
+				st.fsync()
 			}
 		}
 	}()
@@ -167,7 +167,7 @@ func (st *Binlog)Write(ent *Entry) {
 	}
 }
 
-func (st *Binlog)Fsync() {
+func (st *Binlog)fsync() {
 	has_new := false
 
 	st.Lock()
@@ -222,5 +222,5 @@ func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.lastEntry.Index = sn.LastIndex() - 1
 	st.Write(sn.lastEntry)
 	// may be called by writer, but force fsync as well
-	st.Fsync()
+	st.fsync()
 }
