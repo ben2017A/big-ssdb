@@ -124,16 +124,17 @@ func testTwoNodes() {
 	n2 = newNode("n2", members)
 
 	n1.Tick(ElectionTimeout) // n1 start election
-	
-	sleep(0.02) // many log replication
+	wait()
+
+	for i := 0; i < 10; i++ {
+		n1.Propose(fmt.Sprintf("%d", i))
+	}
+	wait()
 
 	if n1.role != RoleLeader {
 		log.Fatal("error")
 	}
 	if n2.role != RoleFollower {
-		log.Fatal("error")
-	}
-	if n1.CommitIndex() != 2 {
 		log.Fatal("error")
 	}
 	if n1.CommitIndex() != n2.CommitIndex() {
@@ -188,7 +189,6 @@ func testQuit() {
 func testSnapshot() {
 	testOneNode()
 	for i := 0; i < MaxFallBehindSize; i++ {
-		// log.Info(i)
 		n1.Propose(fmt.Sprintf("%d", i))
 	}
 	testJoin()

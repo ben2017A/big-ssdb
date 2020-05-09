@@ -21,6 +21,7 @@ type Member struct{
 	State PeerState
 
 	// sliding window
+	WindowSize int64
 	NextIndex  int64   // send_next
 	MatchIndex int64  // last_ack/(recv_next-1), -1: never received from remote
 
@@ -39,17 +40,14 @@ func NewMember(id string) *Member{
 func (m *Member)Reset() {
 	m.Role = RoleFollower
 	m.State = StateReplicate
-	m.NextIndex = 0
-	m.MatchIndex = -1
+	m.WindowSize = 2
+	m.NextIndex  = 0
+	m.MatchIndex = 0
+	m.IdleTimer      = 0
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
-	m.IdleTimer = 0
 }
 
-func (m *Member)Connected() bool {
-	return m.MatchIndex != -1
-}
-
-func (m *Member)UnackedSize() int {
-	return int(m.NextIndex - m.MatchIndex) - 1
+func (m *Member)UnackedSize() int64 {
+	return m.NextIndex - m.MatchIndex - 1
 }
