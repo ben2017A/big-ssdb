@@ -16,14 +16,14 @@ const (
 )
 
 type Member struct{
-	Id string
+	Id    string
 	Role  PeerRole
 	State PeerState
 
 	// sliding window
 	WindowSize int64
-	NextIndex  int64   // send_next
-	MatchIndex int64  // last_ack/(recv_next-1), -1: never received from remote
+	NextIndex  int64  // send_next
+	MatchIndex int64  // last_ack(send_una-1)
 
 	HeartbeatTimer int
 	ReplicateTimer int
@@ -38,7 +38,7 @@ func NewMember(id string) *Member{
 }
 
 func (m *Member)Reset() {
-	m.Role = RoleFollower
+	m.Role  = RoleFollower
 	m.State = StateReplicate
 	m.WindowSize = 1
 	m.NextIndex  = 0

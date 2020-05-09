@@ -288,12 +288,12 @@ func (node *Node)maybeReplicate(m *Member) {
 	if m.State != StateReplicate {
 		return
 	}
-
 	// flow control
 	if m.UnackedSize() >= m.WindowSize {
 		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
 		return
 	}
+
 	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.logs.AcceptIndex())
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
