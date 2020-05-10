@@ -7,64 +7,89 @@ import (
 	"strconv"
 )
 
-type Request struct {
+type Message struct {
 	Src int
 	Dst int
-	arr []string
+	vals []string
+	IsRedis bool
 }
 
-func NewRequest(arr []string) *Request {
-	ret := new(Request)
-	ret.arr = arr
+func NewMessage(arr []string) *Message {
+	ret := new(Message)
+	ret.vals = arr
+	ret.IsRedis = false
 	return ret
 }
 
-func (m *Request)Array() []string {
-	return m.arr
+func (m *Message)Array() []string {
+	return m.vals
 }
 
-func (m *Request)Cmd() string {
-	if len(m.arr) > 0 {
-		return m.arr[0]
+func (m *Message)Cmd() string {
+	if len(m.vals) > 0 {
+		return m.vals[0]
 	}
 	return ""
 }
 
-func (m *Request)Key() string {
-	if len(m.arr) > 1 {
-		return m.arr[1]
+func (m *Message)Key() string {
+	if len(m.vals) > 1 {
+		return m.vals[1]
 	}
 	return ""
 }
 
-func (m *Request)Val() string {
-	if len(m.arr) > 2 {
-		return m.arr[2]
+func (m *Message)Val() string {
+	if len(m.vals) > 2 {
+		return m.vals[2]
 	}
 	return ""
 }
 
-func (m *Request)Args() []string {
-	if len(m.arr) > 0 {
-		return m.arr[1 : ]
+func (m *Message)Args() []string {
+	if len(m.vals) > 0 {
+		return m.vals[1 : ]
 	}
 	return []string{}
 }
 
-func (m *Request)Arg(n int) string {
-	if len(m.arr) > 1 {
-		return m.arr[1 + n]
+func (m *Message)Arg(n int) string {
+	if len(m.vals) > 1 {
+		return m.vals[1 + n]
 	}
 	return ""
 }
 
-func (m *Request)Encode() string {
+func (m *Message)Encode() string {
+	if m.IsRedis {
+		return m.EncodeRedis()
+	} else {
+		return m.EncodeSSDB()
+	}
+}
+
+func (m *Message)EncodeSSDB() string {
 	var buf bytes.Buffer
-	count := len(m.arr)
+	if len(m.vals) == 0 {
+		buf.WriteString("0\n\n")
+	}
+	for _, p := range m.vals {
+		buf.WriteString(strconv.Itoa(len(p)))
+		buf.WriteString("\n")
+		buf.WriteString(p)
+		buf.WriteString("\n")
+	}
+	buf.WriteString("\n")
+	return buf.String()
+}
+
+func (m *Message)EncodeRedis() string {
+	var buf bytes.Buffer
+	count := len(m.vals)
 	buf.WriteString("*")
 	buf.WriteString(strconv.Itoa(count))
 	buf.WriteString("\r\n")
-	for _, p := range m.arr {
+	for _, p := range m.vals {
 		buf.WriteString("$")
 		buf.WriteString(strconv.Itoa(len(p)))
 		buf.WriteString("\r\n")
@@ -74,7 +99,7 @@ func (m *Request)Encode() string {
 	return buf.String()
 }
 
-func (msg *Request)Decode(bs []byte) int {
+func (msg *Message)Decode(bs []byte) int {
 	total := len(bs)
 	if total == 0 {
 		return 0
@@ -90,7 +115,7 @@ func (msg *Request)Decode(bs []byte) int {
 	}
 
 	var parsed int = 0
-	msg.arr = make([]string, 0)
+	msg.vals = make([]string, 0)
 
 	if bs[s] >= '0' && bs[s] <= '9' {
 		// ssdb
@@ -98,6 +123,7 @@ func (msg *Request)Decode(bs []byte) int {
 	} else if bs[s] == '*' || bs[s] == '$' {
 		// redis
 		parsed = msg.parseRedisRequest(bs[s:])
+		msg.IsRedis = true
 	} else {
 		parsed = msg.parseSplitRequest(bs[s:])
 	}
@@ -108,7 +134,7 @@ func (msg *Request)Decode(bs []byte) int {
 	return s + parsed
 }
 
-func (msg *Request)parseSSDBRequest(bs []byte) int {
+func (msg *Message)parseSSDBRequest(bs []byte) int {
 	s := 0
 	total := len(bs)
 
@@ -148,7 +174,7 @@ func (msg *Request)parseSSDBRequest(bs []byte) int {
 			return -1
 		} else {
 			p := string(bs[s : s + size])
-			msg.arr = append(msg.arr, p)
+			msg.vals = append(msg.vals, p)
 			s = end + 1
 			// log.Printf("> data %d %d [%s]\n", start, size, p);
 		}
@@ -156,7 +182,7 @@ func (msg *Request)parseSSDBRequest(bs []byte) int {
 	return 0
 }
 
-func (msg *Request)parseRedisRequest(bs []byte) int {
+func (msg *Message)parseRedisRequest(bs []byte) int {
 	if len(bs) < 2 {
 		return 0
 	}
@@ -229,7 +255,7 @@ func (msg *Request)parseRedisRequest(bs []byte) int {
 			return -1
 		} else {
 			p := string(bs[s : s + size])
-			msg.arr = append(msg.arr, p)
+			msg.vals = append(msg.vals, p)
 		}
 
 		s = end + 1
@@ -242,7 +268,7 @@ func (msg *Request)parseRedisRequest(bs []byte) int {
 	return 0
 }
 
-func (msg *Request)parseSplitRequest(bs []byte) int {
+func (msg *Message)parseSplitRequest(bs []byte) int {
 	idx := bytes.IndexByte(bs, '\n')
 	if idx == -1 {
 		return 0
@@ -251,6 +277,6 @@ func (msg *Request)parseSplitRequest(bs []byte) int {
 	if size > 0 && bs[size-1] == '\r' {
 		size -= 1
 	}
-	msg.arr = strings.Split(string(bs[0 : size]), " ")
+	msg.vals = strings.Split(string(bs[0 : size]), " ")
 	return idx + 1
 }

@@ -18,6 +18,8 @@ const(
 	ReplicateTimeout = 1 * 1000
 	HeartbeatTimeout = ReplicateTimeout * 3
 
+	AppendBufferSize   = 10
+
 	MaxWindowSize      = 3
 	MaxUncommittedSize = MaxWindowSize
 	MaxFallBehindSize  = 5

@@ -34,20 +34,25 @@ type UdpTransport struct{
 	mux sync.Mutex
 }
 
+func NewUdpTransport(ip string, port int) *UdpTransport {
+	t := new(UdpTransport)
+	t.Listen(fmt.Sprintf("%s:%d", ip, port))
+	return t;
+}
+
 func (tp *UdpTransport)Listen(addr string) error {
 	uaddr, _ := net.ResolveUDPAddr("udp", addr)
 	conn, _ := net.ListenUDP("udp", uaddr)
 	conn.SetReadBuffer(1 * 1024 * 1024)
 	conn.SetWriteBuffer(1 * 1024 * 1024)
 
-	tp := new(UdpTransport)
-	tp.addr = uaddr.String()
 	tp.conn = conn
-	tp.c = make(chan *raft.Message, 8)
+	tp.addr = uaddr.String()
+	tp.c = make(chan *raft.Message, 8) // TODO
 	tp.id_clients = make(map[string]*client_t)
 	tp.addr_clients = make(map[string]*client_t)
 
-	go tp.Recv()
+	go tp.recvThread()
 
 	return nil
 }
@@ -148,7 +153,11 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool {
 	return true
 }
 
-func (tp *UdpTransport)Recv() {
+func (tp *UdpTransport)Recv() chan *raft.Message {
+	return tp.c
+}
+
+func (tp *UdpTransport)recvThread() {
 	recv_buf := new(bytes.Buffer)
 	buf := make([]byte, 64*1024)
 

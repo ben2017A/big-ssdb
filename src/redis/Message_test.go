@@ -16,7 +16,7 @@ func escape(s string) string {
 func TestRequest(t *testing.T){
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	msg := new(Request)
+	msg := new(Message)
 	var buf bytes.Buffer
 
 	buf.WriteString("  \t2\nab\n\r\nget a\r\n")

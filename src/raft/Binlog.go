@@ -7,8 +7,6 @@ import (
 	"store"
 )
 
-const AppendBufferSize = 3
-
 type Binlog struct {
 	sync.Mutex
 

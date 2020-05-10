@@ -55,9 +55,6 @@ func main(){
 		conf.Init(nodeId, members)
 	}
 	logs := raft.OpenBinlog(base_dir)
-	node = raft.NewNode(conf, logs)
-	node.Start()
-	defer node.Close()
 
 	raft_xport := server.NewUdpTransport("127.0.0.1", port)
 	for k, v := range id_addr {
@@ -66,6 +63,10 @@ func main(){
 	defer raft_xport.Close()
 	glog.Infoln("Raft server started at", port)
 
+	node = raft.NewNode(raft_xport, conf, logs)
+	node.Start()
+	defer node.Close()
+
 	go func() {
 		for {
 			req := <- xport.C
@@ -73,15 +74,6 @@ func main(){
 				break
 			}
 			Process(req)
-		}
-	}()
-	go func() {
-		for {
-			msg := <- node.SendC()
-			if msg == nil {
-				break
-			}
-			raft_xport.Send(msg)
 		}
 	}()
 
@@ -99,7 +91,7 @@ func main(){
 	}
 }
 
-func Process(req *redis.Request) {
+func Process(req *redis.Message) {
 	resp := new(redis.Response)
 	resp.Dst = req.Src
 
@@ -108,9 +100,10 @@ func Process(req *redis.Request) {
 	if cmd == "command" {
 		resp.ReplyError("not implemented")
 	} else if cmd == "info" {
-		resp.ReplyBulk(node.Info())
+		resp.ReplyBulk("a")
+		// resp.ReplyBulk(node.Info())
 	} else {
-		t, i := node.Propose(req.Encode())
+		t, i := node.Propose(req.EncodeSSDB())
 		glog.Debugln("Propose", t, i, cmd)
 		if t == -1 {
 			resp.ReplyError("Propose failed")

@@ -49,7 +49,22 @@ func (r *Response)ReplyArray(ps []string) {
 	r.vals = ps
 }
 
-// TODO: EncodeSSDB()
+func (r *Response)EncodeSSDB() string {
+	vals := r.vals
+	switch r._type {
+	case TypeOK:
+		vals = []string{"ok"}
+	case TypeNull:
+		vals = []string{"not_found"}
+	case TypeError:
+		vals[0] = "error"
+	default:
+		vals = append([]string{"ok"}, vals...)
+	}
+	msg := NewMessage(vals)
+	return msg.Encode()
+}
+
 func (r *Response)Encode() string {
 	var buf bytes.Buffer
 	switch r._type {

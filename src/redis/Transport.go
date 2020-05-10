@@ -14,12 +14,18 @@ TODO: 请求响应模式, 一个连接如果有一个请求在处理时, 则不�
 */
 
 type Transport struct {
-	C chan *Request
+	C chan *Message
 	
 	lastClientId int
 	conn *net.TCPListener
-	clients map[int]net.Conn
+	clients map[int]*client_t
 	mux sync.Mutex
+}
+
+type client_t struct {
+	id int
+	conn net.Conn
+	isRedis bool
 }
 
 func NewTransport(ip string, port int) *Transport {
@@ -31,10 +37,10 @@ func NewTransport(ip string, port int) *Transport {
 	}
 
 	tp := new(Transport)
-	tp.C = make(chan *Request)
+	tp.C = make(chan *Message)
 	tp.lastClientId = 0
 	tp.conn = conn
-	tp.clients = make(map[int]net.Conn)
+	tp.clients = make(map[int]*client_t)
 
 	tp.start()
 	return tp
@@ -61,8 +67,11 @@ func (tp *Transport)start() {
 }
 
 func (tp *Transport)handleClient(clientId int, conn net.Conn) {
+	client := new(client_t)
+	client.conn = conn
+
 	tp.mux.Lock()
-	tp.clients[clientId] = conn
+	tp.clients[clientId] = client
 	tp.mux.Unlock()
 
 	defer func() {
@@ -70,12 +79,12 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 		tp.mux.Lock()
 		delete(tp.clients, clientId)
 		tp.mux.Unlock()
-		conn.Close()	
+		conn.Close()
 	}()
 
 	var buf bytes.Buffer
-	var msg *Request
-	msg = new(Request)
+	var msg *Message
+	msg = new(Message)
 	tmp := make([]byte, 128*1024)
 
 	for {
@@ -88,9 +97,12 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 				break
 			}
 			buf.Next(n)
+			
 			msg.Src = clientId
+			client.isRedis = msg.IsRedis
+
 			tp.C <- msg
-			msg = new(Request)
+			msg = new(Message)
 		}
 		
 		n, err := conn.Read(tmp)
@@ -104,17 +116,23 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 
 func (tp *Transport)Send(resp *Response) {
 	dst := resp.Dst
-	data := resp.Encode()
 
 	tp.mux.Lock()
 	defer tp.mux.Unlock()
 
-	conn := tp.clients[dst]
-	if conn == nil {
+	client := tp.clients[dst]
+	if client == nil {
 		glog.Info("connection not found: %s", dst)
 		return
 	}
-	
+
+	var data string
+	if client.isRedis {
+		data = resp.Encode()
+	} else {
+		data = resp.EncodeSSDB()
+	}
+
 	glog.Debug("    send > %d %s\n", dst, util.StringEscape(data))
-	conn.Write([]byte(data))
+	client.conn.Write([]byte(data))
 }
