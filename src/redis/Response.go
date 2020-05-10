@@ -20,31 +20,31 @@ type Response struct {
 	vals []string
 }
 
-func (r *Response)ReplyError(msg string) {
+func (r *Response)SetError(msg string) {
 	r._type = TypeError
 	r.vals = []string{"ERR", msg}
 }
 
-func (r *Response)ReplyError2(code string, msg string) {
+func (r *Response)SetError2(code string, msg string) {
 	r._type = TypeError
 	r.vals = []string{code, msg}
 }
 
-func (r *Response)ReplyNull() {
+func (r *Response)SetNull() {
 	r._type = TypeNull
 }
 
-func (r *Response)ReplyInt(num int64) {
+func (r *Response)SetInt(num int64) {
 	r._type = TypeInt
 	r.vals = []string{fmt.Sprintf("%d", num)}
 }
 
-func (r *Response)ReplyBulk(b string) {
+func (r *Response)SetBulk(b string) {
 	r._type = TypeBulk
 	r.vals = []string{b}
 }
 
-func (r *Response)ReplyArray(ps []string) {
+func (r *Response)SetArray(ps []string) {
 	r._type = TypeArray
 	r.vals = ps
 }

@@ -98,15 +98,14 @@ func Process(req *redis.Message) {
 	cmd := strings.ToLower(req.Cmd())
 
 	if cmd == "command" {
-		resp.ReplyError("not implemented")
+		resp.SetError("not implemented")
 	} else if cmd == "info" {
-		resp.ReplyBulk("a")
-		// resp.ReplyBulk(node.Info())
+		resp.SetBulk(node.Info())
 	} else {
 		t, i := node.Propose(req.EncodeSSDB())
 		glog.Debugln("Propose", t, i, cmd)
 		if t == -1 {
-			resp.ReplyError("Propose failed")
+			resp.SetError("Propose failed")
 		}
 		// TODO: send reply after applied, not now
 	}

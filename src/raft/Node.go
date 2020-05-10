@@ -224,8 +224,8 @@ func (node *Node)Tick(timeElapseMs int) {
 
 func (node *Node)onHeartbeatTimer(m *Member) {
 	m.HeartbeatTimer = 0
+	m.State = StateHeartbeat
 	if m.State == StateFallBehind {
-		m.State = StateHeartbeat
 		node.sendSnapshot(m)
 		return
 	}
