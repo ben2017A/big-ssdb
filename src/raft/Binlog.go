@@ -7,6 +7,9 @@ import (
 	"store"
 )
 
+// qps = WriteBufferSize * fsync_qps
+const WriteBufferSize = 100
+
 type Binlog struct {
 	sync.Mutex
 
@@ -40,7 +43,7 @@ func OpenBinlog(dir string) *Binlog {
 	
 	st.stop_c   = make(chan bool)
 	st.done_c   = make(chan bool)
-	st.append_c = make(chan bool, AppendBufferSize) // log to be persisted
+	st.append_c = make(chan bool, WriteBufferSize) // log to be persisted
 	st.accept_c = make(chan bool) // log been persisted
 
 	st.startWriter()
@@ -181,7 +184,7 @@ func (st *Binlog)fsync() {
 
 			data := ent.Encode()
 			st.wal.Append(data)
-			log.Debug("[Append] %s", util.StringEscape(data))
+			log.Debug("[Accept] %s", util.StringEscape(data))
 		}
 		// when is follower
 		if st.appendIndex < st.lastEntry.Index {

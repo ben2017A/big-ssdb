@@ -16,12 +16,12 @@ t.Close()
 type MemTransport struct {
 	sync.Mutex
 	nodes map[string]*Node
-	ch chan *Message
+	send_c chan *Message
 }
 
 func NewMemTransport() *MemTransport {
 	t := new(MemTransport)
-	t.ch = make(chan *Message, 100)
+	t.send_c = make(chan *Message, 100)
 	t.nodes = make(map[string]*Node)
 	return t
 }
@@ -31,21 +31,29 @@ func (t *MemTransport)Addr() string {
 }
 	
 func (t *MemTransport)Listen(addr string) error {
+	mq := make(chan *Message, 100)
 	go func() {
 		for {
-			msg := <- t.ch
+			msg := <- t.send_c
+			if msg == nil {
+				close(mq)
+				return
+			}
+			mq <- msg
+		}
+	}()
+	go func() {
+		for {
+			msg := <- mq
 			if msg == nil {
 				return
 			}
-			// 乱序
-			// go func() {
-				t.Lock()
-				node := t.nodes[msg.Dst]
-				t.Unlock()
-				if node != nil {
-					node.RecvC() <- msg
-				}
-			// }()
+			t.Lock()
+			node := t.nodes[msg.Dst]
+			t.Unlock()
+			if node != nil {
+				node.RecvC() <- msg
+			}
 		}
 	}()
 	return nil
@@ -57,7 +65,7 @@ func (t *MemTransport)Close() {
 	for _, n := range t.nodes {
 		n.Close()
 	}
-	close(t.ch)
+	close(t.send_c)
 }
 
 func (t *MemTransport)AddNode(node *Node) {
@@ -93,7 +101,7 @@ func (t *MemTransport)Send(msg *Message) bool {
 		return false
 	}
 	log.Info("    send > " + msg.Encode())
-	t.ch <- msg
+	t.send_c <- msg
 	return true
 }
 

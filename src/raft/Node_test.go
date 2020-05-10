@@ -50,11 +50,11 @@ func TestNode(t *testing.T){
 
 	clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
+	log.Info("\n=========================================================\n")
 	testOrphanNode()
 	clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
+	log.Info("\n=========================================================\n")
 	testOneNode()
 	fmt.Printf("\n")
 	testJoin()
@@ -62,17 +62,17 @@ func TestNode(t *testing.T){
 	testQuit()
 	clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
+	log.Info("\n===========================test==============================\n")
 	testTwoNodes()
 	fmt.Printf("\n")
 	testQuit()
 	clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
+	log.Info("\n=========================================================\n")
 	testSnapshot()
 	clean_nodes()
 
-	fmt.Printf("\n=========================================================\n")
+	log.Info("\n=========================================================\n")
 	testRestart()
 	clean_nodes()
 
@@ -163,7 +163,7 @@ func testJoin() {
 		log.Fatal("error")
 	}
 	if n1.CommitIndex() != n2.CommitIndex() {
-		log.Fatal("error")	
+		log.Fatalln("error", n1.CommitIndex(), n2.CommitIndex())	
 	}
 	log.Info("-----")
 }

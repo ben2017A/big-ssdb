@@ -18,8 +18,6 @@ const(
 	ReplicateTimeout = 1 * 1000
 	HeartbeatTimeout = ReplicateTimeout * 3
 
-	AppendBufferSize   = 10
-
 	MaxWindowSize      = 3
 	MaxUncommittedSize = MaxWindowSize
 	MaxFallBehindSize  = 5
@@ -52,7 +50,7 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node.stop_c = make(chan bool)
 	node.done_c = make(chan bool)
 	node.recv_c = make(chan *Message, 0/*TODO*/)
-	node.commit_c = make(chan bool) // log been committed
+	node.commit_c = make(chan bool)
 
 	node.xport = xport
 	node.conf = conf
@@ -124,6 +122,7 @@ func (node *Node)Close(){
 }
 
 func (node *Node)startWorkers(){
+	// 每一种事件都放在单独的线程里处理, 不能放在同一个线程, 因为有相互依赖
 	go func() {
 		node.done_c <- true
 		defer func(){
@@ -140,7 +139,6 @@ func (node *Node)startWorkers(){
 	}()
 	<- node.done_c
 
-	// accept_c 和 commit_c 不能在一个线程中处理, 因为会相互调用形成阻塞
 	go func() {
 		node.done_c <- true
 		defer func(){
@@ -193,58 +191,6 @@ func (node *Node)startWorkers(){
 	<- node.done_c
 }
 
-func (node *Node)Tick(timeElapseMs int) {
-	node.Lock()
-	defer node.Unlock()
-
-	if !node.conf.joined {
-		return
-	}
-
-	if node.role == RoleFollower || node.role == RoleCandidate {
-		node.electionTimer += timeElapseMs
-		if node.electionTimer >= ElectionTimeout {
-			node.startPreVote()
-		}
-	} else if node.role == RoleLeader {
-		for _, m := range node.conf.members {
-			m.IdleTimer += timeElapseMs
-			m.ReplicateTimer += timeElapseMs
-			m.HeartbeatTimer += timeElapseMs
-
-			if m.HeartbeatTimer >= HeartbeatTimeout {
-				node.onHeartbeatTimer(m)
-			}
-			if m.ReplicateTimer >= ReplicateTimeout {
-				node.onReplicateTimer(m)
-			}
-		}
-	}
-}
-
-func (node *Node)onHeartbeatTimer(m *Member) {
-	m.HeartbeatTimer = 0
-	m.State = StateHeartbeat
-	if m.State == StateFallBehind {
-		node.sendSnapshot(m)
-		return
-	}
-	node.sendHeartbeat(m)
-}
-
-func (node *Node)onReplicateTimer(m *Member) {
-	m.ReplicateTimer = 0
-	if m.State != StateReplicate {
-		return
-	}
-	if m.UnackedSize() != 0 {
-		log.Info("Member: %s retransmission timeout, reset next: %d => %d",
-			m.Id, m.NextIndex, m.MatchIndex + 1)
-		m.NextIndex = m.MatchIndex + 1
-	}
-	node.maybeReplicate(m)
-}
-
 func (node *Node)onAccept() {
 	node.Lock()
 	defer node.Unlock()
@@ -286,34 +232,44 @@ func (node *Node)onReceive(msg *Message) {
 	node.handleRaftMessage(m, msg)
 }
 
-func (node *Node)maybeReplicate(m *Member) {
-	if m.State != StateReplicate {
-		return
-	}
-	// flow control
-	if m.UnackedSize() >= m.WindowSize {
-		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+func (node *Node)Tick(timeElapseMs int) {
+	node.Lock()
+	defer node.Unlock()
+
+	if !node.conf.joined {
 		return
 	}
 
-	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.logs.AcceptIndex())
-	for m.NextIndex <= maxIndex {
-		ent := node.logs.GetEntry(m.NextIndex)
-		if ent == nil {
-			break
+	if node.role == RoleFollower || node.role == RoleCandidate {
+		node.electionTimer += timeElapseMs
+		if node.electionTimer >= ElectionTimeout {
+			node.startPreVote()
 		}
-		ent.Commit = util.MinInt64(ent.Index, node.CommitIndex())
-		
-		prev := node.logs.GetEntry(m.NextIndex - 1)
-		ok := node.send(NewAppendEntryMsg(m.Id, ent, prev))
-		if !ok {
-			// maybe it is because of flow control
-			break
+	} else if node.role == RoleLeader {
+		for _, m := range node.conf.members {
+			m.IdleTimer += timeElapseMs
+			m.ReplicateTimer += timeElapseMs
+			m.HeartbeatTimer += timeElapseMs
+
+			if m.HeartbeatTimer >= HeartbeatTimeout {
+				m.HeartbeatTimer = 0
+				if m.State == StateFallBehind {
+					node.sendSnapshot(m)
+				} else {
+					node.sendHeartbeat(m)
+				}
+				m.State = StateHeartbeat
+			}
+			if m.ReplicateTimer >= ReplicateTimeout {
+				m.ReplicateTimer = 0
+				if m.UnackedSize() != 0 {
+					log.Info("Member: %s retransmission timeout, reset next: %d => %d",
+						m.Id, m.NextIndex, m.MatchIndex + 1)
+					m.NextIndex = m.MatchIndex + 1
+				}
+				node.maybeReplicate(m)
+			}
 		}
-		
-		m.NextIndex ++
-		m.ReplicateTimer = 0
-		m.HeartbeatTimer = 0
 	}
 }
 
@@ -362,13 +318,7 @@ func (node *Node)becomeLeader() {
 		node.logs.Append(node.Term(), EntryTypeNoop, "")
 	}
 
-	// immediately check if followers are alive, then send data after acked
-	node.broadcastHeartbeat()
-}
-
-/* ############################################# */
-
-func (node *Node)broadcastHeartbeat() {
+	// immediately broadcast heartbeat
 	for _, m := range node.conf.members {
 		m.HeartbeatTimer = 0
 		m.ReplicateTimer = 0
@@ -377,6 +327,8 @@ func (node *Node)broadcastHeartbeat() {
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.broadcast(NewAppendEntryMsg("", ent, pre))
 }
+
+/* ############################################# */
 
 func (node *Node)sendHeartbeat(m *Member) {
 	m.HeartbeatTimer = 0
@@ -387,6 +339,37 @@ func (node *Node)sendHeartbeat(m *Member) {
 	}
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.send(NewAppendEntryMsg(m.Id, ent, pre))
+}
+
+func (node *Node)maybeReplicate(m *Member) {
+	if m.State != StateReplicate {
+		return
+	}
+	// flow control
+	if m.UnackedSize() >= m.WindowSize {
+		log.Info("member %s sending window full, next: %d, match: %d", m.Id, m.NextIndex, m.MatchIndex)
+		return
+	}
+
+	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.logs.AcceptIndex())
+	for m.NextIndex <= maxIndex {
+		ent := node.logs.GetEntry(m.NextIndex)
+		if ent == nil {
+			break
+		}
+		ent.Commit = util.MinInt64(ent.Index, node.CommitIndex())
+		
+		prev := node.logs.GetEntry(m.NextIndex - 1)
+		ok := node.send(NewAppendEntryMsg(m.Id, ent, prev))
+		if !ok {
+			// maybe it is because of flow control
+			break
+		}
+		
+		m.NextIndex ++
+		m.ReplicateTimer = 0
+		m.HeartbeatTimer = 0
+	}
 }
 
 func (node *Node)sendSnapshot(m *Member){
@@ -582,7 +565,10 @@ func (node *Node)handleAppendEntry(msg *Message){
 			node.sendDupAck()
 			return
 		}
+		// 注意, 任何涉及到 channel 操作的地方, 都要释放锁, 除非 channel 是无限大的
+		node.Unlock()
 		node.logs.Write(ent)
+		node.Lock()
 	}
 	if ent.Commit > node.CommitIndex() {
 		node.maybeCommit(ent.Commit)
@@ -664,6 +650,8 @@ func (node *Node)maybeCommit(commitIndex int64) {
 
 	// TODO: asynchronously apply to Service, in onCommit()?
 
+	// 这里需要先释放锁, 因为 commit_c 的消费者需要获取锁
+	// 除非 commit_c 是无限大的, 否则 commit_c 最终会阻塞
 	node.Unlock() // already locked by caller
 	node.commit_c <- true
 	node.Lock()
@@ -701,7 +689,7 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 			log.Info("sleep, append: %d, accept: %d commit: %d",
 				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.CommitIndex())
 			node.Unlock()
-			util.Sleep(0.01)
+			util.Sleep(0.001)
 			node.Lock()
 		}
 	}

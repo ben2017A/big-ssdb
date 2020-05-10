@@ -39,7 +39,7 @@ func NewMember(id string) *Member{
 
 func (m *Member)Reset() {
 	m.Role  = RoleFollower
-	m.State = StateReplicate
+	m.State = StateHeartbeat
 	m.WindowSize = 1
 	m.NextIndex  = 0
 	m.MatchIndex = 0
