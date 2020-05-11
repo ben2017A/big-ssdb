@@ -229,6 +229,7 @@ func (node *Node)onReceive(msg *Message) {
 		return
 	}
 	m.IdleTimer = 0
+	m.HeartbeatTimer = 0
 	node.handleRaftMessage(m, msg)
 }
 
@@ -319,10 +320,6 @@ func (node *Node)becomeLeader() {
 	}
 
 	// immediately broadcast heartbeat
-	for _, m := range node.conf.members {
-		m.HeartbeatTimer = 0
-		m.ReplicateTimer = 0
-	}
 	pre := node.logs.LastEntry()
 	ent := NewHearteatEntry(node.CommitIndex())
 	node.broadcast(NewAppendEntryMsg("", ent, pre))
