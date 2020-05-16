@@ -18,8 +18,8 @@ const(
 	ReplicateTimeout = 1 * 1000
 	HeartbeatTimeout = ReplicateTimeout * 3
 
-	MaxWindowSize      = 3
-	MaxUncommittedSize = MaxWindowSize
+	MaxSendWindowSize  = 3
+	MaxUncommittedSize = 4
 	MaxFallBehindSize  = 5
 )
 
@@ -551,13 +551,13 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		m.State = StateHeartbeat
 		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
 		old := m.NextIndex
-		m.WindowSize = 1 // congestion control
+		m.WindowSize = 0 // congestion control
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.MatchIndex + 1,  msg.PrevIndex + 1)
 		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, old, m.NextIndex)
 	} else {
 		m.State = StateReplicate
-		m.WindowSize = util.MinInt64(m.WindowSize + 1, MaxWindowSize) // slow start
+		m.WindowSize = util.MinInt64(m.WindowSize + 1, MaxSendWindowSize) // slow start
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {
@@ -642,7 +642,7 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 		// received, the newer one will replace the old one.
 		term = node.Term()
 
-		// TODO: 直接丢弃?
+		// TODO: 直接丢弃? timeout?
 		for node.logs.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
 			log.Info("sleep, append: %d, accept: %d commit: %d",
 				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.CommitIndex())
