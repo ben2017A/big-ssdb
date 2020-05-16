@@ -14,7 +14,6 @@ type Binlog struct {
 	sync.Mutex
 
 	node *Node
-	service Service
 
 	stop_c   chan bool
 	done_c   chan bool
@@ -22,9 +21,8 @@ type Binlog struct {
 	accept_c chan bool
 
 	entries map[int64]*Entry
-	lastEntry *Entry // 最新一条持久的日志
-	appendIndex int64
-	// acceptIndex int64
+	lastEntry *Entry // last accepted entry
+	appendIndex int64 // last append index
 
 	wal *store.WalFile
 }
@@ -99,11 +97,7 @@ func (st *Binlog)stopWriter() {
 	<- st.done_c
 }
 
-func (st *Binlog)AppendIndex() int64 {
-	return st.appendIndex
-}
-
-func (st *Binlog)AcceptIndex() int64 {
+func (st *Binlog)acceptIndex() int64 {
 	return st.lastEntry.Index
 }
 

@@ -62,8 +62,8 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node.commitIndex = node.conf.applied
 
 	// validate persitent state
-	if node.CommitIndex() > node.logs.AcceptIndex() {
-		log.Fatal("Data corruption, commit: %d > accept: %d", node.CommitIndex(), node.logs.AcceptIndex())
+	if node.CommitIndex() > node.AcceptIndex() {
+		log.Fatal("Data corruption, commit: %d > accept: %d", node.CommitIndex(), node.AcceptIndex())
 	}
 	
 	return node
@@ -77,6 +77,14 @@ func (node *Node)Term() int32 {
 	return node.conf.term
 }
 
+func (node *Node)AppendIndex() int64 {
+	return node.logs.appendIndex
+}
+
+func (node *Node)AcceptIndex() int64 {
+	return node.logs.acceptIndex()
+}
+
 func (node *Node)CommitIndex() int64 {
 	return node.commitIndex
 }
@@ -88,7 +96,7 @@ func (node *Node)RecvC() chan<- *Message {
 func (node *Node)Start(){
 	log.Info("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.CommitIndex(), node.logs.AcceptIndex())
+			node.CommitIndex(), node.AcceptIndex())
 
 	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
 	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
@@ -158,7 +166,7 @@ func (node *Node)onCommit() {
 	if node.role == RoleLeader {
 		for _, m := range node.conf.members {
 			// will not heartbeat when there is pending entry to be sent
-			if m.NextIndex > node.logs.AcceptIndex() {
+			if m.NextIndex > node.AcceptIndex() {
 				node.sendHeartbeat(m)
 			}
 		}
@@ -225,7 +233,7 @@ func (node *Node)reset() {
 	node.votesReceived = make(map[string]string)
 	for _, m := range node.conf.members {
 		m.Reset()
-		m.NextIndex = node.logs.AcceptIndex() + 1
+		m.NextIndex = node.AcceptIndex() + 1
 	}
 }
 
@@ -293,7 +301,7 @@ func (node *Node)maybeReplicate(m *Member) {
 		return
 	}
 
-	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.logs.AcceptIndex())
+	maxIndex := util.MinInt64(m.MatchIndex + m.WindowSize, node.AcceptIndex())
 	for m.NextIndex <= maxIndex {
 		ent := node.logs.GetEntry(m.NextIndex)
 		if ent == nil {
@@ -525,9 +533,9 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, 0) // 可能初始化
 		return
 	}
-	if msg.PrevIndex > node.logs.AcceptIndex() {
+	if msg.PrevIndex > node.AcceptIndex() {
 		log.Info("Member %s bad msg, prevIndex %d > lastIndex %d",
-			msg.Src, msg.PrevIndex, node.logs.AcceptIndex())
+			msg.Src, msg.PrevIndex, node.AcceptIndex())
 		return
 	}
 
@@ -554,7 +562,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 func (node *Node)advanceCommitIndex() {
 	// sort matchIndex[] in descend order
 	matchIndex := make([]int64, 0, len(node.conf.members) + 1)
-	matchIndex = append(matchIndex, node.logs.AcceptIndex()) // self
+	matchIndex = append(matchIndex, node.AcceptIndex()) // self
 	for _, m := range node.conf.members {
 		matchIndex = append(matchIndex, m.MatchIndex)
 	}
@@ -574,7 +582,7 @@ func (node *Node)advanceCommitIndex() {
 }
 
 func (node *Node)maybeCommit(commitIndex int64) {
-	commitIndex = util.MinInt64(commitIndex, node.logs.AcceptIndex())
+	commitIndex = util.MinInt64(commitIndex, node.AcceptIndex())
 	if commitIndex <= node.commitIndex {
 		return
 	}
@@ -627,9 +635,9 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 		term = node.Term()
 
 		// TODO: 直接丢弃? timeout?
-		for node.logs.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
+		for node.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
 			log.Info("sleep, append: %d, accept: %d commit: %d",
-				node.logs.AppendIndex(), node.logs.AcceptIndex(), node.CommitIndex())
+				node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
 			node.Unlock()
 			util.Sleep(0.001)
 			node.Lock()
@@ -666,8 +674,8 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("role: %s\n", node.role)
 	ret += fmt.Sprintf("term: %d\n", node.conf.term)
 	ret += fmt.Sprintf("vote: %s\n", node.conf.vote)
-	ret += fmt.Sprintf("append: %d\n", node.logs.AppendIndex())
-	ret += fmt.Sprintf("accept: %d\n", node.logs.AcceptIndex())
+	ret += fmt.Sprintf("append: %d\n", node.AppendIndex())
+	ret += fmt.Sprintf("accept: %d\n", node.AcceptIndex())
 	ret += fmt.Sprintf("commit: %d\n", node.CommitIndex())
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
@@ -730,7 +738,7 @@ func (node *Node)loadSnapshot(data string) {
 
 	log.Info("Reset %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
-			node.CommitIndex(), node.logs.AcceptIndex())
+			node.CommitIndex(), node.AcceptIndex())
 
 	log.Info("Done")
 }
