@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"math/rand"
-	"time"
+	// "time"
 	"sync"
 	"encoding/json"
 	log "glog"
@@ -90,7 +90,20 @@ func (node *Node)Start(){
 	log.Info("Start %s, peers: %s, term: %d, commit: %d, accept: %d",
 			node.conf.id, node.conf.peers, node.conf.term,
 			node.CommitIndex(), node.logs.AcceptIndex())
-	node.startWorkers()
+
+	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
+	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
+	util.StartTickerConsumerThread(node.stop_c, node.done_c, TickerInterval, node.Tick)
+	util.StartThread(node.done_c, func(){
+		for {
+			msg := <- node.recv_c
+			if msg == nil {
+				break
+			}
+			node.onReceive(msg)
+		}
+	})
+		
 	// 单节点运行
 	if node.conf.IsSingleton() {
 		node.startElection()
@@ -101,14 +114,17 @@ func (node *Node)Start(){
 func (node *Node)Close(){
 	log.Info("Stopping %s...", node.Id())
 
+	// WARNING: 停止先后顺序有要求
+
 	// 先停外界输入
 	node.recv_c <- nil
 	<- node.done_c
 
-	// 停持久化
+	// 停持久化 
 	node.logs.Close()
 	<- node.done_c
 
+	// 停 commit worker
 	node.commit_c <- false
 	<- node.done_c
 
@@ -122,13 +138,10 @@ func (node *Node)Close(){
 }
 
 func (node *Node)startWorkers(){
-	// 每一种事件都放在单独的线程里处理, 不能放在同一个线程, 因为有相互依赖
-	go func() {
-		node.done_c <- true
-		defer func(){
-			// log.Info("stop")
-			node.done_c <- true
-		}()
+	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
+	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
+	util.StartTickerConsumerThread(node.stop_c, node.done_c, TickerInterval, node.Tick)
+	util.StartThread(node.done_c, func(){
 		for {
 			msg := <- node.recv_c
 			if msg == nil {
@@ -136,59 +149,7 @@ func (node *Node)startWorkers(){
 			}
 			node.onReceive(msg)
 		}
-	}()
-	<- node.done_c
-
-	go func() {
-		node.done_c <- true
-		defer func(){
-			// log.Info("stop")
-			node.done_c <- true
-		}()
-		for {
-			t := <- node.logs.accept_c
-			if t == false {
-				return
-			}
-			node.onAccept()
-		}
-	}()
-	<- node.done_c
-
-	go func() {
-		node.done_c <- true
-		defer func(){
-			// log.Info("stop")
-			node.done_c <- true
-		}()
-		for {
-			t := <- node.commit_c
-			if t == false {
-				return
-			}
-			node.onCommit()
-		}
-	}()
-	<- node.done_c
-
-	go func() {
-		node.done_c <- true
-		defer func(){
-			// log.Info("stop")
-			node.done_c <- true
-		}()
-		ticker := time.NewTicker(TickerInterval * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select{
-			case <- node.stop_c:
-				return
-			case <- ticker.C:
-				node.Tick(TickerInterval)
-			}
-		}
-	}()
-	<- node.done_c
+	})
 }
 
 func (node *Node)onAccept() {
