@@ -28,8 +28,7 @@ func StartSignalConsumerThread(done_c chan bool, sig_c chan bool, f func()) {
 	})
 }
 
-// 不传入, 而是返回 stop_c
-func StartTickerConsumerThread(stop_c chan bool, done_c chan bool, tickMs int, f func(tickMs int)) {
+func StartTickerConsumerThread(done_c chan bool, stop_c chan bool, tickMs int, f func(tickMs int)) {
 	StartThread(done_c, func(){
 		ticker := time.NewTicker(time.Duration(tickMs) * time.Millisecond)
 		defer ticker.Stop()

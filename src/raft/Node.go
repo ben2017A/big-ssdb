@@ -36,21 +36,21 @@ type Node struct{
 	conf *Config
 	logs *Binlog
 
-	stop_c chan bool
 	done_c chan bool
 	// messages to be processed by self
 	recv_c chan *Message
 	commit_c chan bool
+	ticker_c chan bool
 
 	commitIndex int64
 }
 
 func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node := new(Node)
-	node.stop_c = make(chan bool)
 	node.done_c = make(chan bool)
 	node.recv_c = make(chan *Message, 0/*TODO*/)
 	node.commit_c = make(chan bool)
+	node.ticker_c = make(chan bool)
 
 	node.xport = xport
 	node.conf = conf
@@ -93,7 +93,7 @@ func (node *Node)Start(){
 
 	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
 	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
-	util.StartTickerConsumerThread(node.stop_c, node.done_c, TickerInterval, node.Tick)
+	util.StartTickerConsumerThread(node.done_c, node.ticker_c, TickerInterval, node.Tick)
 	util.StartThread(node.done_c, func(){
 		for {
 			msg := <- node.recv_c
@@ -129,7 +129,7 @@ func (node *Node)Close(){
 	<- node.done_c
 
 	// 停定时器
-	node.stop_c <- true
+	node.ticker_c <- false
 	<- node.done_c
 
 	node.conf.Close()
@@ -140,7 +140,7 @@ func (node *Node)Close(){
 func (node *Node)startWorkers(){
 	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
 	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
-	util.StartTickerConsumerThread(node.stop_c, node.done_c, TickerInterval, node.Tick)
+	util.StartTickerConsumerThread(node.ticker_c, node.done_c, TickerInterval, node.Tick)
 	util.StartThread(node.done_c, func(){
 		for {
 			msg := <- node.recv_c
