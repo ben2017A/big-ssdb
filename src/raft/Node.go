@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"math/rand"
-	// "time"
 	"sync"
 	"encoding/json"
 	log "glog"
@@ -135,21 +134,6 @@ func (node *Node)Close(){
 	node.conf.Close()
 
 	log.Info("Stopped %s", node.Id())
-}
-
-func (node *Node)startWorkers(){
-	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
-	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
-	util.StartTickerConsumerThread(node.ticker_c, node.done_c, TickerInterval, node.Tick)
-	util.StartThread(node.done_c, func(){
-		for {
-			msg := <- node.recv_c
-			if msg == nil {
-				break
-			}
-			node.onReceive(msg)
-		}
-	})
 }
 
 func (node *Node)onAccept() {
