@@ -58,6 +58,7 @@ func (tp *Transport)start() {
 			conn, err := tp.conn.Accept()
 			if err != nil {
 				glog.Errorln(err)
+				return
 			}
 			tp.lastClientId ++
 			glog.Info("Accept connection %d %s", tp.lastClientId, conn.RemoteAddr().String())

@@ -586,7 +586,7 @@ func (node *Node)maybeCommit(commitIndex int64) {
 	if commitIndex <= node.commitIndex {
 		return
 	}
-	log.Info("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
+	log.Debug("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
 	node.commitIndex = commitIndex
 
 	// synchronously apply to Config
@@ -636,7 +636,7 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 
 		// TODO: 直接丢弃? timeout?
 		for node.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
-			log.Info("sleep, append: %d, accept: %d commit: %d",
+			log.Debug("sleep, append: %d, accept: %d commit: %d",
 				node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
 			node.Unlock()
 			util.Sleep(0.001)
