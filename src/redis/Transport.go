@@ -57,7 +57,7 @@ func (tp *Transport)start() {
 		for {
 			conn, err := tp.conn.Accept()
 			if err != nil {
-				glog.Errorln(err)
+				glog.Debug(err)
 				return
 			}
 			tp.lastClientId ++
