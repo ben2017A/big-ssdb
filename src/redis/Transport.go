@@ -14,12 +14,12 @@ TODO: 请求响应模式, 一个连接如果有一个请求在处理时, 则不�
 */
 
 type Transport struct {
+	sync.Mutex
 	C chan *Message
 	
 	lastClientId int
 	conn *net.TCPListener
 	clients map[int]*client_t
-	mux sync.Mutex
 }
 
 type client_t struct {
@@ -37,7 +37,7 @@ func NewTransport(ip string, port int) *Transport {
 	}
 
 	tp := new(Transport)
-	tp.C = make(chan *Message)
+	tp.C = make(chan *Message, 100)
 	tp.lastClientId = 0
 	tp.conn = conn
 	tp.clients = make(map[int]*client_t)
@@ -57,7 +57,7 @@ func (tp *Transport)start() {
 		for {
 			conn, err := tp.conn.Accept()
 			if err != nil {
-				glog.Debug(err)
+				glog.Debugln(err)
 				return
 			}
 			tp.lastClientId ++
@@ -71,15 +71,15 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 	client := new(client_t)
 	client.conn = conn
 
-	tp.mux.Lock()
+	tp.Lock()
 	tp.clients[clientId] = client
-	tp.mux.Unlock()
+	tp.Unlock()
 
 	defer func() {
 		glog.Info("Close connection %d %s", clientId, conn.RemoteAddr().String())
-		tp.mux.Lock()
+		tp.Lock()
 		delete(tp.clients, clientId)
-		tp.mux.Unlock()
+		tp.Unlock()
 		conn.Close()
 	}()
 
@@ -116,11 +116,10 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 }
 
 func (tp *Transport)Send(resp *Response) {
+	tp.Lock()
+	defer tp.Unlock()
+
 	dst := resp.Dst
-
-	tp.mux.Lock()
-	defer tp.mux.Unlock()
-
 	client := tp.clients[dst]
 	if client == nil {
 		glog.Info("connection not found: %s", dst)
