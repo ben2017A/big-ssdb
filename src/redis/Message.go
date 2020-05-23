@@ -118,14 +118,14 @@ func (msg *Message)Decode(bs []byte) int {
 	msg.vals = make([]string, 0)
 
 	if bs[s] >= '0' && bs[s] <= '9' {
-		// ssdb
 		parsed = msg.parseSSDBRequest(bs[s:])
+		msg.IsRedis = false
 	} else if bs[s] == '*' || bs[s] == '$' {
-		// redis
 		parsed = msg.parseRedisRequest(bs[s:])
 		msg.IsRedis = true
 	} else {
 		parsed = msg.parseSplitRequest(bs[s:])
+		msg.IsRedis = true
 	}
 
 	if parsed == -1 {
