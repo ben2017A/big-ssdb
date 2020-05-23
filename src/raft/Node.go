@@ -542,6 +542,8 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	if msg.Data == "false" {
 		m.State = StateHeartbeat
 		// TODO: 记录 dupAckIndex, dupAckRepeats, 3 次再重传
+		m.HeartbeatTimer = HeartbeatTimeout - 1000
+
 		old := m.NextIndex
 		m.WindowSize = 0 // congestion control
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
