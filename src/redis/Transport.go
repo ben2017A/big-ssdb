@@ -61,26 +61,27 @@ func (tp *Transport)start() {
 				return
 			}
 			tp.lastClientId ++
-			glog.Info("Accept connection %d %s", tp.lastClientId, conn.RemoteAddr().String())
-			go tp.handleClient(tp.lastClientId, conn)
+
+			client := new(client_t)
+			client.id = tp.lastClientId
+			client.conn = conn
+			tp.Lock()
+			tp.clients[client.id] = client
+			tp.Unlock()
+
+			glog.Info("Accept connection %d %s", client.id, conn.RemoteAddr().String())
+			go tp.receiveClient(client)
 		}
 	}()
 }
 
-func (tp *Transport)handleClient(clientId int, conn net.Conn) {
-	client := new(client_t)
-	client.conn = conn
-
-	tp.Lock()
-	tp.clients[clientId] = client
-	tp.Unlock()
-
+func (tp *Transport)receiveClient(client *client_t) {
 	defer func() {
-		glog.Info("Close connection %d %s", clientId, conn.RemoteAddr().String())
+		glog.Info("Close connection %d %s", client.id, client.conn.RemoteAddr().String())
 		tp.Lock()
-		delete(tp.clients, clientId)
+		delete(tp.clients, client.id)
 		tp.Unlock()
-		conn.Close()
+		client.conn.Close()
 	}()
 
 	var buf bytes.Buffer
@@ -99,19 +100,19 @@ func (tp *Transport)handleClient(clientId int, conn net.Conn) {
 			}
 			buf.Next(n)
 			
-			msg.Src = clientId
+			msg.Src = client.id
 			client.isRedis = msg.IsRedis
 
 			tp.C <- msg
 			msg = new(Message)
 		}
 		
-		n, err := conn.Read(tmp)
+		n, err := client.conn.Read(tmp)
 		if err != nil {
 			break
 		}
 		buf.Write(tmp[0:n])
-		glog.Debug("    receive > %d %s", clientId, util.StringEscape(string(tmp[0:n])))
+		glog.Debug("    receive > %d %s", client.id, util.StringEscape(string(tmp[0:n])))
 	}
 }
 
@@ -134,5 +135,6 @@ func (tp *Transport)Send(resp *Response) {
 	}
 
 	glog.Debug("    send > %d %s\n", dst, util.StringEscape(data))
+	// TODO: may block
 	client.conn.Write([]byte(data))
 }
