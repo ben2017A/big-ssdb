@@ -89,13 +89,25 @@ import (
 type severity int32 // sync/atomic int32
 
 const (
-	debugLog severity = iota
+	traceLog severity = iota
+	debugLog
 	infoLog
 	warnLog
 	errorLog
 	fatalLog
-	numSeverity = 5
+	numSeverity = 6
 )
+
+const severityChar = "TDIWEF"
+
+var severityName = []string{
+	traceLog:   "TRACE",
+	debugLog:   "DEBUG",
+	infoLog:    "INFO",
+	warnLog:    "WARN",
+	errorLog:   "ERROR",
+	fatalLog:   "FATAL",
+}
 
 var outputSeverity severity
 
@@ -105,16 +117,6 @@ func SetLevel(outputLevel string) {
         panic(fmt.Errorf("unknown severity name %s", outputLevel))
     }
     outputSeverity = severity
-}
-
-const severityChar = "DIWEF"
-
-var severityName = []string{
-	debugLog:   "DEBUG",
-	infoLog:    "INFO",
-	warnLog:    "WARN",
-	errorLog:   "ERROR",
-	fatalLog:   "FATAL",
 }
 
 // get returns the value of the severity.
@@ -683,17 +685,17 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 	}
 	data := buf.Bytes()
 	/*if !flag.Parsed() {
-		os.Stderr.Write([]byte("ERROR: logging before flag.Parse: "))
-		os.Stderr.Write(data)
+		os.Stdout.Write([]byte("ERROR: logging before flag.Parse: "))
+		os.Stdout.Write(data)
 	} else */if l.toStderr {
-		os.Stderr.Write(data)
+		os.Stdout.Write(data)
 	} else {
 		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
-			os.Stderr.Write(data)
+			os.Stdout.Write(data)
 		}
 		if l.file[s] == nil {
 			if err := l.createFiles(s); err != nil {
-				os.Stderr.Write(data) // Make sure the message appears somewhere.
+				os.Stdout.Write(data) // Make sure the message appears somewhere.
 				l.exit(err)
 			}
 		}
@@ -711,6 +713,8 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 			l.file[infoLog].Write(data)
 		case debugLog:
 			l.file[debugLog].Write(data)
+		case traceLog:
+			l.file[traceLog].Write(data)
 		}
 	}
 	if s == fatalLog {
@@ -725,7 +729,7 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 		// If -logtostderr has been specified, the loop below will do that anyway
 		// as the first stack in the full dump.
 		if !l.toStderr {
-			os.Stderr.Write(stacks(false))
+			os.Stdout.Write(stacks(false))
 		}
 		// Write the stack trace for all goroutines to the files.
 		trace := stacks(true)
@@ -760,7 +764,7 @@ func timeoutFlush(timeout time.Duration) {
 	select {
 	case <-done:
 	case <-time.After(timeout):
-		fmt.Fprintln(os.Stderr, "glog: Flush took longer than", timeout)
+		fmt.Fprintln(os.Stdout, "glog: Flush took longer than", timeout)
 	}
 }
 
@@ -793,7 +797,7 @@ var logExitFunc func(error)
 // It flushes the logs and exits the program; there's no point in hanging around.
 // l.mu is held.
 func (l *loggingT) exit(err error) {
-	fmt.Fprintf(os.Stderr, "log: exiting because of error: %s\n", err)
+	fmt.Fprintf(os.Stdout, "log: exiting because of error: %s\n", err)
 	// If logExitFunc is set, we do that instead of exiting.
 	if logExitFunc != nil {
 		logExitFunc(err)
@@ -1031,6 +1035,14 @@ func V(level Level) Verbose {
 		return Verbose(v >= level)
 	}
 	return Verbose(false)
+}
+
+func Trace(format string, args ...interface{}) {
+	logging.printf(traceLog, format, args...)
+}
+
+func Traceln(args ...interface{}) {
+	logging.println(traceLog, args...)
 }
 
 func Debug(format string, args ...interface{}) {

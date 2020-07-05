@@ -588,7 +588,7 @@ func (node *Node)maybeCommit(commitIndex int64) {
 	if commitIndex <= node.commitIndex {
 		return
 	}
-	log.Debug("%s commit %d => %d", node.Id(), node.commitIndex, commitIndex)
+	log.Debug("  [Commit] %d => %d", node.commitIndex, commitIndex)
 	node.commitIndex = commitIndex
 
 	// synchronously apply to Config

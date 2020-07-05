@@ -149,7 +149,7 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool {
 
 	// buf := []byte(str)
 	// n, _ := tp.conn.WriteToUDP(buf, addr)
-	glog.Debug("    send > %s\n", util.StringEscape(str))
+	glog.Trace("    send > %s\n", util.StringEscape(str))
 	return true
 }
 
@@ -184,7 +184,7 @@ func (tp *UdpTransport)recvThread() {
 		n := binary.BigEndian.Uint16(buf[4:6])
 		i := binary.BigEndian.Uint16(buf[6:8])
 		if n == 0 || i == 0 {
-			glog.Debug("bad packet n=%d, i=%d", n, i)
+			glog.Info("bad packet n=%d, i=%d", n, i)
 			continue
 		}
 		if client.recv_num == 0 || client.recv_seq != s || client.recv_num != n {
@@ -218,7 +218,7 @@ func (tp *UdpTransport)recvThread() {
 			if msg == nil {
 				glog.Error("decode error: %s", str)
 			} else {
-				glog.Debug(" receive < %s\n", util.StringEscape(str))
+				glog.Trace(" receive < %s\n", util.StringEscape(str))
 				tp.c <- msg
 			}
 		}

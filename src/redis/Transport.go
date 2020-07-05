@@ -112,7 +112,7 @@ func (tp *Transport)receiveClient(client *client_t) {
 			break
 		}
 		buf.Write(tmp[0:n])
-		glog.Debug("    receive > %d %s", client.id, util.StringEscape(string(tmp[0:n])))
+		glog.Trace("    receive > %d %s", client.id, util.StringEscape(string(tmp[0:n])))
 	}
 }
 
@@ -134,7 +134,7 @@ func (tp *Transport)Send(resp *Response) {
 		data = resp.EncodeSSDB()
 	}
 
-	glog.Debug("    send > %d %s\n", dst, util.StringEscape(data))
+	glog.Trace("    send > %d %s\n", dst, util.StringEscape(data))
 	// TODO: may block
 	client.conn.Write([]byte(data))
 }

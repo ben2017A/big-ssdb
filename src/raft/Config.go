@@ -174,7 +174,7 @@ func (c *Config)updatePeers() {
 func (c *Config)ApplyEntry(ent *Entry) {
 	c.applied = ent.Index
 
-	glog.Debug("[Apply] %s", util.StringEscape(ent.Encode()))
+	glog.Debug("[Apply ] %s", util.StringEscape(ent.Encode()))
 	if ent.Type == EntryTypeConf {
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
