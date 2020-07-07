@@ -163,7 +163,7 @@ func (st *Binlog)Write(ent *Entry) {
 }
 
 func (st *Binlog)fsync() {
-	has_new := false
+	new_count := 0
 
 	st.Lock()
 	{
@@ -174,7 +174,7 @@ func (st *Binlog)fsync() {
 				break
 			}
 			st.lastEntry = ent
-			has_new = true
+			new_count += 1
 
 			data := ent.Encode()
 			st.wal.Append(data)
@@ -188,12 +188,13 @@ func (st *Binlog)fsync() {
 	st.Unlock()
 
 	// accept_c consumer need holding lock, so produce accept_c outside
-	if has_new {
+	if new_count > 0 {
 		err := st.wal.Fsync()
 		if err != nil {
 			log.Fatalln(err)
 		}
 		st.accept_c <- true
+		log.Debug("batch accepted %d entry(s)", new_count)
 	}
 }
 
