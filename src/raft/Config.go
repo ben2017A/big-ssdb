@@ -29,12 +29,20 @@ type Config struct {
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
 func OpenConfig(dir string) *Config {
 	c := new(Config)
-	c.peers = make([]string, 0)
-	c.members = make(map[string]*Member)
+	c.init()
 	if !c.Open(dir) {
 		return nil
 	}
 	return c
+}
+
+func (c *Config)init() {
+	c.term = 0
+	c.vote = ""
+	c.applied = 0
+	c.joined = false
+	c.peers = make([]string, 0)
+	c.members = make(map[string]*Member)
 }
 
 func (c *Config)Open(dir string) bool {
@@ -193,12 +201,7 @@ func (c *Config)ApplyEntry(ent *Entry) {
 }
 
 func (c *Config)Clean() {
-	c.term = 0
-	c.vote = ""
-	c.applied = 0
-	c.joined = false
-	c.peers = make([]string, 0)
-	c.members = make(map[string]*Member)
+	c.init();
 	if err := c.wal.Clean(); err != nil {
 		glog.Fatalln(err)
 	}
