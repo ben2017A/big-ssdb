@@ -22,7 +22,7 @@ type client_t struct {
 
 	recv_seq uint32 // 并不要求连续
 	recv_num uint16 // 分段数量
-	recv_idx uint16 // 当前分段号(从 1 开始)
+	recv_idx uint16 // 当前分段号(从 0 开始)
 }
 
 type UdpTransport struct{
@@ -79,7 +79,7 @@ func (tp *UdpTransport)Connect(nodeId, addr string) error {
 	if tp.addr_clients[addr] == nil {
 		client := new(client_t)
 		client.addr = uaddr
-		client.send_seq = 1
+		client.send_seq = 0
 		client.recv_num = 0
 		tp.addr_clients[addr] = client
 	}
@@ -134,7 +134,7 @@ func (tp *UdpTransport)Send(msg *raft.Message) bool {
 		send_buf.Reset()
 		binary.Write(send_buf, binary.BigEndian, client.send_seq)
 		binary.Write(send_buf, binary.BigEndian, num)
-		binary.Write(send_buf, binary.BigEndian, idx + 1)
+		binary.Write(send_buf, binary.BigEndian, idx)
 		send_buf.WriteString(str[s : e])
 
 		cnt, err := tp.conn.WriteToUDP(send_buf.Bytes(), client.addr)
@@ -183,7 +183,7 @@ func (tp *UdpTransport)recvThread() {
 		s := binary.BigEndian.Uint32(buf[0:4])
 		n := binary.BigEndian.Uint16(buf[4:6])
 		i := binary.BigEndian.Uint16(buf[6:8])
-		if n == 0 || i == 0 {
+		if n == 0 {
 			glog.Info("bad packet n=%d, i=%d", n, i)
 			continue
 		}
@@ -193,7 +193,7 @@ func (tp *UdpTransport)recvThread() {
 			client.recv_idx = 0
 			recv_buf.Reset()
 		}
-		if client.recv_idx != i - 1 { // miss order
+		if client.recv_idx != i { // miss order
 			glog.Info("miss ordered packet")
 			client.recv_num = 0
 			continue
@@ -201,13 +201,13 @@ func (tp *UdpTransport)recvThread() {
 
 		var str string
 
-		if n == 1 && i == 1 {
+		if n == 1 && i == 0 {
 			client.recv_num = 0 // finish
 			str = string(buf[8:cnt])
 		} else {
 			client.recv_idx = i
 			recv_buf.Write(buf[8:cnt])
-			if client.recv_idx == client.recv_num {
+			if client.recv_idx == client.recv_num - 1 {
 				client.recv_num = 0 // finish
 				str = string(recv_buf.Bytes())
 			}
