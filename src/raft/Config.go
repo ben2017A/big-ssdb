@@ -24,6 +24,9 @@ type Config struct {
 
 	node *Node
 	wal *store.WalFile
+
+	// 用于优化 apply 之后 fsync()
+	apply_count int
 }
 
 // 尝试从指定目录加载配置, 如果之前没有保存配置, 则 IsNew() 返回 true.
@@ -182,7 +185,7 @@ func (c *Config)updatePeers() {
 func (c *Config)ApplyEntry(ent *Entry) {
 	c.applied = ent.Index
 
-	glog.Debug("[Apply ] %s", util.StringEscape(ent.Encode()))
+	glog.Trace("[Apply ] %s", util.StringEscape(ent.Encode()))
 	if ent.Type == EntryTypeConf {
 		ps := strings.Split(ent.Data, " ")
 		cmd := ps[0]
@@ -195,8 +198,11 @@ func (c *Config)ApplyEntry(ent *Entry) {
 		}
 		c.fsync()
 	} else {
-		// TODO: 优化点, 不需要每次都 fsync
-		c.fsync()
+		// 优化点, 不需要每次都 fsync
+		c.apply_count ++
+		if c.apply_count % 1000 == 0 {
+			c.fsync()
+		}
 	}
 }
 

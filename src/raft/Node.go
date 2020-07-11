@@ -17,9 +17,9 @@ const(
 	ReplicateTimeout = 1 * 1000
 	HeartbeatTimeout = ReplicateTimeout * 3
 
-	MaxSendWindowSize  = 3
-	MaxUncommittedSize = 4
-	MaxFallBehindSize  = 5
+	MaxSendWindowSize  = 10
+	MaxUncommittedSize = MaxSendWindowSize + 1
+	MaxFallBehindSize  = MaxSendWindowSize + 2
 )
 
 // Node is lightweighted

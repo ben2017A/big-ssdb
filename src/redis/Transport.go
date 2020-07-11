@@ -123,7 +123,7 @@ func (tp *Transport)Send(resp *Response) {
 	dst := resp.Dst
 	client := tp.clients[dst]
 	if client == nil {
-		glog.Info("connection not found: %s", dst)
+		glog.Debug("connection not found: %d", dst)
 		return
 	}
 
