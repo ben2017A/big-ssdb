@@ -7,7 +7,7 @@ import (
 	"store"
 )
 
-// qps = WriteBufferSize * fsync_qps
+// max qps = WriteBufferSize * fsync_qps
 const WriteBufferSize = 100
 
 type Binlog struct {
@@ -22,7 +22,7 @@ type Binlog struct {
 
 	entries map[int64]*Entry
 	lastEntry *Entry // last accepted entry
-	appendIndex int64 // last append index
+	appendIndex int64 // last append(by local) index
 
 	wal *store.WalFile
 }
@@ -37,13 +37,13 @@ func OpenBinlog(dir string) *Binlog {
 
 	st := new(Binlog)
 	st.wal = wal
-	st.init()
 	
 	st.stop_c   = make(chan bool)
 	st.done_c   = make(chan bool)
-	st.append_c = make(chan bool, WriteBufferSize) // log to be persisted
-	st.accept_c = make(chan bool) // log been persisted
+	st.append_c = make(chan bool, WriteBufferSize) // signal logs to be persisted
+	st.accept_c = make(chan bool) // signal logs has been persisted
 
+	st.init()
 	st.startWriter()
 
 	return st
@@ -109,9 +109,11 @@ func (st *Binlog)LastEntry() *Entry {
 func (st *Binlog)GetEntry(index int64) *Entry {
 	st.Lock()
 	defer st.Unlock()
+	// TODO: 优化点, 不能全部 entry 都放内存
 	return st.entries[index]
 }
 
+// 申请一个连续的 index, 然后将 entry 写入缓冲区
 func (st *Binlog)Append(term int32, typo EntryType, data string) *Entry {
 	ent := new(Entry)
 	ent.Term = term
@@ -119,8 +121,10 @@ func (st *Binlog)Append(term int32, typo EntryType, data string) *Entry {
 	ent.Data = data
 	
 	st.Lock()
-	st.appendIndex += 1
-	ent.Index = st.appendIndex
+	{
+		st.appendIndex += 1
+		ent.Index = st.appendIndex
+	}
 	st.Unlock()
 
 	st.Write(ent)
@@ -156,7 +160,7 @@ func (st *Binlog)Write(ent *Entry) {
 	}
 	st.Unlock()
 
-	// append_c consumer need holding lock, so produce append_c outside
+	// append_c consumer needs holding lock, so produce append_c outside
 	if !drop {
 		st.append_c <- true
 	}
@@ -214,9 +218,9 @@ func (st *Binlog)Clean() {
 func (st *Binlog)RecoverFromSnapshot(sn *Snapshot) {
 	st.Clean()
 	st.appendIndex = sn.LastIndex()
-	// lastEntry will be updated inside Fsync
+	// lastEntry will be updated inside fsync()
 	st.lastEntry.Index = sn.LastIndex() - 1
 	st.Write(sn.lastEntry)
-	// may be called by writer, but force fsync as well
+	// may have been called by writer, but force fsync as well
 	st.fsync()
 }
