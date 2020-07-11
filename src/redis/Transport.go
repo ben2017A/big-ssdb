@@ -69,7 +69,7 @@ func (tp *Transport)start() {
 			tp.clients[client.id] = client
 			tp.Unlock()
 
-			glog.Info("Accept connection %d %s", client.id, conn.RemoteAddr().String())
+			glog.Debug("Accept connection %d %s", client.id, conn.RemoteAddr().String())
 			go tp.receiveClient(client)
 		}
 	}()
@@ -77,7 +77,7 @@ func (tp *Transport)start() {
 
 func (tp *Transport)receiveClient(client *client_t) {
 	defer func() {
-		glog.Info("Close connection %d %s", client.id, client.conn.RemoteAddr().String())
+		glog.Debug("Close connection %d %s", client.id, client.conn.RemoteAddr().String())
 		tp.Lock()
 		delete(tp.clients, client.id)
 		tp.Unlock()

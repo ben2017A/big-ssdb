@@ -34,12 +34,14 @@ type Node struct{
 	xport Transport
 	conf *Config
 	logs *Binlog
+	service Service
 
 	done_c chan bool
 	// messages to be processed by self
 	recv_c chan *Message
 	commit_c chan bool
 	ticker_c chan bool
+	apply_c  chan bool // notify apply thread
 
 	commitIndex int64
 }
@@ -50,6 +52,7 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node.recv_c = make(chan *Message, 0/*TODO*/)
 	node.commit_c = make(chan bool)
 	node.ticker_c = make(chan bool)
+	node.apply_c  = make(chan bool, 3)
 
 	node.xport = xport
 	node.conf = conf
@@ -67,6 +70,10 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	}
 	
 	return node
+}
+
+func (node *Node)SetService(s Service) {
+	node.service = s
 }
 
 func (node *Node)Id() string {
@@ -100,6 +107,7 @@ func (node *Node)Start(){
 
 	util.StartSignalConsumerThread(node.done_c, node.logs.accept_c, node.onAccept)
 	util.StartSignalConsumerThread(node.done_c, node.commit_c, node.onCommit)
+	util.StartSignalConsumerThread(node.done_c, node.apply_c,  node.onApply)
 	util.StartTickerConsumerThread(node.done_c, node.ticker_c, TickerInterval, node.Tick)
 	util.StartThread(node.done_c, func(){
 		for {
@@ -116,6 +124,8 @@ func (node *Node)Start(){
 		node.startElection()
 		node.checkVoteResult()
 	}
+
+	node.apply_c <- true
 }
 
 func (node *Node)Close(){
@@ -126,9 +136,13 @@ func (node *Node)Close(){
 	// 先停外界输入
 	node.recv_c <- nil
 	<- node.done_c
-
+	
 	// 停持久化 
 	node.logs.Close()
+	<- node.done_c
+
+	// 停 apply worker
+	node.apply_c <- false
 	<- node.done_c
 
 	// 停 commit worker
@@ -142,6 +156,20 @@ func (node *Node)Close(){
 	node.conf.Close()
 
 	log.Info("Stopped %s", node.Id())
+}
+
+func (node *Node)onApply() {
+	if node.service == nil {
+		return
+	}
+
+	for index := node.service.LastIndex() + 1; index <= node.CommitIndex(); index ++ {
+		ent := node.logs.GetEntry(index)
+		if ent == nil {
+			log.Fatal("Lost entry@%d", index)
+		}
+		node.service.ApplyEntry(ent)
+	}
 }
 
 func (node *Node)onAccept() {
@@ -600,7 +628,8 @@ func (node *Node)maybeCommit(commitIndex int64) {
 		node.conf.ApplyEntry(ent)
 	}
 
-	// TODO: asynchronously apply to Service, in onCommit()?
+	// asynchronously apply to Service
+	node.apply_c <- true
 
 	// 这里需要先释放锁, 因为 commit_c 的消费者需要获取锁
 	// 除非 commit_c 是无限大的, 否则 commit_c 最终会阻塞
@@ -679,6 +708,11 @@ func (node *Node)Info() string {
 	ret += fmt.Sprintf("append: %d\n", node.AppendIndex())
 	ret += fmt.Sprintf("accept: %d\n", node.AcceptIndex())
 	ret += fmt.Sprintf("commit: %d\n", node.CommitIndex())
+	if node.service == nil {
+		ret += fmt.Sprintf("applied: 0\n")
+	} else {
+		ret += fmt.Sprintf("applied: %d\n", node.service.LastIndex())
+	}
 	bs, _ := json.Marshal(node.conf.members)
 	ret += fmt.Sprintf("members: %s\n", string(bs))
 
