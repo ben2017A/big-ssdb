@@ -660,8 +660,9 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 			log.Infoln("error: not leader")
 			return -1, -1
 		}
+		
 		// assign term to a proposing entry while holding lock, then assign index
-		// inside logs.Append(). When a new entry with save index (sure with newer term)
+		// inside logs.Append(). When a new entry with same index (sure with newer term)
 		// received, the newer one will replace the old one.
 		term = node.Term()
 

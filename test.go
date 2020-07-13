@@ -153,6 +153,9 @@ func (s *TestService)Process(req *redis.Message) {
 			}
 
 			s.Lock()
+			// TODO:
+			// 在这里的时候, 对应的 entry 可能(单节点时容易发生)已经 apply 了...
+			// 所以, tasks 应该由 raft 来维护? 必须确保在 apply 前, task 已经被加入到 tasks
 			s.tasks[i] = task
 			s.Unlock()
 
