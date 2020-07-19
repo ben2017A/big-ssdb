@@ -233,6 +233,8 @@ func (node *Node)Tick(timeElapseMs int) {
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
+			// TODO: 如果一定时间与 followers 失联, 自动放弃 leader 身份
+
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				m.HeartbeatTimer = 0
 				if m.State == StateFallBehind {
@@ -646,39 +648,34 @@ func (node *Node)handleInstallSnapshot(msg *Message) {
 /* ###################### Methods ####################### */
 
 // 应该由调用者确保不会 propose 太快, 否则直接丢弃
+// -1: not leader
+// -2: would block
 func (node *Node)Propose(data string) (int32, int64) {
 	return node._propose(EntryTypeData, data)
 }
 
 func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	// use a propose_lock?
-	var term int32
 	node.Lock()
-	{
-		if node.role != RoleLeader {
-			node.Unlock()
-			log.Infoln("error: not leader")
-			return -1, -1
-		}
-		
-		// assign term to a proposing entry while holding lock, then assign index
-		// inside logs.Append(). When a new entry with same index (sure with newer term)
-		// received, the newer one will replace the old one.
-		term = node.Term()
+	defer node.Unlock()
 
-		// TODO: 直接丢弃? timeout?
-		for node.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
-			log.Debug("sleep, append: %d, accept: %d commit: %d",
-				node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
-			node.Unlock()
-			util.Sleep(0.001)
-			node.Lock()
-		}
+	if node.role != RoleLeader {
+		log.Infoln("error: not leader")
+		return -1, 0
 	}
-	node.Unlock()
+	// 直接丢弃
+	for node.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
+		log.Debug("too many proposals, append: %d, accept: %d commit: %d",
+			node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
+		return -2, 0
+	}
 
-	// call logs.Append() outside of node.Lock(), because it may
-	// need node.Lock() to proceed
+	// assign term to a proposing entry while holding lock, then assign index
+	// inside logs.Append(). When a new entry with same index (sure with newer term)
+	// received, the newer one will replace the old one.
+	term := node.Term()
+
+	// logs.Append() should not depend on node.Lock, because we are holding node.Lock here
 	ent := node.logs.Append(term, etype, data)
 	return ent.Term, ent.Index
 }

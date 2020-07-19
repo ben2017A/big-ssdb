@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"glog"
+	"util"
+	log "glog"
 	"raft"
 	"raft/server"
 	"redis"
@@ -23,6 +25,7 @@ type ServiceTask struct {
 	Term int32
 	Index int64
 	Req *redis.Message
+	Time int64
 }
 
 type TestService struct {
@@ -47,12 +50,12 @@ func (s *TestService)LastIndex() int64 {
 }
 
 func (s *TestService)InstallSnapshot() {
-	glog.Warn("not implemented")
+	log.Warn("not implemented")
 }
 
 func (s *TestService)ApplyEntry(ent *raft.Entry) {
 	if ent.Index == 1 || ent.Index == node.CommitIndex() {
-		glog.Trace("apply %d", ent.Index)
+		log.Trace("apply %d", ent.Index)
 	}
 
 	s.applied = ent.Index
@@ -141,22 +144,43 @@ func (s *TestService)Process(req *redis.Message) {
 			resp.SetBulk(val)
 		}
 	} else {
-		t, i := node.Propose(req.EncodeSSDB())
-		glog.Debugln("Propose", t, i, cmd)
-		if t == -1 {
-			resp.SetError("Propose failed")
-		} else {
-			task := &ServiceTask{
-				Term: t,
-				Index: i,
-				Req: req,
+		task := &ServiceTask{
+			Time: time.Now().UnixNano() / 1000,
+			Term: -1,
+			Index: -1,
+			Req: req,
+		}
+
+		var t int32
+		var i int64
+		for c:=0; true; c++ {
+			if c == 500 {
+				log.Error("propose timeout")
+				break
 			}
+			t, i = node.Propose(req.EncodeSSDB())
+			if t == -2 {
+				util.Sleep(0.001)
+				continue
+			}
+			if t > 0 && c > 0 {
+				log.Info("propose success after %d retry(s)", c)
+			}
+			break
+		}
+		if t == -1 {
+			resp.SetError("propose failed: not leader")
+		} else if t == -2 {
+			resp.SetError("propose failed: timeout")
+		} else {
+			task.Term = t
+			task.Index = i
 
 			s.Lock()
 			// TODO:
 			// 在这里的时候, 对应的 entry 可能(单节点时容易发生)已经 apply 了...
-			// 所以, tasks 应该由 raft 来维护? 必须确保在 apply 前, task 已经被加入到 tasks
-			s.tasks[i] = task
+			// 需要确保在 apply 前, task 已经被加入到 tasks
+			s.tasks[task.Index] = task
 			s.Unlock()
 
 			// send reply after applied, not now
@@ -168,7 +192,7 @@ func (s *TestService)Process(req *redis.Message) {
 
 
 func main(){
-	// glog.SetLevel("info")
+	// log.SetLevel("info")
 
 	port := 8001
 	if len(os.Args) > 1 {
@@ -180,16 +204,16 @@ func main(){
 	base_dir := "./tmp/" + nodeId
 
 	if err := os.MkdirAll(base_dir, 0755); err != nil {
-		glog.Fatal("Failed to make dir %s, %s", base_dir, err)
+		log.Fatal("Failed to make dir %s, %s", base_dir, err)
 	}
 
 	xport = redis.NewTransport("127.0.0.1", port+1000)
 	if xport == nil {
-		glog.Fatal("Failed to start redis port")
+		log.Fatal("Failed to start redis port")
 		return
 	}
 	defer xport.Close()
-	glog.Infoln("Redis server started at", port+1000)
+	log.Infoln("Redis server started at", port+1000)
 
 	id_addr := make(map[string]string)
 	id_addr["8001"] = "127.0.0.1:8001"
@@ -211,7 +235,7 @@ func main(){
 		raft_xport.Connect(k, v)
 	}
 	defer raft_xport.Close()
-	glog.Infoln("Raft server started at", port)
+	log.Infoln("Raft server started at", port)
 
 	service = NewTestService()
 
