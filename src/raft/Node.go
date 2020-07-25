@@ -228,7 +228,18 @@ func (node *Node)Tick(timeElapseMs int) {
 			node.startPreVote()
 		}
 	} else if node.role == RoleLeader {
-		// TODO: 如果一定时间与 followers 失联, 自动放弃 leader 身份
+		// 如果一定时间与多数 followers 失联, 则自动放弃 leader 身份
+		count := 0
+		for _, m := range node.conf.members {
+			if m.IdleTimer >= HeartbeatTimeout * 3 + ReplicateTimeout {
+				count ++
+			}
+		}
+		if count > len(node.conf.members)/2 {
+			node.becomeFollower()
+			return
+		}
+
 		for _, m := range node.conf.members {
 			m.IdleTimer += timeElapseMs
 			m.ReplicateTimer += timeElapseMs

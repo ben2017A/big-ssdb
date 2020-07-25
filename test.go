@@ -166,9 +166,9 @@ func (s *TestService)Process(req *redis.Message) {
 			break
 		}
 		if t == -1 {
-			resp.SetError("propose failed: not leader")
+			resp.SetError2("302", "propose failed: not leader")
 		} else if t == -2 {
-			resp.SetError("propose failed: timeout")
+			resp.SetError2("503", "propose failed: timeout")
 		} else {
 			task.Term = t
 			task.Index = i
