@@ -228,13 +228,18 @@ func (node *Node)Tick(timeElapseMs int) {
 			node.startPreVote()
 		}
 	} else if node.role == RoleLeader {
+		// TODO: 如果一定时间与 followers 失联, 自动放弃 leader 身份
 		for _, m := range node.conf.members {
 			m.IdleTimer += timeElapseMs
 			m.ReplicateTimer += timeElapseMs
 			m.HeartbeatTimer += timeElapseMs
 
-			// TODO: 如果一定时间与 followers 失联, 自动放弃 leader 身份
-
+			if m.IdleTimer >= HeartbeatTimeout * 3 + ReplicateTimeout {
+				if m.WindowSize != 0 {
+					m.WindowSize = 0 // slow start
+					log.Debug("%s reset SindowSize: 0", m.Id)
+				}
+			}
 			if m.HeartbeatTimer >= HeartbeatTimeout {
 				m.HeartbeatTimer = 0
 				if m.State == StateFallBehind {
@@ -246,12 +251,14 @@ func (node *Node)Tick(timeElapseMs int) {
 			}
 			if m.ReplicateTimer >= ReplicateTimeout {
 				m.ReplicateTimer = 0
-				if m.UnackedSize() != 0 {
-					log.Info("Member: %s retransmission timeout, reset next: %d => %d",
-						m.Id, m.NextIndex, m.MatchIndex + 1)
-					m.NextIndex = m.MatchIndex + 1
+				if m.State == StateReplicate {
+					if m.UnackedSize() != 0 {
+						log.Info("Member: %s retransmission timeout, reset next: %d => %d",
+							m.Id, m.NextIndex, m.MatchIndex + 1)
+						m.NextIndex = m.MatchIndex + 1
+					}
+					node.maybeReplicate(m)
 				}
-				node.maybeReplicate(m)
 			}
 		}
 	}
@@ -313,6 +320,7 @@ func (node *Node)becomeLeader() {
 func (node *Node)sendHeartbeat(m *Member) {
 	m.HeartbeatTimer = 0
 	m.ReplicateTimer = 0
+
 	var pre *Entry = nil
 	if m.MatchIndex > 0 {
 		pre = node.logs.GetEntry(m.MatchIndex)
@@ -581,7 +589,10 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		log.Info("Member %s, reset nextIndex: %d -> %d", m.Id, old, m.NextIndex)
 	} else {
 		m.State = StateReplicate
-		m.WindowSize = util.MinInt64(m.WindowSize + 1, MaxSendWindowSize) // slow start
+		if m.WindowSize < MaxSendWindowSize {
+			m.WindowSize = m.WindowSize + 1 // slow start
+			log.Debug("%s slow start, WindowSize: %d", m.Id, m.WindowSize)
+		}
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
 		if m.MatchIndex > node.CommitIndex() {
@@ -665,8 +676,8 @@ func (node *Node)_propose(etype EntryType, data string) (int32, int64) {
 	}
 	// 直接丢弃
 	for node.AppendIndex() - node.CommitIndex() >= MaxUncommittedSize {
-		log.Debug("too many proposals, append: %d, accept: %d commit: %d",
-			node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
+		// log.Debug("too many proposals, append: %d, accept: %d commit: %d",
+		// 	node.AppendIndex(), node.AcceptIndex(), node.CommitIndex())
 		return -2, 0
 	}
 

@@ -103,8 +103,8 @@ const severityChar = "TDIWEF"
 var severityName = []string{
 	traceLog:   "TRACE",
 	debugLog:   "DEBUG",
-	infoLog:    "INFO",
-	warnLog:    "WARN",
+	infoLog:    "INFO ",
+	warnLog:    "WARN ",
 	errorLog:   "ERROR",
 	fatalLog:   "FATAL",
 }
@@ -567,25 +567,33 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 	_, month, day := now.Date()
 	hour, minute, second := now.Clock()
 	// Lmmdd hh:mm:ss.uuuuuu threadid file:line]
-	buf.tmp[0] = severityChar[s]
-	buf.twoDigits(1, int(month))
-	buf.twoDigits(3, day)
-	buf.tmp[5] = ' '
-	buf.twoDigits(6, hour)
-	buf.tmp[8] = ':'
-	buf.twoDigits(9, minute)
-	buf.tmp[11] = ':'
-	buf.twoDigits(12, second)
-	buf.tmp[14] = '.'
-	buf.nDigits(6, 15, now.Nanosecond()/1000, '0')
-	buf.tmp[21] = ' '
-	buf.Write(buf.tmp[:22])
-	buf.WriteString(file)
-	buf.tmp[0] = ':'
-	n := buf.someDigits(1, line)
-	buf.tmp[n+1] = ':'
-	buf.tmp[n+2] = ' '
-	buf.Write(buf.tmp[:n+3])
+	buf.twoDigits(0, int(month))
+	buf.twoDigits(2, day)
+	buf.tmp[4] = ' '
+	buf.twoDigits(5, hour)
+	buf.tmp[7] = ':'
+	buf.twoDigits(8, minute)
+	buf.tmp[10] = ':'
+	buf.twoDigits(11, second)
+	buf.tmp[13] = '.'
+	buf.nDigits(6, 14, now.Nanosecond()/1000, '0')
+
+	buf.Write(buf.tmp[:20])
+	buf.WriteString(" [")
+	buf.WriteString(severityName[s])
+	buf.WriteString("] ")
+
+	if s == infoLog {
+		//
+	} else {
+		buf.WriteString(file)
+		buf.tmp[0] = ':'
+		n := buf.someDigits(1, line)
+		buf.tmp[n+1] = ':'
+		buf.tmp[n+2] = ' '
+		buf.Write(buf.tmp[:n+3])
+	}
+
 	return buf
 }
 
@@ -841,8 +849,9 @@ func (sb *syncBuffer) rotateFile(now time.Time) error {
 		sb.Flush()
 		sb.file.Close()
 	}
+	tag := strings.TrimSpace(severityName[sb.sev])
 	var err error
-	sb.file, _, err = create(severityName[sb.sev], now)
+	sb.file, _, err = create(tag, now)
 	sb.nbytes = 0
 	if err != nil {
 		return err

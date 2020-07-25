@@ -54,10 +54,6 @@ func (s *TestService)InstallSnapshot() {
 }
 
 func (s *TestService)ApplyEntry(ent *raft.Entry) {
-	if ent.Index == 1 || ent.Index == node.CommitIndex() {
-		log.Trace("apply %d", ent.Index)
-	}
-
 	s.applied = ent.Index
 	
 	if ent.Type != raft.EntryTypeData {
@@ -154,7 +150,8 @@ func (s *TestService)Process(req *redis.Message) {
 		var t int32
 		var i int64
 		for c:=0; true; c++ {
-			if c == 500 {
+			time_elapse := time.Now().UnixNano() / 1000 - task.Time
+			if time_elapse > 500 * 1000 {
 				log.Error("propose timeout")
 				break
 			}
@@ -164,7 +161,7 @@ func (s *TestService)Process(req *redis.Message) {
 				continue
 			}
 			if t > 0 && c > 0 {
-				log.Info("propose success after %d retry(s)", c)
+				log.Info("propose success after %d retry(s), time: %dms", c, time_elapse)
 			}
 			break
 		}
