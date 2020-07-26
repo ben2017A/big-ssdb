@@ -248,6 +248,7 @@ func (node *Node)Tick(timeElapseMs int) {
 			if m.IdleTimer >= HeartbeatTimeout * 3 + ReplicateTimeout {
 				if m.WindowSize != 0 {
 					m.WindowSize = 0 // slow start
+					// state may be fallbehind, so don't reset as heartbeat here
 					log.Debug("%s reset SindowSize: 0", m.Id)
 				}
 			}
@@ -361,7 +362,7 @@ func (node *Node)maybeReplicate(m *Member) {
 		prev := node.logs.GetEntry(m.NextIndex - 1)
 		ok := node.send(NewAppendEntryMsg(m.Id, ent, prev))
 		if !ok {
-			// maybe it is because of flow control
+			// maybe it is because of network layer's flow control
 			break
 		}
 		
@@ -576,15 +577,13 @@ func (node *Node)handleAppendEntry(msg *Message){
 
 func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 	if node.CommitIndex() - msg.PrevIndex > MaxFallBehindSize {
-		log.Info("Member %s fall behind, prevIndex %d, commit %d",
-			msg.Src, msg.PrevIndex, node.CommitIndex())
+		log.Info("Member %s fall behind, prevIndex %d, commit %d", msg.Src, msg.PrevIndex, node.CommitIndex())
 		m.State = StateFallBehind
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, 0) // 可能初始化
 		return
 	}
 	if msg.PrevIndex > node.AcceptIndex() {
-		log.Info("Member %s bad msg, prevIndex %d > lastIndex %d",
-			msg.Src, msg.PrevIndex, node.AcceptIndex())
+		log.Info("Member %s bad msg, prevIndex %d > lastIndex %d", msg.Src, msg.PrevIndex, node.AcceptIndex())
 		return
 	}
 
@@ -602,7 +601,7 @@ func (node *Node)handleAppendEntryAck(m *Member, msg *Message) {
 		m.State = StateReplicate
 		if m.WindowSize < MaxSendWindowSize {
 			m.WindowSize = m.WindowSize + 1 // slow start
-			log.Debug("%s slow start, WindowSize: %d", m.Id, m.WindowSize)
+			log.Debug("%s slow start, WindowSize: %d, Max: %d", m.Id, m.WindowSize, MaxSendWindowSize)
 		}
 		m.MatchIndex = util.MaxInt64(m.MatchIndex, msg.PrevIndex)
 		m.NextIndex  = util.MaxInt64(m.NextIndex,  msg.PrevIndex + 1)
