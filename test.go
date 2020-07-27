@@ -45,25 +45,25 @@ func NewTestService() *TestService {
 	return ret
 }
 
-func (s *TestService)LastIndex() int64 {
-	return s.applied
+func (svc *TestService)LastIndex() int64 {
+	return svc.applied
 }
 
-func (s *TestService)InstallSnapshot() {
+func (svc *TestService)InstallSnapshot() {
 	log.Warn("not implemented")
 }
 
-func (s *TestService)ApplyEntry(ent *raft.Entry) {
-	s.applied = ent.Index
+func (svc *TestService)ApplyEntry(ent *raft.Entry) {
+	svc.applied = ent.Index
 	
 	if ent.Type != raft.EntryTypeData {
 		return
 	}
 
-	s.Lock()
-	defer s.Unlock()
+	svc.Lock()
+	defer svc.Unlock()
 
-	task := s.tasks[ent.Index]
+	task := svc.tasks[ent.Index]
 
 	var resp *redis.Response = nil
 	if task != nil {
@@ -80,26 +80,26 @@ func (s *TestService)ApplyEntry(ent *raft.Entry) {
 	switch cmd {
 	case "set":
 		if key != "" {
-			s.kvs[key] = msg.Val()
+			svc.kvs[key] = msg.Val()
 		}
 	case "del":
 		if resp != nil {
-			_, rc := s.kvs[key]
+			_, rc := svc.kvs[key]
 			if rc == false {
 				resp.SetInt(0)
 			} else {
 				resp.SetInt(1)
 			}
 		}
-		delete(s.kvs, key)
+		delete(svc.kvs, key)
 	case "incr":
 		var num int64 = 0
-		val, rc := s.kvs[key]
+		val, rc := svc.kvs[key]
 		if rc == true {
 			num, _ = strconv.ParseInt(val, 10, 64)
 		}
 		num += 1
-		s.kvs[key] = fmt.Sprintf("%d", num)
+		svc.kvs[key] = fmt.Sprintf("%d", num)
 		
 		if resp != nil {
 			resp.SetInt(num)
@@ -117,7 +117,29 @@ func (s *TestService)ApplyEntry(ent *raft.Entry) {
 	}
 }
 
-func (s *TestService)Process(req *redis.Message) {
+func (svc *TestService)Propose(data string, timeout_ms int64) (int32, int64) {
+	stime := time.Now().UnixNano() / 1000
+	retry := 0
+	for {
+		time_elapse := time.Now().UnixNano() / 1000 - stime
+		if time_elapse >= timeout_ms * 1000 {
+			log.Error("propose timeout")
+			return -2, 0
+		}
+		t, i := node.Propose(data)
+		if t == -2 {
+			util.Sleep(0.001)
+			continue
+		}
+		if t > 0 && retry > 0 {
+			log.Info("propose success after %d retry(s), time: %d us", retry, time_elapse)
+		}
+		retry ++
+		return t, i
+	}
+}
+
+func (svc *TestService)Process(req *redis.Message) {
 	resp := new(redis.Response)
 	resp.Dst = req.Src
 
@@ -130,9 +152,9 @@ func (s *TestService)Process(req *redis.Message) {
 	} else if cmd == "get" {
 		key := req.Key()
 
-		s.Lock()
-		val, rc := s.kvs[key]
-		s.Unlock()
+		svc.Lock()
+		val, rc := svc.kvs[key]
+		svc.Unlock()
 
 		if rc == false {
 			resp.SetNull()
@@ -147,24 +169,7 @@ func (s *TestService)Process(req *redis.Message) {
 			Req: req,
 		}
 
-		var t int32
-		var i int64
-		for c:=0; true; c++ {
-			time_elapse := time.Now().UnixNano() / 1000 - task.Time
-			if time_elapse > 500 * 1000 {
-				log.Error("propose timeout")
-				break
-			}
-			t, i = node.Propose(req.EncodeSSDB())
-			if t == -2 {
-				util.Sleep(0.001)
-				continue
-			}
-			if t > 0 && c > 0 {
-				log.Info("propose success after %d retry(s), time: %dms", c, time_elapse)
-			}
-			break
-		}
+		t, i := svc.Propose(req.EncodeSSDB(), 500)
 		if t == -1 {
 			resp.SetError2("302", "propose failed: not leader")
 		} else if t == -2 {
@@ -173,12 +178,12 @@ func (s *TestService)Process(req *redis.Message) {
 			task.Term = t
 			task.Index = i
 
-			s.Lock()
+			svc.Lock()
 			// TODO:
 			// 在这里的时候, 对应的 entry 可能(单节点时容易发生)已经 apply 了...
 			// 需要确保在 apply 前, task 已经被加入到 tasks
-			s.tasks[task.Index] = task
-			s.Unlock()
+			svc.tasks[task.Index] = task
+			svc.Unlock()
 
 			// send reply after applied, not now
 			return
