@@ -26,7 +26,8 @@ func newNode(id string, peers []string) *Node {
 	b := OpenBinlog(dir)
 	b.Clean()
 
-	n := NewNode(xport, c, b)
+	n := NewNode(c, b)
+	n.SetTransport(xport)
 	xport.AddNode(n)
 	n.Start()
 	return n
@@ -50,11 +51,11 @@ func TestNode(t *testing.T){
 
 	clean_nodes()
 
-	log.Info("\n=========================================================\n")
+	log.Debug("\n=========================================================\n")
 	testOrphanNode()
 	clean_nodes()
 
-	log.Info("\n=========================================================\n")
+	log.Debug("\n=========================================================\n")
 	testOneNode()
 	fmt.Printf("\n")
 	testJoin()
@@ -62,21 +63,21 @@ func TestNode(t *testing.T){
 	testQuit()
 	clean_nodes()
 
-	log.Info("\n===========================test==============================\n")
+	log.Debug("\n===========================test==============================\n")
 	testTwoNodes()
 	fmt.Printf("\n")
 	testQuit()
 	clean_nodes()
 
-	log.Info("\n=========================================================\n")
+	log.Debug("\n=========================================================\n")
 	testSnapshot()
 	clean_nodes()
 
-	log.Info("\n=========================================================\n")
+	log.Debug("\n=========================================================\n")
 	testRestart()
 	clean_nodes()
 
-	log.Info("end")
+	log.Debug("end")
 	fmt.Println("")
 }
 
@@ -140,16 +141,19 @@ func testTwoNodes() {
 	if n1.CommitIndex() != n2.CommitIndex() {
 		log.Fatal("error %d %d", n1.CommitIndex(), n2.CommitIndex())	
 	}
-	log.Info("-----")
+	log.Debug("-----")
 	// os.Exit(1)
 }
 
 // 新节点加入集群
 func testJoin() {
-	n1.ProposeAddPeer("n2")
-	wait()
+	t, i := n1.ProposeAddPeer("n2")
+	if t < 0 {
+		log.Fatal("%d %d", t, i)
+	}
+	wait() // wait apply
 	if n1.conf.members["n2"] == nil {
-		log.Info("error")
+		log.Fatal("error")
 	}
 
 	n2 = newNode("n2", []string{"n1"}/*leader=n1*/)
@@ -165,12 +169,13 @@ func testJoin() {
 	if n1.CommitIndex() != n2.CommitIndex() {
 		log.Fatalln("error", n1.CommitIndex(), n2.CommitIndex())	
 	}
-	log.Info("-----")
+	log.Debug("-----")
 }
 
 // 退出集群
 func testQuit() {
-	n1.ProposeDelPeer("n2")
+	t, i := n1.ProposeDelPeer("n2")
+	log.Debug("%d %d", t, i)
 	wait()
 	if n1.conf.members["n2"] != nil {
 		log.Fatal("error")
@@ -182,7 +187,7 @@ func testQuit() {
 	if n2.role != RoleFollower {
 		log.Fatal("error")
 	}
-	log.Info("-----")
+	log.Debug("-----")
 }
 
 // 落后太多时, 同步 Raft 快照
@@ -191,6 +196,7 @@ func testSnapshot() {
 	for i := 0; i < MaxFallBehindSize; i++ {
 		n1.Propose(fmt.Sprintf("%d", i))
 	}
+	wait() // wait all propose done
 	testJoin()
 
 	n1.Tick(HeartbeatTimeout*1) // send snapshot
@@ -199,19 +205,20 @@ func testSnapshot() {
 	idx := n2.CommitIndex()
 	n1.Propose("c")
 	wait() // wait replication
-	log.Info(n1.Info())
+	log.Debug(n1.Info())
 
 	if n2.CommitIndex() != idx + 1 {
 		log.Fatal("error %d %d", idx, n2.CommitIndex())	
 	}
-	log.Info("-----")
+	log.Debug("-----")
 }
 
 func testRestart() {
 	n1 = newNode("n1", []string{"n1"})
 	xport.DelNode(n1)
 
-	n1 = NewNode(xport, OpenConfig("./tmp/n1"), OpenBinlog("./tmp/n1"))
+	n1 = NewNode(OpenConfig("./tmp/n1"), OpenBinlog("./tmp/n1"))
+	n1.SetTransport(xport)
 	n1.Start()
 	xport.AddNode(n1)
 
@@ -221,7 +228,7 @@ func testRestart() {
 	if n1.CommitIndex() != 3 {
 		log.Fatal("error")	
 	}
-	log.Info("-----")
+	log.Debug("-----")
 }
 
 //////////////////////////////////////////////////////////////////

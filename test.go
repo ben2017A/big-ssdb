@@ -241,7 +241,8 @@ func main(){
 
 	service = NewTestService()
 
-	node = raft.NewNode(raft_xport, conf, logs)
+	node = raft.NewNode(conf, logs)
+	node.SetTransport(raft_xport)
 	node.SetService(service)
 	node.Start()
 	defer node.Close()

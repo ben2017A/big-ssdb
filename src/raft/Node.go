@@ -46,7 +46,7 @@ type Node struct{
 	commitIndex int64
 }
 
-func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
+func NewNode(conf *Config, logs *Binlog) *Node {
 	node := new(Node)
 	node.done_c = make(chan bool)
 	node.recv_c = make(chan *Message, 0/*TODO*/)
@@ -54,7 +54,6 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	node.ticker_c = make(chan bool)
 	node.apply_c  = make(chan bool, 3)
 
-	node.xport = xport
 	node.conf = conf
 	node.conf.node = node
 	node.logs = logs
@@ -70,6 +69,10 @@ func NewNode(xport Transport, conf *Config, logs *Binlog) *Node {
 	}
 	
 	return node
+}
+
+func (node *Node)SetTransport(xport Transport) {
+	node.xport = xport
 }
 
 func (node *Node)SetService(s Service) {
